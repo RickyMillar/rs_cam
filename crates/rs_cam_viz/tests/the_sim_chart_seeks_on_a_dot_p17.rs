@@ -43,7 +43,10 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::envelope::SafeEnvelope;
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
 use rs_cam_core::tool_load::cut_force::CutPoint3;
-use rs_cam_viz::state::simulation::force_field::{ForceField, contours, field_top};
+use rs_cam_core::tool_load::force_field::{
+    BudgetRole, CONTOUR_SHARES, ForceField, ForceLevel, ForcePlane, contours,
+};
+use rs_cam_viz::state::simulation::force_field::field_top;
 use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, VIEW_HEADROOM};
 use rs_cam_viz::ui::sim_cut_chart::{
     CellGrid, CutChartInput, CutChartResponse, DENSEST_ALPHA, DOT_CAP, FAINTEST_ALPHA,
@@ -410,7 +413,7 @@ fn a_click_on_a_dot_seeks_to_its_move_p17() {
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: None,
+        force_plane: None,
         playhead: Some(10),
         move_count: 1000,
     };
@@ -494,7 +497,7 @@ fn a_deep_sample_widens_the_depth_range_p17() {
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: None,
+        force_plane: None,
         playhead: None,
         move_count: 1000,
     };
@@ -600,7 +603,7 @@ fn rough_input<'a>(env: &'a SafeEnvelope, samples: &'a [CutPoint3]) -> CutChartI
         samples,
         diameter_mm: 6.0,
         budget_n: None,
-        force_field: None,
+        force_plane: None,
         playhead: None,
         move_count: 20,
     }
@@ -748,8 +751,14 @@ fn contours_trace_a_plane_and_a_radial_field_at_their_levels_p17b() {
         let r = ((p[0] - 3.0).powi(2) + (p[1] - 2.0).powi(2)).sqrt();
         assert!((r - 1.0).abs() < 0.02, "on the circle: r {r}");
     }
-    assert_eq!(contour_label(0.25), "25 %");
-    assert_eq!(contour_label(1.0), "100 % budget");
+    assert_eq!(contour_label(0.25, BudgetRole::Limit), "25 %");
+    assert_eq!(contour_label(1.0, BudgetRole::Limit), "100 % budget");
+    // P29-10 10g (lead ruling O4): where the budget is no limit of the
+    // cut, the budget line says so.
+    assert_eq!(
+        contour_label(1.0, BudgetRole::NoLimitHere),
+        "budget, no limit here"
+    );
 }
 
 #[test]
@@ -763,13 +772,30 @@ fn the_chart_names_the_contours_on_their_lines_p17b() {
     let field = ForceField::from_fn(nodes(diameter, 48), nodes(top, 32), |_, ap| {
         budget * ap / top
     });
+    // P29-10 10g: the chart draws the level lines core built with the
+    // plane (no contour per frame).
+    let plane = ForcePlane {
+        levels: CONTOUR_SHARES
+            .into_iter()
+            .map(|share| ForceLevel {
+                share,
+                force_n: share * budget,
+                lines: contours(&field, share * budget),
+            })
+            .filter(|level| !level.lines.is_empty())
+            .collect(),
+        field,
+        fz_mm: 0.05,
+        budget_n: budget,
+        role: BudgetRole::Limit,
+    };
     let samples = samples(&env, budget, diameter);
     let input = CutChartInput {
         env: &env,
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: Some(&field),
+        force_plane: Some(&plane),
         playhead: None,
         move_count: 31,
     };
@@ -784,7 +810,7 @@ fn the_chart_names_the_contours_on_their_lines_p17b() {
             // A level above the axis has no line to name.
             continue;
         }
-        let name = contour_label(share);
+        let name = contour_label(share, BudgetRole::Limit);
         let (_, _, _, rect) = extents
             .iter()
             .find(|t| t.0 == name)
@@ -831,7 +857,7 @@ fn the_planned_dot_is_the_last_mark_and_paints_whole_over_a_dot_p17b() {
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: None,
+        force_plane: None,
         playhead: Some(0),
         move_count: 31,
     };
@@ -919,7 +945,7 @@ fn the_legend_lists_over_budget_only_with_a_dot_p17() {
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: None,
+        force_plane: None,
         playhead: None,
         move_count: 31,
     };
@@ -951,7 +977,7 @@ fn every_chart_text_stays_inside_the_rail_p17() {
         samples: &samples,
         diameter_mm: diameter,
         budget_n: Some(budget),
-        force_field: None,
+        force_plane: None,
         playhead: None,
         move_count: 30_591,
     };

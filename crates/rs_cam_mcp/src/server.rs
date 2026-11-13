@@ -4079,7 +4079,8 @@ pub fn build_info() -> serde_json::Value {
             // pass of a ramp, worst case; one pitch of a helix), a value
             // check against the cut's root, never a ceiling; an entry row
             // whose entry rule gives no feed names why. Since P29-10 the row
-            // is in `envelope.limit_rows` (`subject.own_depth_mm`, the caveat
+            // is in `envelope.limit_rows` (since 10g the own depth is the
+            // depth of `subject.at` with `own_depth` true; the caveat
             // `worst_case`, the clauses in `detail`).
             "envelope_entry_value_checks",
             // Feeds contract P29-10: every limit record is one row
@@ -4114,6 +4115,15 @@ pub fn build_info() -> serde_json::Value {
             // opens the "Limits" drawer of the Suggest card (the reply
             // echoes `card_limits`).
             "card_limits_view",
+            // Feeds contract P29-10 (10g): one plane. `get_safe_envelope`
+            // gives `envelope.plane_marks` ({proposal, stated}: each
+            // declared cut at a point of the width x depth plane), a
+            // planned row's `subject.at` ({ae_mm, ap_mm, own_depth}; it
+            // replaced `subject.own_depth_mm`), `force_budget_columns`
+            // (the force-budget edge column by column: width, ceiling,
+            // what sets it, the cut) and `outside_cut` (the declared cut
+            // that places the stated point outside).
+            "envelope_plane_marks",
         ],
     })
 }

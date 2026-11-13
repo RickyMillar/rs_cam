@@ -402,8 +402,10 @@ the proposal, the stated point and the candidate.
 
 Design:
 
-- Core `limits::plane` (or `feeds::plane`) gives the position of each declared cut at a point:
-  `PlaneMarks::at(&DeclaredCuts, CutPoint)`. The body sits at the point; a slot ring at width D and
+- Core `feeds::plane` gives the position of each declared cut at a point:
+  `PlaneMarks::at(&DeclaredCuts, CutPoint, describes_rows)` (10g). The envelope holds two sets,
+  `marks_at_proposal` (the point of the planned rows; each row holds its point, `subject.at`) and
+  `marks_at_stated`. The body sits at the point; a slot ring at width D and
   the point depth; a ramp at width D and its own depth. The positions read the declared width and
   depth rules (`DeclaredWidth`, `DeclaredDepth`), so no judgement runs.
 - The Passes plot draws the marks at the PROPOSAL, each with the worst tone of its planned rows
@@ -415,14 +417,19 @@ Design:
   outline when a row exceeds). No new label on the face: the cut name and its rows are the hover.
   The proposal, stated and candidate marks keep their D3 mark rule.
 - So a planned slot ring and its samples sit on one plane, at the same width.
-- The force field moves to core (`tool_load::force_field` beside `cut_force`): built in the load
-  memo for every op that has a force line and a planned chip (`AdvancePerToothMm` door, site 18).
-  The budget is the machine fact `MachineProfile::rigidity.force_budget_n` (always present,
-  `machine/mod.rs:307`). The contour levels stay `CONTOUR_SHARES` of that budget.
-- Where `scope(ForceBudget, group)` judges the body group and the depth limit is the force budget,
-  the 100 % line is `CAUTION` (today). Where it does not (a finish pass, `S-NoBound`), the 100 %
-  line is `TEXT_FAINT` and its label reads "budget, no limit here". Over-budget dots draw only
-  where the budget judges the samples. Operator question O4.
+- The force field moves to core (`tool_load::force_field` beside `cut_force`): the field of the
+  BODY cut (section 16, R1), built through `ProjectSession::force_plane` once per load report in
+  the GUI cut-metric memo (R9), outside the envelope, for every op that has a force line and a
+  planned chip (`AdvancePerToothMm` door, site 18). The budget is the machine fact
+  `MachineProfile::rigidity.force_budget_n` (always present). The contour levels stay
+  `CONTOUR_SHARES` of that budget, traced once with the field (`ForcePlane::levels`). The
+  envelope edge is the lowest over every declared cut and stays its own line; where it sits under
+  the body contour, the mark of the cut that sets it shows why.
+- Where the body cut has the force-budget depth limit (`cut_force::budget_line`,
+  `BudgetRole::Limit`), the 100 % line is `CAUTION`. Where it does not (a finish pass,
+  `S-NoBound`, `BudgetRole::NoLimitHere`), the 100 % line is `TEXT_FAINT` and its label reads
+  "budget, no limit here". Over-budget dots draw only where the budget is a limit
+  (`CutPoint3::over_budget`, strict). Operator question O4.
 - A drill has no field (no lateral engagement: `Geometry::NoRadialEngagement`). An op with no
   envelope (a refusal) has no plane. A one-axis op (a bar) shows its planned marks on the bar.
 - The explainer page and its asserts are in section 8.
@@ -566,10 +573,17 @@ each claim. 10g proposes a new chart, so 10g delivers:
   1. One planned row per declared cut and planned limit; one group row per gate and group.
   2. Every margin equals the side rule of its value and bound.
   3. Each planned mark sits at the `(ae, ap)` of its row.
-  4. A planned `ForceBudget` row exceeds iff its mark is above the 100 % contour at its width,
-     within one grid cell.
-  5. The 100 % contour at each envelope column is within one grid cell of the force-budget edge at
-     the planned chip.
+  4. (Section 16, R3.) A mark takes its tone from its row, never from its position. For a mark
+     of a body-kind cut (the field's chip and width model) the force-budget row exceeds exactly
+     when the mark is above the 100 % contour, within one grid cell. For every other cut the row
+     is the truth and its own bound is on the hover (the idx 1 helix: 2.0 mm against the field's
+     1.925 mm at D, row bound 2.345 mm).
+  5a. (R2.) In every column the force-budget edge is never above the body 100 % contour by more
+     than one cell.
+  5b. (R2.) In every column where the body cut sets the edge (core names the cut of each column,
+     `force_budget_columns`) the edge equals the body 100 % contour within one cell; a column on
+     a geometric cap (flute top, depth floor) is outside 5b. One cell is the cell of the field
+     grid in the data file, at the depth top of the GUI chart.
   6. `WorstCase` and `LowerBound` hold exactly on the rows of claim 5 of section 6.
   7. The CLI `suggest` rows equal the MCP rows for the same op (the CLI output is in `data/`).
   8. Every claim the page writes in prose has an assert number beside it on the page.
@@ -982,3 +996,87 @@ trap is the likely cause, not a measured one.
   all distinct, so a cache gives little. A further cut changes a number
   (fewer split levels, fewer scan steps in `depth_at_budget`) or the
   budget. Both are rulings for the lead.
+
+## 16. Lead rulings for 10g
+
+Lead, 2026-11-13, on the stop report of the 10g implementer. The probe on
+HEAD `a381097c7` found claim 5 of section 8 false as written: the field is
+the body cut, and the force-budget edge is the lowest ceiling over every
+declared cut (on wanaka idx 1 the planner cap sets the edge at the narrow
+widths; at ae 0.445 mm the edge rides the flute top).
+
+- **R1. The field is the force of the BODY cut at the planned chip.** It
+  is the field the samples live in, so it predicts the over-budget dots.
+  The envelope edge stays its own line. Where the edge sits under the body
+  contour, another declared cut sets it, and the planned mark of that cut
+  shows it. No field is built from the lowest cut.
+- **R2. Claim 5 becomes two claims.** 5a: in every column the force-budget
+  edge is never above the body 100 % contour by more than one cell. 5b: in
+  every column where the body cut sets the edge (core names the cut of
+  each column: `SafeEnvelope::force_budget_columns`, wire
+  `force_budget_columns`), the edge equals the body 100 % contour within
+  one cell. A column on a geometric cap (`ColumnCeiling::FluteTop` or
+  `DepthFloor`) is outside 5b, and the page says so. One cell is the cell
+  of the field grid in the data file, which states its depth top (the top
+  of the GUI chart).
+- **R3. Claim 4 becomes: a mark takes its tone from its ROW**, never from
+  its position against the contour. For a mark of a body-kind cut the row
+  exceeds exactly when the mark is above the 100 % contour, within one
+  cell (asserted). For every other cut (an entry at its own chip, a
+  planner cap at its wider width) the row is the truth and its own bound
+  is on the hover. The example is the helix mark of idx 1 (2.0 mm against
+  the field's 1.925 mm at D, row bound 2.345 mm).
+- **R4. Plot labels keep their words.** `LimitText` gains `chart`
+  (`ChartName::Line` or `NoLine` with a reason); the viz reads it
+  (`LimitKind::chart_name`).
+- **R5. One fact, one field.** Every row with an own depth has a plane
+  point with that depth, so `subject.own_depth_mm` goes; `subject.at` is
+  `{ae_mm, ap_mm, own_depth}` and `CheckRow::own_depth_mm` reads it.
+- **R6. k2b: the test is wrong; rewrite it to the truth of today**, and
+  close the product gap: the plot shows WHY a dot is outside (the crossed
+  edge in view, or the planned mark of the cut that places it outside) and
+  the dot's hover names that cut and limit.
+- **R7.** Fix the scan of `cut_metric_cards_read_the_gate_g_cutcards` to
+  follow the one renderer; keep the claim.
+- **R8.** IC1 caps follow the measure. "Max RPM" shares the row of "Max
+  feed" by a layout rule with a reason, not by a looser merge constant.
+  The rotated axis titles: report only.
+- **R9.** The field is built once per load report in the cut-metric memo,
+  outside the envelope and never per frame; a test holds that a second
+  frame builds no field.
+
+### Found while building (10g)
+
+- **The k2b point.** The fixture Pocket (6 mm end mill, stated chip
+  0.0278 mm) places the deep point (ae 5.56, ap 8.62 mm) outside by
+  `Rigidity` at margin -0.4185. The drawn curve is the lowest cut at the
+  curve chip: the slot ring, 17.24 mm. The placement also judges the
+  stated width at the pick chip, `max(0.0278, suggested 0.127)` mm
+  (`judged_ceiling`, P29-7 trap 1): the BODY cut there gives 6.08 mm. So
+  the drawn edge is the lowest over the declared cuts at its own chip; the
+  two ceilings differ by the chip, not by the cut. No edge changed.
+  `SafeEnvelope::outside_cut` names the cut (the body); the body mark at
+  the proposal is in view and the dot hover reads "Now is outside: Rigidity
+  DOC of the body".
+- **The width of a full slot sample.** On the simulated contour Pocket
+  fixture the widest sample reads 5 mm against the 6 mm slot ring mark (a
+  measured arc at the simulation cell reads short). The new sentry holds
+  that no sample is wider than the slot ring mark by more than one column.
+- **Claim 2 of section 8 is false as written.** On the operator file, 24 entry chip rows (chip
+  min, chip max, rubbing floor of a ramp or a helix) hold a margin that is not the side rule of
+  their value: P29-9 makes such a row judge the end of its stored whole-mm/min feed interval
+  (section 6 claim 3 says "the side rule of the judged value"). The script asserts the section 6
+  form (it recovers the stored feed from the two margins: 6447, 6448, 4571 and 240 mm/min, each a
+  whole feed) and the page states it. The lead rules the words of claim 2.
+- **Departures.** `mark_color` (a planned mark is `CAUTION` when a row of its cut exceeds, else
+  `TEXT_MUTED`) is a second tone-to-colour rule beside `role_of_tone`: the plot has no `DANGER`
+  (ruling Q6). The neutral marks of the simulation chart are `TEXT_STRONG`, not `TEXT_MUTED`:
+  a muted outline reads as one more heat cell (judged on S9). A mark past the view (the idx 6
+  helix at its own depth 1.0 mm over a 0.91 mm view) is held on the frame edge, as the dot is;
+  its hover gives the true depth. A mark at the operator's dot is left out (the dot covers it).
+  No field is built per envelope memo: the Passes plot draws marks, not the field (R9 names an
+  envelope memo; the lead confirms).
+- **Not seen on a file.** The faint "budget, no limit here" line draws on no op of the four
+  files: the Scallop ops reach at most 75 % of the budget under the chart top. The snapshot
+  `sim_chart_340_no_limit.png` of `p17_visual_snapshots` draws it.
+

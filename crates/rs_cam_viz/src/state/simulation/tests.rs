@@ -835,6 +835,39 @@ fn a_result_adoption_rebuilds_the_cut_metrics_once_g_cachekeys() {
     assert_eq!(format!("{:?}", *after), format!("{:?}", *fresh));
 }
 
+/// P29-10 10g (lead ruling R9): the force field is built with the cut-metric
+/// set, once per load report, never per frame: a second read (a second
+/// frame) builds no set and so no field, and hands back the same field.
+#[test]
+fn a_second_frame_builds_no_force_field_p29_10() {
+    let session = session_for_toolpath_one();
+    let mut sim = simulation_for_toolpath();
+    attach_cut_trace(&mut sim);
+    let id = rs_cam_core::ToolpathId::from_raw(1);
+    let first = sim.cached_cut_metrics(&session, id);
+    let plane = first
+        .force_plane
+        .as_ref()
+        .expect("non-vacuity: the fixture op has a force field");
+    assert!(
+        !plane.field.force_n.is_empty(),
+        "non-vacuity: the field holds nodes"
+    );
+    assert_eq!(sim.debug.cut_metric_cache.builds, 1);
+    let second = sim.cached_cut_metrics(&session, id);
+    assert_eq!(
+        sim.debug.cut_metric_cache.builds, 1,
+        "a second frame built the set and its field again"
+    );
+    assert!(
+        std::ptr::eq(
+            first.force_plane.as_ref().expect("first"),
+            second.force_plane.as_ref().expect("second")
+        ),
+        "a second frame reads the field the first one built"
+    );
+}
+
 // The issue list keyed on `Arc::as_ptr` of the cut trace and of each debug
 // and semantic trace, plus `GuiState::edit_counter`. The list reads no
 // session state, so the counter only rebuilt it for no reason, and the bare

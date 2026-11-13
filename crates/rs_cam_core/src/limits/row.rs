@@ -34,16 +34,18 @@ pub enum Subject {
     /// A declared cut before the simulation, at the proposal (P29-7 7c).
     /// A body, slot or cleanup row reads the proposal speeds (P29-9
     /// ruling); an entry row reads the stored entry feed over the stored
-    /// speed (P29-8 8d). `own_depth_mm`: the depth of a cut that is not on
-    /// the body plane (an entry at its own depth), else `None`.
+    /// speed (P29-8 8d). `at`: the point of the cut on the width x depth
+    /// plane (P29-10 10g), `None` for a cut with no width or no depth there
+    /// (a plunge, a cut with no width rule).
     Planned {
         /// The declared cut.
         #[serde(serialize_with = "cut_label")]
         cut: CutKind,
         /// Whether the plan always cuts it.
         occurs: Occurs,
-        /// The own depth of an entry (mm).
-        own_depth_mm: Option<f64>,
+        /// The plane point of the cut (P29-10 10g). An entry at its own
+        /// depth holds that depth here (`own_depth` true).
+        at: Option<PlanePoint>,
     },
     /// The operator's stated point against one limit of the boundary: the
     /// cut as the op stands.
@@ -65,6 +67,21 @@ pub enum Subject {
     MeasuredPoint,
     /// The RPM choice.
     Rpm,
+}
+
+/// P29-10 10g: the point of a planned cut on the width x depth plane: its
+/// width and its depth. One fact, one field (lead ruling R5): the own depth
+/// of an entry is the depth of its point, and `own_depth` says that the
+/// depth is the cut's own, not the depth of the body plane.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct PlanePoint {
+    /// The width (mm).
+    pub ae_mm: f64,
+    /// The depth (mm).
+    pub ap_mm: f64,
+    /// `true` when the depth is the cut's own depth (an entry), not the
+    /// depth of the body plane.
+    pub own_depth: bool,
 }
 
 fn cut_label<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
@@ -401,6 +418,8 @@ pub struct PlannedFacts {
     pub entry_no_number: Option<&'static str>,
     /// What the row compares (lead ruling 3).
     pub compared: Compared,
+    /// P29-10 10g: the point of the cut on the plane.
+    pub at: Option<PlanePoint>,
 }
 
 /// The own depth of a planned entry row.
@@ -492,6 +511,7 @@ impl CheckRow {
             at_earlier_leave,
             entry_no_number,
             compared,
+            at,
         } = facts;
         let mut caveats = Vec::new();
         if own_depth.is_some_and(|o| o.worst_case) {
@@ -522,11 +542,7 @@ impl CheckRow {
             Occurs::Always
         };
         Self::new(
-            Subject::Planned {
-                cut,
-                occurs,
-                own_depth_mm: own_depth.map(|o| o.mm),
-            },
+            Subject::Planned { cut, occurs, at },
             check,
             compared,
             caveats,
@@ -658,12 +674,29 @@ impl CheckRow {
         }
     }
 
-    /// The own depth of a planned entry row (mm).
+    /// The plane point of a planned row (P29-10 10g).
+    #[must_use]
+    pub const fn plane_point(&self) -> Option<PlanePoint> {
+        match self.subject {
+            Subject::Planned { at, .. } => at,
+            Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
+        }
+    }
+
+    /// The own depth of a planned entry row (mm): the depth of its plane
+    /// point when that depth is the cut's own (lead ruling R5).
     #[must_use]
     pub const fn own_depth_mm(&self) -> Option<f64> {
-        match self.subject {
-            Subject::Planned { own_depth_mm, .. } => own_depth_mm,
-            Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
+        match self.plane_point() {
+            Some(PlanePoint {
+                ap_mm,
+                own_depth: true,
+                ..
+            }) => Some(ap_mm),
+            Some(PlanePoint {
+                own_depth: false, ..
+            })
+            | None => None,
         }
     }
 
@@ -753,6 +786,37 @@ impl CheckRow {
     pub fn worse_than(&self, other: &Self) -> bool {
         self.rank_cmp(other) == std::cmp::Ordering::Less
     }
+}
+
+/// P29-10 10g (item 4c): the rows of one cut in words, for ONE closed line
+/// of a drawer ("6 within · 1 no number"). `None` when a row exceeds: such
+/// a cut stays open. The rows that hold a number count by their tone word;
+/// the rows with no number count by their shared reason ("7 not
+/// modelled"), else as "no number". The words come from the tone and the
+/// reason of each row; a surface writes no state word of its own.
+#[must_use]
+pub fn quiet_summary(rows: &[&CheckRow]) -> Option<String> {
+    if rows.iter().any(|row| row.tone.exceeds()) {
+        return None;
+    }
+    let within = rows.iter().filter(|row| row.holds_a_number()).count();
+    let none: Vec<&'static str> = rows
+        .iter()
+        .filter_map(|row| row.no_number_words())
+        .collect();
+    let mut parts = Vec::new();
+    if within > 0 {
+        parts.push(format!("{within} {}", Tone::Within.chip_word()));
+    }
+    if let Some(first) = none.first() {
+        let word = if none.iter().all(|w| w == first) {
+            *first
+        } else {
+            Tone::NoNumber.chip_word()
+        };
+        parts.push(format!("{} {word}", none.len()));
+    }
+    Some(parts.join(" \u{00B7} "))
 }
 
 /// The exemption row of a check: the row of a scope state first, else the
@@ -980,7 +1044,13 @@ fn detail_of(
     }
     parts.extend(caveats.iter().map(|c| c.clause()));
     if let Some(p) = check.population {
-        parts.push(format!("{} of {} samples", p.contributing, p.offered));
+        // P29-10 10g: the unit of the population (a drill gate counts holes).
+        parts.push(format!(
+            "{} of {} {}",
+            p.contributing,
+            p.offered,
+            p.unit.plural()
+        ));
     }
     if let Some(row) = exemption {
         parts.push(format!("exemption row {row}"));
@@ -1477,5 +1547,51 @@ impl Geometry {
             Self::NotAnOffsetRing => "the cut is not an offset ring",
             Self::NoVerticalFeed => "the cut has no vertical feed",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(state: CheckState, margin: Option<f64>) -> CheckRow {
+        CheckRow::stated(
+            Check {
+                limit: LimitId::SpindlePower,
+                value: margin.map(|_| 1.0),
+                bound: margin.map(|_| 2.0),
+                unit: "kW",
+                side: BoundSide::Ceiling,
+                margin,
+                state,
+                basis: None,
+                binding: false,
+                population: None,
+            },
+            Compared::Load,
+        )
+    }
+
+    /// P29-10 10g (item 4c): a cut with no row over is one line of counts;
+    /// a cut with a row over has none.
+    #[test]
+    fn a_quiet_cut_is_one_line_of_counts_p29_10() {
+        let within = row(CheckState::Within, Some(0.5));
+        let modelled = row(CheckState::NoNumber(NoNumberReason::NotModelled), None);
+        let no_bound = row(CheckState::NoNumber(NoNumberReason::NoBound), None);
+        let over = row(CheckState::Exceeds, Some(-0.5));
+        assert_eq!(
+            quiet_summary(&[&within, &within, &modelled]).as_deref(),
+            Some("2 within \u{00B7} 1 not modelled")
+        );
+        assert_eq!(
+            quiet_summary(&[&within, &modelled, &no_bound]).as_deref(),
+            Some("1 within \u{00B7} 2 no number")
+        );
+        assert_eq!(
+            quiet_summary(&[&within, &over]),
+            None,
+            "a row over keeps the cut open"
+        );
     }
 }

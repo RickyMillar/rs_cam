@@ -44,6 +44,9 @@ use rs_cam_core::ids::ToolId;
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
 use rs_cam_core::material::Material;
 use rs_cam_core::tool_load::cut_force::CutPoint3;
+use rs_cam_core::tool_load::force_field::{
+    BudgetRole, CONTOUR_SHARES, ForceLevel, ForcePlane, contours,
+};
 use rs_cam_core::tool_load::verdict::{
     BoundSource, CriterionKind, GatePopulation, LoadState, PopulationUnit,
 };
@@ -52,7 +55,6 @@ use rs_cam_core::tool_load::{
 };
 use rs_cam_viz::app::{SidePanelEdge, side_panel};
 use rs_cam_viz::state::panels::EnvelopeCandidates;
-use rs_cam_viz::state::simulation::force_field::ForceField;
 use rs_cam_viz::state::simulation::{CUT_METRIC_ORDER, CutMetricCard, CutMetricSet};
 use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, draw_envelope};
 use rs_cam_viz::ui::sim_cut_chart::{GRID_COLUMNS, GRID_ROWS};
@@ -495,13 +497,21 @@ fn sim_set() -> CutMetricSet {
     // P17b: the iso-force field at the same advance per tooth the samples
     // read, over the envelope scene's own view top (the state builder's
     // rule); the contours show on the over-budget image.
-    let force_field = ForceField::build(
-        &tool,
-        &material,
-        diameter,
-        EnvelopeScene::of(&env, None).ap_range.1,
-        fz,
-    );
+    // P29-10 10g: the core plane (the field and its level lines). The
+    // fixture states the advance, so the plane reads it at one tooth per
+    // rev (feed = fz, rpm = 1, flutes = the tool's): the same fz.
+    let force_plane = budget.and_then(|budget_n| {
+        ForcePlane::build(
+            &tool,
+            &material,
+            fz * f64::from(tool.flute_count),
+            1.0,
+            diameter,
+            EnvelopeScene::of(&env, None).ap_range.1,
+            budget_n,
+            BudgetRole::Limit,
+        )
+    });
     CutMetricSet {
         toolpath_id: ID,
         cards,
@@ -509,7 +519,7 @@ fn sim_set() -> CutMetricSet {
         samples,
         diameter_mm: diameter,
         budget_n: budget,
-        force_field,
+        force_plane,
     }
 }
 
@@ -570,7 +580,7 @@ fn rough_chart_set(pocket: &CutMetricSet) -> CutMetricSet {
         samples,
         diameter_mm: diameter,
         budget_n: None,
-        force_field: None,
+        force_plane: None,
     }
 }
 
@@ -713,6 +723,28 @@ fn the_sim_cards_and_chart_at_each_rail_width_p17() {
     // legend entry's hover. The cards are not part of this image.
     let mut what_if = (*set).clone();
     what_if.budget_n = what_if.budget_n.map(|b| b / 5.0);
+    // P29-10 10g: the plane holds its own budget and level lines, so the
+    // what-if moves them with the line of the dots.
+    if let Some(plane) = what_if.force_plane.as_mut() {
+        plane.budget_n /= 5.0;
+        plane.levels = levels_at(&plane.field, plane.budget_n);
+    }
+    // P29-10 10g (ruling O4): the same cut with no force limit: the 100 %
+    // line is faint and reads "budget, no limit here", and no dot paints.
+    let mut no_limit = what_if.clone();
+    no_limit.budget_n = None;
+    if let Some(plane) = no_limit.force_plane.as_mut() {
+        plane.role = BudgetRole::NoLimitHere;
+    }
+    snapshot_panel(
+        &dir,
+        "sim_chart_340_no_limit.png",
+        340.0,
+        CHART_HEIGHT,
+        move |ui| {
+            let _ = draw_cut_chart_section(ui, &no_limit, Some(SAMPLE_COUNT / 2), SAMPLE_COUNT);
+        },
+    );
     snapshot_panel(
         &dir,
         "sim_chart_340_over_budget.png",
@@ -827,4 +859,20 @@ fn the_passes_tab_at_each_rail_width_p17b() {
     for width in WIDTHS {
         snapshot_passes(&dir, &format!("passes_{width:.0}.png"), width);
     }
+}
+
+/// The level lines of `field` at the contour shares of `budget_n`.
+fn levels_at(
+    field: &rs_cam_core::tool_load::force_field::ForceField,
+    budget_n: f64,
+) -> Vec<ForceLevel> {
+    CONTOUR_SHARES
+        .into_iter()
+        .map(|share| ForceLevel {
+            share,
+            force_n: share * budget_n,
+            lines: contours(field, share * budget_n),
+        })
+        .filter(|level| !level.lines.is_empty())
+        .collect()
 }

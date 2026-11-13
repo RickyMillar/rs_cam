@@ -47,8 +47,8 @@
 
 use rs_cam_core::compute::catalog::{Axial, OperationConfig, Radial};
 use rs_cam_core::feeds::envelope::{
-    AxisSpan, CutPoint, Edge, EnvelopeAxes, Limit, LimitKind, PickRequest, Placement, SafeEnvelope,
-    SpeedsSample,
+    AxisSpan, CutPoint, Edge, EnvelopeAxes, FramePart, Limit, LimitKind, PickRequest, Placement,
+    SafeEnvelope, SpeedsSample,
 };
 
 use crate::state::panels::EnvelopeCandidates;
@@ -153,27 +153,24 @@ pub const TITLE_DEPTH: &str = "Safe depth";
 /// The section title of an op whose free value is the width.
 pub const TITLE_WIDTH: &str = "Safe width";
 
+/// The radius of a planned-cut mark (half its side), in points (P29-10
+/// 10g): under the operator's dot, over a heat cell's corner.
+pub const PLANNED_RADIUS: f32 = 3.0;
+
+/// The outline of a planned-cut mark, in points: the muted line width.
+pub const PLANNED_WIDTH: f32 = 1.0;
+
+/// A hover takes a planned mark within this distance, in points.
+const MARK_HIT_PX: f32 = 6.0;
+
 /// The short name of a limit (P5d D4). [`limit_name`] adds the share of D
 /// to the vendor depth; this is its name when D is unknown. The hover keeps
-/// the full law, the mm and the basis.
+/// the full law, the mm and the basis. P29-10 10g (lead ruling R4): core
+/// writes the name (`LimitId::text().chart`, read through
+/// `LimitKind::chart_name`).
 #[must_use]
 pub const fn short_label(kind: LimitKind) -> &'static str {
-    match kind {
-        LimitKind::FluteGuard => "Flute guard",
-        LimitKind::CuttingLength => "Cut length",
-        LimitKind::VendorAxial => "Vendor DOC",
-        LimitKind::VendorDepthTable => "Depth table",
-        LimitKind::Rigidity => "Rigidity DOC",
-        LimitKind::CornerCoverage => "Corner width",
-        LimitKind::Power => "Spindle power",
-        LimitKind::Deflection => "Deflection",
-        LimitKind::ChipBand => "Chip band",
-        LimitKind::RubbingFloor => "Rubbing",
-        LimitKind::FeedCap => "Max feed",
-        LimitKind::Diameter => "Tool diameter",
-        LimitKind::Runtime => "Min width (moves)",
-        LimitKind::EngagementFloor => "Min engagement",
-    }
+    kind.chart_name()
 }
 
 /// The name of a limit of `env` on every envelope surface: the line label,
@@ -186,11 +183,11 @@ pub fn limit_name(env: &SafeEnvelope, kind: LimitKind) -> String {
     // The vendor depth and the vendor depth table (P11b) name their depth
     // as a share of D when the edge has one value.
     let depth = env.limit(kind).and_then(|l| edge_mm(&l.edge));
-    match (kind, d, depth) {
-        (LimitKind::VendorAxial | LimitKind::VendorDepthTable, Some(d), Some(mm)) => {
+    match (kind.names_depth_in_diameters(), d, depth) {
+        (true, Some(d), Some(mm)) => {
             format!("{} {}\u{00D7}D", short_label(kind), trim_decimals(mm / d))
         }
-        _ => short_label(kind).to_owned(),
+        (true, _, _) | (false, _, _) => short_label(kind).to_owned(),
     }
 }
 
@@ -282,23 +279,10 @@ fn limit_hover(env: &SafeEnvelope, l: &Limit) -> String {
 /// A limit that is the plot frame, not a line in it (P5c): the diameter
 /// ends the width axis, the cutting length and the flute guard end the
 /// depth axis, and the engagement floor is the origin.
+/// P29-10 10g: core says which limit is a part of the frame
+/// (`LimitKind::frame`).
 const fn is_frame(kind: LimitKind) -> bool {
-    match kind {
-        LimitKind::Diameter
-        | LimitKind::CuttingLength
-        | LimitKind::FluteGuard
-        | LimitKind::EngagementFloor => true,
-        LimitKind::VendorAxial
-        | LimitKind::VendorDepthTable
-        | LimitKind::Rigidity
-        | LimitKind::CornerCoverage
-        | LimitKind::Power
-        | LimitKind::Deflection
-        | LimitKind::ChipBand
-        | LimitKind::RubbingFloor
-        | LimitKind::FeedCap
-        | LimitKind::Runtime => false,
-    }
+    kind.frame().is_some()
 }
 
 /// What the envelope section shows for one op.
@@ -671,7 +655,7 @@ fn view_ranges(
     let hard: Option<(f64, LimitKind)> = env
         .boundary
         .iter()
-        .filter(|l| matches!(l.kind, LimitKind::CuttingLength | LimitKind::FluteGuard))
+        .filter(|l| l.kind.frame() == Some(FramePart::DepthTop))
         .filter_map(|l| ap_ceiling_mm(l).and_then(positive).map(|mm| (mm, l.kind)))
         .min_by(|a, b| a.0.total_cmp(&b.0));
     let hard_top = hard.map(|h| h.0).or_else(|| positive(ap_span.max_mm));
@@ -1157,6 +1141,35 @@ fn draw_plane(
         ));
     }
 
+    // P29-10 10g: the planned cuts at the proposal, under the D3 marks:
+    // each declared cut a hollow square in the tone of its rows.
+    // A mark at the operator's dot is under it: the dot names that point,
+    // and its hover names the cut (`outside_hover`), so the mark is left out.
+    let at_dot = |m: &rs_cam_core::feeds::plane::PlaneMark| {
+        scene.setpoint().is_some_and(|p| {
+            same_point(
+                p,
+                CutPoint {
+                    ap_mm: m.at.ap_mm,
+                    ae_mm: m.at.ae_mm,
+                },
+            )
+        })
+    };
+    let marks: Vec<_> = planned_marks(env)
+        .into_iter()
+        .filter(|(m, _)| !at_dot(m))
+        .collect();
+    for (mark, color) in &marks {
+        plot = plot.mark(Mark::square(
+            at_mark(CutPoint {
+                ap_mm: mark.at.ap_mm,
+                ae_mm: mark.at.ae_mm,
+            }),
+            PLANNED_RADIUS,
+            egui::Stroke::new(PLANNED_WIDTH, *color),
+        ));
+    }
     // The marks (P5d D3), over the lines: the quiet proposal diamond, the
     // ghost at the stored point, then the white dot.
     if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
@@ -1247,6 +1260,27 @@ fn draw_plane(
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .and_then(|(_, kind)| env.limit(kind))
             .map(|l| limit_hover(env, l));
+        // P29-10 10g: a planned mark near the pointer names its cut and its
+        // rows; the operator's dot names why it sits outside (ruling R6).
+        let on_mark = marks
+            .iter()
+            .map(|(m, _)| {
+                let p = scene.on_frame(CutPoint {
+                    ap_mm: m.at.ap_mm,
+                    ae_mm: m.at.ae_mm,
+                });
+                (at_screen([p.ae_mm, p.ap_mm]).distance(pos), m)
+            })
+            .filter(|(d, _)| *d <= MARK_HIT_PX)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, m)| mark_hover(env, m));
+        let on_dot = scene
+            .dot
+            .filter(|_| scene.candidate.is_none())
+            .map(|(p, _)| scene.on_frame(p))
+            .filter(|p| at_screen([p.ae_mm, p.ap_mm]).distance(pos) <= MARK_HIT_PX)
+            .and_then(|_| outside_hover(env));
+        let near = on_dot.or(on_mark).or(near);
         let text = readout(env, to_point(pos));
         let _ = response.on_hover_ui_at_pointer(|ui| {
             if let Some(name) = near {
@@ -1262,6 +1296,93 @@ fn draw_plane(
         });
     }
     map
+}
+
+/// P29-10 10g: the planned cuts of the plot, at the proposal (the point of
+/// the planned rows, `SafeEnvelope::marks_at_proposal`), each with its
+/// colour: `CAUTION` when a row of its cut exceeds (either tone; no
+/// `DANGER` on this plot, ruling Q6), else `TEXT_MUTED`. The tone is the
+/// tone of the rows, never the position of the mark (lead ruling R3). A
+/// mark in `CAUTION` comes last, so it paints on top.
+#[must_use]
+pub fn planned_marks(
+    env: &SafeEnvelope,
+) -> Vec<(rs_cam_core::feeds::plane::PlaneMark, egui::Color32)> {
+    let mut out: Vec<_> = env
+        .marks_at_proposal()
+        .map(|marks| {
+            marks
+                .marks()
+                .iter()
+                .map(|m| (*m, mark_color(env.rows(), m.cut)))
+                .collect()
+        })
+        .unwrap_or_default();
+    // Two cuts at one point (a slot and a helix at the tool diameter): the
+    // mark of a row that exceeds paints last, on top.
+    out.sort_by_key(|(_, color)| *color == tokens::CAUTION);
+    out
+}
+
+/// The colour of the mark of `cut`: `CAUTION` when one of its planned rows
+/// exceeds, else `TEXT_MUTED`.
+#[must_use]
+pub fn mark_color(
+    rows: &[rs_cam_core::limits::CheckRow],
+    cut: rs_cam_core::limits::CutKind,
+) -> egui::Color32 {
+    if rows
+        .iter()
+        .any(|r| r.cut() == Some(cut) && r.tone().exceeds())
+    {
+        tokens::CAUTION
+    } else {
+        tokens::TEXT_MUTED
+    }
+}
+
+/// The hover of a planned mark: the cut and its point, then each planned
+/// row of the cut that holds a number, with its own bound (lead ruling R3:
+/// the row is the truth; an entry reads its own chip, a planner cap its own
+/// width, so the row's bound can differ from the force line of the body).
+#[must_use]
+pub fn mark_hover(env: &SafeEnvelope, mark: &rs_cam_core::feeds::plane::PlaneMark) -> String {
+    let mut lines = vec![format!(
+        "{} \u{00B7} ap {:.2} \u{00D7} ae {:.2} mm",
+        mark.cut.label(),
+        mark.at.ap_mm,
+        mark.at.ae_mm
+    )];
+    for row in env
+        .rows()
+        .iter()
+        .filter(|r| r.cut() == Some(mark.cut) && r.holds_a_number())
+    {
+        let check = row.check();
+        let bound = check
+            .bound
+            .map_or(String::new(), |b| format!(" (bound {b:.2} {})", check.unit));
+        lines.push(format!("{}{bound}", row.face_in_group()));
+    }
+    lines.join("\n")
+}
+
+/// P29-10 10g (lead ruling R6): the hover of the operator's dot when it
+/// sits outside: the limit that places it outside and the declared cut
+/// whose ceiling does (`SafeEnvelope::outside_cut`). `None` inside.
+#[must_use]
+pub fn outside_hover(env: &SafeEnvelope) -> Option<String> {
+    let Some(Placement::Outside { binding, .. }) = env.operator else {
+        return None;
+    };
+    Some(match env.outside_cut() {
+        Some(cut) => format!(
+            "Now is outside: {} of the {}",
+            limit_name(env, binding),
+            cut.label()
+        ),
+        None => format!("Now is outside: {}", limit_name(env, binding)),
+    })
 }
 
 /// The safe region of the plot (P17, operator 2026-11-06): `FILL_COLUMNS`
@@ -1484,6 +1605,32 @@ fn draw_bar(
             text,
             font,
             end_color,
+        );
+    }
+    // P29-10 10g: the planned cuts on the bar, at their free value, in the
+    // tone of their rows (the plot's rule).
+    // A mark at the dot is under it (the plot's rule): left out.
+    let at_dot = |m: &rs_cam_core::feeds::plane::PlaneMark| {
+        scene.setpoint().is_some_and(|p| {
+            same_point(
+                p,
+                CutPoint {
+                    ap_mm: m.at.ap_mm,
+                    ae_mm: m.at.ae_mm,
+                },
+            )
+        })
+    };
+    for (mark, color) in planned_marks(env).into_iter().filter(|(m, _)| !at_dot(m)) {
+        let v = if depth { mark.at.ap_mm } else { mark.at.ae_mm };
+        let _ = painter.rect_stroke(
+            egui::Rect::from_center_size(
+                egui::pos2(x_of(v), y),
+                egui::Vec2::splat(2.0 * PLANNED_RADIUS),
+            ),
+            0.0,
+            egui::Stroke::new(PLANNED_WIDTH, color),
+            egui::StrokeKind::Middle,
         );
     }
     if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {

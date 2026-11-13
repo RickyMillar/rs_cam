@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One plane</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #1d2126; --muted: #5d6670; --faint: #a7afb7;
+  --line: #d9dde1; --caution: #b7791f; --danger: #c0392b; --ok: #2f855a; --accent: #2b6cb0;
+  --wash: rgba(47,133,90,0.08); --pick: rgba(43,108,176,0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1d2126; --ink: #e8eaed; --muted: #9aa3ad; --faint: #5d6670;
+    --line: #2e343b; --caution: #e0a83c; --danger: #e5675a; --ok: #5cb87a; --accent: #6aa6e8;
+    --wash: rgba(92,184,122,0.08); --pick: rgba(106,166,232,0.22);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1d2126; --ink: #e8eaed; --muted: #9aa3ad; --faint: #5d6670;
+  --line: #2e343b; --caution: #e0a83c; --danger: #e5675a; --ok: #5cb87a; --accent: #6aa6e8;
+  --wash: rgba(92,184,122,0.08); --pick: rgba(106,166,232,0.22);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 22px 0 8px; }
+p { margin: 6px 0; max-width: 72ch; }
+.sub { color: var(--muted); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+select, button { font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); padding: 4px; }
+td { border-bottom: 1px solid var(--line); padding: 3px 4px; vertical-align: top; overflow-wrap: anywhere; }
+tr.row { cursor: pointer; }
+tr.row:hover { background: var(--pick); }
+tr.row.lit { background: var(--pick); }
+.tone { font-size: 11.5px; white-space: nowrap; }
+.t-within { color: var(--ok); } .t-exceeds { color: var(--danger); }
+.t-exceeds_advisory { color: var(--caution); } .t-no_number, .t-not_applicable { color: var(--muted); }
+.scroll { max-height: 470px; overflow: auto; }
+svg { width: 100%; height: auto; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.claim { padding-left: 8px; border-left: 3px solid var(--line); }
+.claim b { color: var(--accent); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.note { color: var(--muted); font-size: 12.5px; }
+code { font-size: 12.5px; }
+</style>
+</head>
+<body>
+<main>
+<h1>One plane: the planned cuts, the force field and the limit rows</h1>
+<p class="sub">Feeds contract P29-10, commit 10g. The data in this page comes from the files in
+<code>data/</code>: MCP replies of a GUI built from the 10g tree, the CLI output and the force
+planes that the core door builds. <code>assert_claims.py</code> asserts each numbered claim.</p>
+
+<div class="grid">
+  <section class="card">
+    <div class="tools">
+      <label>Op <select id="op"></select></label>
+      <span class="note" id="opnote"></span>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Subject</th><th>Row</th><th>Tone</th><th>Caveats</th><th>Exemption</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <p class="note">Click a planned row: its mark on the plane is lit.</p>
+  </section>
+  <section class="card">
+    <div class="tools">
+      <span>Marks at</span>
+      <button id="atp" aria-pressed="true">the proposal</button>
+      <button id="ats" aria-pressed="false">the stated cut</button>
+    </div>
+    <svg id="plane" viewBox="0 0 560 380" role="img" aria-label="width x depth plane"></svg>
+    <div class="legend" id="legend"></div>
+    <p class="note" id="planenote"></p>
+  </section>
+</div>
+
+<h2>What the plane shows</h2>
+<p>The x axis is the engaged width (mm, 0 to the tool diameter D). The y axis is the depth
+(mm, 0 to the top of the GUI chart).
+<span class="claim" data-claim="3">Each hollow square is one declared cut of the op at its point
+of the plane: the body at the point, a slot ring at D, a planner cap at its own wider width, an
+entry at D and its own depth (claim 3).</span>
+<span class="claim" data-claim="5a">The faint lines are the force of the BODY cut at the planned
+chip, at 25, 50, 75 and 100 % of the machine force budget; the solid line is the force-budget
+edge of the envelope, the lowest ceiling over every declared cut (claims 5a and 5b).</span></p>
+<p class="note">The simulation samples are not in this page: no reply in <code>data/</code>
+holds them, so the page has no group toggle. The simulation chart of the GUI draws the samples
+on the same plane. The page covers the six ops of the operator file that have an MCP reply in
+<code>data/</code>.</p>
+
+<h2>Claims</h2>
+<p class="claim" data-claim="1"><b>1.</b> The envelope holds one planned row per declared cut
+and planned limit, and the load report holds one row per gate and cut group.</p>
+<p class="claim" data-claim="2"><b>2.</b> Every margin is the side rule of its judged value and
+its bound (a ceiling: (bound - value) / bound; a floor: (value - bound) / bound). The judged value
+is the value, except on an entry chip row: its chip reads a stored whole-mm/min entry feed, and
+the row judges the end of that feed interval (one mm/min).</p>
+<p class="claim" data-claim="3"><b>3.</b> Each planned mark sits at the (ae, ap) of its rows.</p>
+<p class="claim" data-claim="4"><b>4.</b> A mark takes its tone from its row, never from its
+position. For the body cut (the chip and the width model of the field) the force-budget row
+exceeds when the mark is above the 100 % line by more than one cell. For every other cut the
+row is the truth and its own bound is on the hover. Example: on idx 1 the helix mark (D, 2.0 mm)
+is above the body line at D (about 1.93 mm), but its row reads its own entry chip (bound
+2.35 mm) and is inside.</p>
+<p class="claim" data-claim="5a"><b>5a.</b> In every column the force-budget edge is never
+above the body 100 % line by more than one cell. Where the edge is under the body line, another
+declared cut sets it, and the mark of that cut shows it.</p>
+<p class="claim" data-claim="5b"><b>5b.</b> In every column where the body cut sets the edge
+(core names the cut of each column), the edge is the body 100 % line within one cell. A column
+on a geometric cap (the flute top, the depth floor) is outside this claim.</p>
+<p class="claim" data-claim="6"><b>6.</b> The caveat "worst case" holds exactly on a ramp entry
+row at its own depth; "lower bound" holds only on the body plane of a Project Curve.</p>
+<p class="claim" data-claim="7"><b>7.</b> The CLI <code>suggest</code> rows, marks, columns and
+outside cut equal the MCP <code>get_safe_envelope</code> reply for the same op.</p>
+<p class="claim" data-claim="9"><b>9.</b> A drill gate row states the unit of its population:
+holes, not samples.</p>
+<p class="claim" data-claim="10"><b>10.</b> A planned row names an own depth in its detail exactly
+when its plane point holds an own depth (one fact, one field).</p>
+<p class="claim" data-claim="8"><b>8.</b> Every claim on this page has its assert number beside
+it.</p>
+
+<script>
+const OPS = /*DATA*/null;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let current = 0, at = "proposal", lit = null;
+const sel = document.getElementById("op");
+OPS.forEach((op, i) => {
+  const o = document.createElement("option");
+  o.value = i; o.textContent = `idx ${op.index} · ${op.name}`;
+  sel.appendChild(o);
+});
+sel.onchange = () => { current = +sel.value; lit = null; draw(); };
+document.getElementById("atp").onclick = () => { at = "proposal"; draw(); };
+document.getElementById("ats").onclick = () => { at = "stated"; draw(); };
+
+function markTone(op, cut, marks) {
+  if (at === "stated" && !marks.describes_rows) return css("--ink");
+  const over = op.rows.some(r => r.subject === "planned" && r.cut === cut &&
+    (r.tone === "exceeds" || r.tone === "exceeds_advisory"));
+  return over ? css("--caution") : css("--muted");
+}
+
+function draw() {
+  const op = OPS[current];
+  document.getElementById("atp").setAttribute("aria-pressed", at === "proposal");
+  document.getElementById("ats").setAttribute("aria-pressed", at === "stated");
+  document.getElementById("opnote").textContent =
+    `D ${op.diameter.toFixed(2)} mm · chart top ${op.top.toFixed(2)} mm · one cell ${op.cell ? op.cell.toFixed(3) : "-"} mm`;
+  const tb = document.getElementById("rows");
+  tb.innerHTML = "";
+  op.rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.className = "row" + (lit && r.cut === lit ? " lit" : "");
+    const subj = r.subject === "planned" ? r.cut : r.subject;
+    const bound = r.bound == null ? "" : ` (bound ${r.bound.toFixed(3)} ${r.unit})`;
+    tr.innerHTML = `<td>${subj}</td><td>${r.face}${r.subject === "planned" ? bound : ""}</td>` +
+      `<td class="tone t-${r.tone}">${r.tone.replace("_", " ")}</td>` +
+      `<td>${r.caveats.join(", ")}</td><td>${r.exemption || ""}</td>`;
+    tr.onclick = () => { lit = r.subject === "planned" ? r.cut : null; draw(); };
+    tb.appendChild(tr);
+  });
+  const svg = document.getElementById("plane");
+  const W = 560, H = 380, L = 48, R = 12, T = 12, B = 36;
+  const xs = (ae) => L + ae / op.diameter * (W - L - R);
+  const ys = (ap) => H - B - ap / op.top * (H - T - B);
+  const clip = (ap) => Math.min(ap, op.top);
+  let s = `<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="none" stroke="${css("--line")}"/>`;
+  for (let k = 0; k <= 4; k++) {
+    const ae = op.diameter * k / 4, ap = op.top * k / 4;
+    s += `<text x="${xs(ae)}" y="${H - B + 16}" fill="${css("--muted")}" font-size="11" text-anchor="middle">${ae.toFixed(1)}</text>`;
+    s += `<text x="${L - 6}" y="${ys(ap) + 4}" fill="${css("--muted")}" font-size="11" text-anchor="end">${ap.toFixed(2)}</text>`;
+  }
+  s += `<text x="${(W + L) / 2}" y="${H - 4}" fill="${css("--muted")}" font-size="11" text-anchor="middle">width ae (mm)</text>`;
+  op.levels.forEach(lv => {
+    const budgetLine = Math.abs(lv.share - 1) < 1e-9;
+    const strong = budgetLine && op.role === "limit";
+    const color = strong ? css("--caution") : css("--faint");
+    lv.lines.forEach(line => {
+      const pts = line.filter(p => p[1] <= op.top + 1e-9).map(p => `${xs(p[0])},${ys(p[1])}`).join(" ");
+      s += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${budgetLine ? 1.6 : 1}"` +
+        `${budgetLine && !strong ? ' stroke-dasharray="4 3"' : ""}/>`;
+    });
+  });
+  op.edges.forEach(e => {
+    if (e.kind !== "rigidity") return;
+    const pts = e.points.map(p => `${xs(Math.min(p[0], op.diameter))},${ys(clip(p[1]))}`).join(" ");
+    s += `<polyline points="${pts}" fill="none" stroke="${css("--ink")}" stroke-width="2"/>`;
+  });
+  const marks = op[at];
+  if (marks) {
+    marks.marks.forEach(m => {
+      const x = xs(Math.min(m.at.ae_mm, op.diameter)), y = ys(clip(m.at.ap_mm));
+      const c = markTone(op, m.cut, marks);
+      const r = lit === m.cut ? 7 : 4;
+      s += `<rect x="${x - r}" y="${y - r}" width="${2 * r}" height="${2 * r}" fill="none" stroke="${c}" stroke-width="${lit === m.cut ? 2 : 1.4}"><title>${m.cut} · ap ${m.at.ap_mm.toFixed(2)} × ae ${m.at.ae_mm.toFixed(2)} mm</title></rect>`;
+    });
+    const p = marks.point;
+    s += `<circle cx="${xs(p.ae_mm)}" cy="${ys(clip(p.ap_mm))}" r="3" fill="${css("--ink")}"><title>${at} point</title></circle>`;
+  }
+  svg.innerHTML = s;
+  const role = op.role === "limit" ? "the 100 % line is the limit of the body cut" :
+    op.role ? "the budget is no limit of this cut (dashed 100 % line)" : "no force field (no force line)";
+  document.getElementById("legend").innerHTML =
+    `<span>□ planned cut</span><span>— force-budget edge</span><span>faint lines: 25 / 50 / 75 / 100 % of ${op.budget ? op.budget.toFixed(1) + " N" : "the budget"}</span>`;
+  document.getElementById("planenote").textContent =
+    `${role}. ${op.outside_cut ? "The stated cut is outside by the " + op.outside_cut + "." : ""} ` +
+    `${at === "stated" && marks && !marks.describes_rows ? "At the stated cut the marks have no tone: the rows describe the proposal." : ""}`;
+}
+draw();
+</script>
+</main>
+</body>
+</html>

@@ -89,5 +89,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   The snapshot was re-blessed (additions only).
 - P29-10 (10f): `SetUiViewParam` gains `card_limits` (`DrawerParam`): the "Limits" drawer of the Suggest
   card; the reply echoes `card_limits`. Token `card_limits_view`. The snapshot was re-blessed (additions only).
+- P29-10 (10g): `get_safe_envelope` gains `plane_marks` ({proposal, stated}), `force_budget_columns` and
+  `outside_cut`; a planned row's `subject.own_depth_mm` is `subject.at` ({ae_mm, ap_mm, own_depth}, break).
+  Token `envelope_plane_marks`. Reply keys only: the snapshot did not move.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

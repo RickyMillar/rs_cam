@@ -22,9 +22,10 @@
 //! A comment never matches (the viz test rule), and the test modules of a
 //! source file are not product source.
 //!
-//! The files that 10f and 10g still own are a named allow-list. The list
-//! only shrinks: an allow-listed file with no arm fails the test, so its
-//! row goes in the commit that removes the last arm.
+//! The files that a later commit still owns are a named allow-list. The
+//! list only shrinks: an allow-listed file with no arm fails the test, so
+//! its row goes in the commit that removes the last arm. Since 10g it is
+//! empty.
 
 #![expect(
     clippy::indexing_slicing,
@@ -44,11 +45,9 @@ const ENUMS: [&str; 6] = [
 ];
 
 /// The files that a later commit of P29-10 converts: (path under `src/`,
-/// the commit that removes the arms).
-const ALLOW: [(&str, &str); 1] = [
-    // `limit_name` and the plot marks match `LimitKind` (design 3.5 item 5).
-    ("ui/feeds/envelope.rs", "10g"),
-];
+/// the commit that removes the arms). P29-10 10g emptied it: the envelope
+/// plot reads `LimitKind::chart_name` and `LimitKind::frame` from core.
+const ALLOW: [(&str, &str); 0] = [];
 
 fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")

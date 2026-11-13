@@ -30,6 +30,7 @@ pub mod depth;
 pub mod display;
 pub mod distribution;
 pub mod drill_gates;
+pub mod force_field;
 pub mod groups;
 pub mod load_fraction;
 pub mod locality;

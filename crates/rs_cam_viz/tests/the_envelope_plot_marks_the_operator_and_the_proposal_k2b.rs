@@ -23,6 +23,10 @@
 //! The scene is a pure function of the envelope (`EnvelopeScene::of`), so
 //! the arms read it beside the painted shapes.
 //!
+//! P29-10 10g (lead ruling R6): a dot outside by a limit has, in view, the
+//! crossed edge of that limit or the planned mark of the declared cut that
+//! places it outside, and the dot's hover names that cut and limit.
+//!
 //! Red before P5b: `ui::feeds::envelope` does not exist.
 
 #![expect(
@@ -38,7 +42,7 @@ use envelope_k2b::{ctx, envelope_for, frame, solid, texts};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_viz::state::panels::EnvelopeCandidates;
 use rs_cam_viz::ui::feeds::envelope::{
-    EnvelopeScene, EnvelopeShape, limit_name, recommendation_color, short_label,
+    EnvelopeScene, EnvelopeShape, limit_name, outside_hover, recommendation_color, short_label,
 };
 use rs_cam_viz::ui::tokens;
 
@@ -149,12 +153,21 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     assert_eq!(labels, want, "one label per drawn edge");
 
     // The operator's point outside: a CAUTION dot, and the proposal is a
-    // third mark at its own place
-    // (the fixture Pocket itself). The edge that Now crosses is CAUTION.
-    // P16 (D12): the slot step is deleted. The point is past the corner
-    // coverage bound, a drawn width limit, at a width under the tool
-    // diameter (the frame) and at half the lowest depth ceiling there, so
-    // it crosses the corner bound alone.
+    // third mark at its own place (the fixture Pocket itself).
+    //
+    // P29-10 10g (lead ruling R6): the point sits past the corner coverage
+    // bound, a drawn width limit, so the plot paints that edge CAUTION (P5d
+    // D4: every line that the dot crosses). The placement judges the
+    // stated width at the lower of the curve chip and the pick chip
+    // (`SafeEnvelope::judged_ceiling`, P29-7 trap 1), so the force budget
+    // of the BODY cut at the pick chip also places it outside (the worst
+    // margin): the drawn Rigidity curve is the lowest cut at the curve chip
+    // (the slot ring) and sits above the view. Before 10g the test took the
+    // point to cross the corner bound alone, and the colour of the crossed
+    // corner edge read as a defect: the test was wrong, the colour right.
+    // The plot now shows WHY the dot is outside: the crossed edge in view,
+    // or the planned mark of the cut that places it outside, and the dot's
+    // hover names that cut and limit.
     let (fixture, base) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
     let corner = match base
         .limit(rs_cam_core::feeds::envelope::LimitKind::CornerCoverage)
@@ -186,11 +199,10 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
             env.operator
         );
     };
-    // P5d D4: crossed CAUTION, the proposal's binding TEXT_BODY, the rest
-    // muted. P13c (O4): the removal-rate proposal sits on its own limit,
-    // which need not be the limit the deep point crosses.
+    // P5d D4: every crossed edge CAUTION, the proposal's binding TEXT_BODY,
+    // the rest muted.
     for e in &scene.edges {
-        let want = if e.kind == binding {
+        let want = if e.crossed {
             tokens::CAUTION
         } else if Some(e.kind) == env.proposal_binding {
             tokens::TEXT_BODY
@@ -200,17 +212,54 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         assert_eq!(scene.edge_color(e), want, "{:?}", e.kind);
     }
     assert!(
-        scene.edges.iter().any(|e| e.kind == binding),
-        "the crossed limit {binding:?} is drawn"
+        scene.edges.iter().any(|e| e.crossed),
+        "non-vacuity: the deep point crosses a drawn edge"
     );
+    let mut candidates = EnvelopeCandidates::default();
+    let f = settle(&ctx, &deep, &env, &mut candidates);
+    // R6: a dot outside by a limit has, in view, the crossed edge of that
+    // limit or the planned mark of the cut that places it outside.
+    let edge_in_view = scene.edges.iter().any(|e| e.kind == binding && e.crossed);
+    let cut = env.outside_cut();
+    let mark_in_view = cut.is_some_and(|cut| {
+        let mark = env
+            .marks_at_proposal()
+            .and_then(|m| m.of_cut(cut))
+            .expect("the cut that places the point outside has a planned mark");
+        let at = f
+            .response
+            .screen_of(
+                scene.on_frame(rs_cam_core::feeds::envelope::CutPoint {
+                    ap_mm: mark.at.ap_mm,
+                    ae_mm: mark.at.ae_mm,
+                }),
+                EnvelopeShape::Plane,
+            )
+            .expect("the plot has a frame");
+        squares(&f.shapes).iter().any(|c| c.distance(at) < 2.0)
+    });
+    assert!(
+        edge_in_view || mark_in_view,
+        "the dot is outside by {binding:?} (cut {cut:?}): neither the crossed edge nor the \
+         mark of the cut is in view"
+    );
+    let hover = outside_hover(&env).expect("an outside dot has a hover");
+    assert!(
+        hover.contains(&limit_name(&env, binding)),
+        "the dot's hover names the limit: {hover}"
+    );
+    if let Some(cut) = cut {
+        assert!(
+            hover.contains(cut.label()),
+            "the dot's hover names the cut: {hover}"
+        );
+    }
     assert_eq!(
         scene.dot_color(),
         Some(tokens::CAUTION),
         "Q6: CAUTION outside"
     );
     assert!(scene.proposal_shown, "the proposal is not at Now");
-    let mut candidates = EnvelopeCandidates::default();
-    let f = settle(&ctx, &deep, &env, &mut candidates);
     let at = f
         .response
         .screen_of(
@@ -242,6 +291,30 @@ fn settle(
     let _ = frame(ctx, config, Some(env), candidates, Vec::new());
     let _ = frame(ctx, config, Some(env), candidates, Vec::new());
     frame(ctx, config, Some(env), candidates, Vec::new())
+}
+
+/// The centres of the stroked rectangles of a frame (P29-10 10g: the
+/// planned-cut squares).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
+fn squares(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::Pos2> {
+    let mut out = Vec::new();
+    let mut walk = |s: &egui::Shape| match s {
+        egui::Shape::Rect(r) if r.stroke.color != egui::Color32::TRANSPARENT => {
+            out.push(r.rect.center());
+        }
+        _ => {}
+    };
+    for c in shapes {
+        if let egui::Shape::Vec(v) = &c.shape {
+            v.iter().for_each(&mut walk);
+        } else {
+            walk(&c.shape);
+        }
+    }
+    out
 }
 
 /// The closed four-point paths of a frame (the proposal diamond): centre

@@ -78,6 +78,37 @@ impl LimitRows<'_> {
 }
 
 impl ProjectSession {
+    /// **THE door to the force plane of the toolpath at `index`** (P29-10
+    /// 10g, lead rulings O4, R1, R9): the force field of its body cut at
+    /// its steady feed over its effective spindle speed (the project
+    /// default when the op states none), over `[0, diameter_mm]` x
+    /// `[0, ap_top_mm]`, with the level lines of the machine force budget
+    /// (`tool_load::cut_force::force_plane`). The caller states the depth
+    /// top: the top of the chart that draws the field. `None` with no load
+    /// context or no force field (a drill, no force line). A surface builds
+    /// it once per load report, never per frame.
+    #[must_use]
+    pub fn force_plane(
+        &self,
+        index: usize,
+        diameter_mm: f64,
+        ap_top_mm: f64,
+    ) -> Option<crate::tool_load::force_field::ForcePlane> {
+        let tc = self.toolpath_config_at(index)?;
+        let parts = self.load_context_parts(index)?;
+        let rpm = f64::from(crate::compute::catalog::effective_spindle_rpm(
+            &tc.operation,
+            self.post_config().spindle_speed,
+        ));
+        crate::tool_load::cut_force::force_plane(
+            &parts.ctx(),
+            self.machine(),
+            rpm,
+            diameter_mm,
+            ap_top_mm,
+        )
+    }
+
     /// **THE door to the limit rows of the toolpath at `index`** (P29-10,
     /// lead ruling L7). `trace` is the simulation the caller reads, as the
     /// `Arc` that holds it (the GUI keeps its trace beside the session; the

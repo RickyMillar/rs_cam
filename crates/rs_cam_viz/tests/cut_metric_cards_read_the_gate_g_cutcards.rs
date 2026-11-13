@@ -276,9 +276,15 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
     );
     // P29-10 10e (site 7): a depth with no cap is the core `NoBound` row;
     // its face and detail say so, and the row draws no invented limit.
+    // P29-10 10f made `limit_data_row` pass the core face to the one limit
+    // renderer, `limit_data_row_with_face`, which paints the core detail;
+    // the scan follows that renderer (10g, lead ruling R7).
     let limit_row = function_source(&diagnostics, "pub(crate) fn limit_data_row(");
+    let renderer = function_source(&diagnostics, "pub(crate) fn limit_data_row_with_face(");
     assert!(
-        limit_row.contains("row.face()") && limit_row.contains("row_hover("),
+        limit_row.contains("row.face()")
+            && limit_row.contains("limit_data_row_with_face(")
+            && renderer.contains("row_hover("),
         "a limit row paints the core face and the core detail"
     );
     let caption = function_source(&diagnostics, "fn card_caption(");

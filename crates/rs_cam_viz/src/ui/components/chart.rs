@@ -212,6 +212,10 @@ pub enum MarkKind {
     Ring,
     /// An outlined diamond.
     Diamond,
+    /// P29-10 10g: a hollow square (a planned cut, `P29-10_DESIGN.md`
+    /// 3.8). It paints as one rectangle stroke, not a path, so a reader of
+    /// the painted shapes tells it from the diamond.
+    Square,
 }
 
 /// One mark of the chart, in data units.
@@ -243,6 +247,19 @@ impl Mark {
         Self {
             at,
             kind: MarkKind::Ring,
+            radius,
+            color: stroke.color,
+            width: stroke.width,
+        }
+    }
+
+    /// A hollow square of half side `radius` at `at`, outlined `width`
+    /// points (P29-10 10g: a planned cut).
+    #[must_use]
+    pub const fn square(at: [f64; 2], radius: f32, stroke: egui::Stroke) -> Self {
+        Self {
+            at,
+            kind: MarkKind::Square,
             radius,
             color: stroke.color,
             width: stroke.width,
@@ -670,6 +687,14 @@ impl<'a> PlaneChart<'a> {
                             c,
                             mark.radius,
                             egui::Stroke::new(mark.width, mark.color),
+                        );
+                    }
+                    MarkKind::Square => {
+                        let _ = painter.rect_stroke(
+                            egui::Rect::from_center_size(c, egui::Vec2::splat(2.0 * mark.radius)),
+                            0.0,
+                            egui::Stroke::new(mark.width, mark.color),
+                            egui::StrokeKind::Middle,
                         );
                     }
                     MarkKind::Diamond => {

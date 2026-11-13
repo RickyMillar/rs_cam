@@ -106,6 +106,53 @@ pub struct CutPoint3 {
     pub sample_index: usize,
 }
 
+impl CutPoint3 {
+    /// P29-10 10g (assembly site 16): `true` when the sample's force is
+    /// above the force budget line `budget_line` ([`budget_line`]). A cut
+    /// with no line (`None`, lead ruling O4) has no sample over a limit. The
+    /// test is strict, with no gate tolerance: the over-budget samples of
+    /// the simulation chart.
+    #[must_use]
+    pub fn over_budget(&self, budget_line: Option<f64>) -> bool {
+        match (self.force_n, budget_line) {
+            (Some(force), Some(budget)) => force.is_finite() && force > budget,
+            (None, _) | (_, None) => false,
+        }
+    }
+
+    /// P29-10 10g (assembly site 17): the force of an over-budget sample
+    /// in words ("force 41.2 N · over the budget 35.3 N"); `None` for a
+    /// sample that is not over [`budget_line`].
+    #[must_use]
+    pub fn over_budget_words(&self, budget_line: Option<f64>) -> Option<String> {
+        let (Some(force), Some(budget)) = (self.force_n, budget_line) else {
+            return None;
+        };
+        self.over_budget(budget_line).then(|| {
+            format!(
+                "force {} N \u{00b7} over the budget {} N",
+                value_digits(force),
+                value_digits(budget)
+            )
+        })
+    }
+}
+
+/// A force with the digits its size needs (the digits rule of the chart
+/// readouts: 3 decimals under 0.1, 2 under 10, 1 under 100, else none).
+fn value_digits(value: f64) -> String {
+    let magnitude = value.abs();
+    if magnitude < 0.1 {
+        format!("{value:.3}")
+    } else if magnitude < 10.0 {
+        format!("{value:.2}")
+    } else if magnitude < 100.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value:.0}")
+    }
+}
+
 /// **The headline group's population, on the width x depth plane** (the
 /// force card). Empty with no trace, or when `limits::scope` does not
 /// judge the force budget on the headline group (a drill cycle).
@@ -161,9 +208,56 @@ fn points_of(
 /// fact (`CutFacts::depth_rule`), as `super::depth` reads it (P29-6 6d).
 #[must_use]
 pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f64> {
-    let machine = env.machine?;
+    budget_line_on(ctx, env.machine?)
+}
+
+/// [`budget_line`] on `machine`.
+#[must_use]
+pub fn budget_line_on(
+    ctx: &ToolpathLoadContext<'_>,
+    machine: &crate::machine::MachineProfile,
+) -> Option<f64> {
     let DepthCapRule { budget_n } = machine.rigidity.depth_cap_of(ctx.body_facts().depth_rule)?;
     Some(budget_n)
+}
+
+/// **The force plane of this op** (P29-10 10g, lead rulings O4 and R1):
+/// the force field of the body cut at the steady feed over `rpm`, over
+/// `[0, diameter_mm]` x `[0, ap_top_mm]`, with the level lines of the
+/// machine force budget (`MachineProfile::rigidity.force_budget_n`). The
+/// budget is a limit where [`budget_line_on`] gives one, else a reference
+/// line. `None` where the plane has no force field: the headline group is
+/// not judged by the force budget (a drill cycle, no lateral engagement),
+/// or the material has no force line, or the advance is not positive.
+#[must_use]
+pub fn force_plane(
+    ctx: &ToolpathLoadContext<'_>,
+    machine: &crate::machine::MachineProfile,
+    rpm: f64,
+    diameter_mm: f64,
+    ap_top_mm: f64,
+) -> Option<super::force_field::ForcePlane> {
+    if !matches!(
+        crate::limits::scope(crate::limits::LimitId::ForceBudget, ctx.headline_group()),
+        crate::limits::Scope::Judged
+    ) {
+        return None;
+    }
+    ctx.material().force_line().ok()?;
+    let role = match budget_line_on(ctx, machine) {
+        Some(_) => super::force_field::BudgetRole::Limit,
+        None => super::force_field::BudgetRole::NoLimitHere,
+    };
+    super::force_field::ForcePlane::build(
+        ctx.tool(),
+        ctx.material(),
+        ctx.steady_feed().mm_min(),
+        rpm,
+        diameter_mm,
+        ap_top_mm,
+        machine.rigidity.force_budget_n,
+        role,
+    )
 }
 
 /// **The cut-force reading of one toolpath**, report-only.

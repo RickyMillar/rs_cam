@@ -434,10 +434,20 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // 41 -> 42, 3D Rough 38 -> 39, 3D Finish 30. Lead ruling 4 on 10f: the
     // line that `b6c12f1f7` added is not traced (a nomogram label); 10g
     // must return that one line (Pocket 41, 3D Rough 38, 3D Finish 29).
+    // P29-10 10g (lead ruling R8): HEAD read Pocket 41, 3D Rough 38, 3D
+    // Finish 30 (no face row on these fixtures: no stated row exceeds).
+    // "Max RPM" hung from the top end of its wall `LABEL_GAP` (3 pt) below
+    // the end, so its text started at y 377.5 against the "Max feed" row
+    // (367 to 380): 0.5 pt short of the 3-pixel merge, a text line of its
+    // own on every tab. A chip that hangs from a steep end now drops
+    // `END_HANG` (2 pt, `chart/labels.rs`): it clears the meeting line and
+    // its text (y 376.5) shares the "Max feed" row. Measured after: Pocket
+    // 40, 3D Rough 37, 3D Finish 29. Each cap is the measure, with no
+    // margin.
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 42, 17, 22]),
-        ("3D Rough", [7, 39, 15, 15]),
-        ("3D Finish", [9, 30, 16, 14]),
+        ("Pocket", [10, 40, 17, 22]),
+        ("3D Rough", [7, 37, 15, 15]),
+        ("3D Finish", [9, 29, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs

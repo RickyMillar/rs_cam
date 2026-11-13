@@ -360,18 +360,6 @@ fn group_row(row: &CheckRow) -> DataRow {
     limit_data_row_with_face(row, row.face_in_group(), None)
 }
 
-/// The words of a line that counts the rows with no number: the core
-/// words when every row says the same ("7 not modelled"), else "7 no
-/// number".
-fn no_number_tail(rows: &[&CheckRow]) -> String {
-    let mut words = rows.iter().filter_map(|row| row.no_number_words());
-    let first = words.next();
-    match first {
-        Some(w) if words.all(|other| other == w) => format!("{} {w}", rows.len()),
-        Some(_) | None => format!("{} {NO_NUMBER_LABEL}", rows.len()),
-    }
-}
-
 /// The rows of one group: the rows that hold a number, then ONE closed
 /// line "no number · n" that opens to the rows with no number. Nothing is
 /// dropped (lead ruling 2 on 10f).
@@ -405,36 +393,36 @@ fn cut_words(rows: &[&CheckRow]) -> Vec<&'static str> {
     words
 }
 
-/// One declared cut of part two: a title (the cut and its caveat words),
-/// the rows that hold a number and one closed "no number · n" line. A cut
-/// where no row holds a number is ONE closed line ("waterline sweep · 7
-/// not modelled") that opens to its rows.
+/// One declared cut of part two. P29-10 10g (item 4c): a cut where no row
+/// exceeds is ONE closed line ("planner cap · 6 within · 1 no number", the
+/// core words of `limits::quiet_summary`) that opens to its rows; a cut
+/// with a row that exceeds stays open: a title (the cut and its caveat
+/// words), the rows that hold a number and one closed "no number · n" line.
 fn draw_cut(ui: &mut egui::Ui, group: &CutRows<'_>) {
     let mut title = group.cut.label().to_owned();
     for word in cut_words(&group.rows) {
         title.push_str(&format!(" \u{00B7} {word}"));
     }
     let id = format!("feeds_card_limits_{title}");
-    if group.rows.iter().any(|row| row.holds_a_number()) {
+    let quiet = rs_cam_core::limits::quiet_summary(&group.rows);
+    if let Some(summary) = quiet {
+        let tail = cut_words(&group.rows)
+            .into_iter()
+            .map(str::to_owned)
+            .chain(std::iter::once(summary))
+            .collect::<Vec<_>>()
+            .join(" \u{00B7} ");
+        let _ = Details::new((&id, "quiet"))
+            .label(group.cut.label())
+            .tail(Some(tail))
+            .show(ui, |ui| {
+                draw_group_rows(ui, &id, &group.rows);
+            });
+    } else {
         DataTable::new((&id, "title"))
             .row(DataRow::record(title).tone(tokens::TEXT_BODY))
             .show(ui);
         draw_group_rows(ui, &id, &group.rows);
-    } else {
-        let tail = cut_words(&group.rows)
-            .into_iter()
-            .map(str::to_owned)
-            .chain(std::iter::once(no_number_tail(&group.rows)))
-            .collect::<Vec<_>>()
-            .join(" \u{00B7} ");
-        let _ = Details::new((&id, "all_no_number"))
-            .label(group.cut.label())
-            .tail(Some(tail))
-            .show(ui, |ui| {
-                DataTable::new((&id, "rows"))
-                    .rows(group.rows.iter().map(|row| group_row(row)))
-                    .show(ui);
-            });
     }
 }
 

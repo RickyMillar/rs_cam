@@ -43,8 +43,9 @@ pub use cut::{
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 pub use row::{
-    Caveat, CheckRow, Compared, Occurs, PlannedFacts, PlannedOwnDepth, ROW_FACE_MAX_CHARS, Subject,
-    Tone, margin_face, rows_of_rpm_choice, rows_of_verdict, rows_without_a_verdict,
+    Caveat, CheckRow, Compared, Occurs, PlanePoint, PlannedFacts, PlannedOwnDepth,
+    ROW_FACE_MAX_CHARS, Subject, Tone, margin_face, quiet_summary, rows_of_rpm_choice,
+    rows_of_verdict, rows_without_a_verdict,
 };
 pub use sample::{CapTable, MoveCap, SampleContext};
 pub use scope::{NotJudged, PlanReason, Scope, scope, scope_of_all};
@@ -128,6 +129,35 @@ pub struct LimitText {
     pub noun: &'static str,
     /// The limit in one or two words, for a face (at most 12 characters).
     pub short: &'static str,
+    /// P29-10 10g (lead ruling R4): the name of the limit's line on the
+    /// width x depth plane (the envelope plot and the simulation chart).
+    pub chart: ChartName,
+}
+
+/// The name of a limit on the width x depth plane (P29-10 10g, lead
+/// ruling R4): a limit that draws a line or a frame edge there names it;
+/// every other limit states why it draws none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartName {
+    /// The line's name ("Rigidity DOC").
+    Line(&'static str),
+    /// The limit draws no line on the plane, for this reason.
+    NoLine(&'static str),
+}
+
+/// The reason of a limit that the envelope does not draw: a gate after the
+/// simulation, a drill gate or an RPM limit is not a line of the plane.
+const NOT_ON_THE_PLANE: &str = "not a limit of the width x depth plane";
+
+impl ChartName {
+    /// The line's name, or `None` with no line.
+    #[must_use]
+    pub const fn line(self) -> Option<&'static str> {
+        match self {
+            Self::Line(name) => Some(name),
+            Self::NoLine(_) => None,
+        }
+    }
 }
 
 impl LimitId {
@@ -135,37 +165,69 @@ impl LimitId {
     /// not compile until it states its words.
     #[must_use]
     pub const fn text(self) -> LimitText {
-        let (noun, short) = match self {
-            Self::SpindlePower => ("spindle power", "power"),
-            Self::ToolDeflection => ("tool deflection", "deflection"),
-            Self::ForceBudget => ("machine force budget", "force"),
-            Self::ChipMax => ("chip band maximum", "chip max"),
-            Self::ChipMin => ("chip band minimum", "chip min"),
-            Self::RubbingFloor => ("rubbing floor", "rubbing"),
-            Self::FluteGuard => ("flute guard", "flute guard"),
-            Self::CuttingLength => ("cutting length of the tool", "cut length"),
-            Self::VendorAxial => ("vendor row depth", "vendor depth"),
-            Self::VendorDepthTable => ("vendor depth table", "depth table"),
-            Self::CornerCoverage => ("corner coverage of an offset ring", "corner"),
-            Self::ScallopDepth => ("scallop depth", "scallop"),
-            Self::ToolDiameter => ("tool diameter", "diameter"),
-            Self::MoveBudget => ("move budget", "moves"),
-            Self::EngagementFloor => ("smallest depth and width", "min engage"),
-            Self::CuttingFeedCap => ("cutting feed ceiling", "feed cap"),
-            Self::PlannerFeedCap => ("planner feed cap", "planner cap"),
-            Self::KinematicReach => ("reachable feed", "reach"),
-            Self::PlungeRate => ("vertical feed rate", "plunge rate"),
-            Self::SpindleMaxRpm => ("largest spindle speed", "spindle max"),
-            Self::ZAxisRate => ("Z axis rate", "Z rate"),
-            Self::OperatorRpmCeiling => ("operator RPM ceiling", "rpm ceiling"),
-            Self::ChartRpm => ("chart RPM", "chart rpm"),
-            Self::VendorRpmMax => ("vendor RPM maximum", "vendor rpm"),
-            Self::GantryPush => ("gantry thrust", "gantry push"),
-            Self::DrillChipWelding => ("drill chip welding", "chip welding"),
-            Self::DrillPeckAdequacy => ("drill peck depth", "peck depth"),
-            Self::DrillPlungeFeed => ("drill plunge feed", "drill feed"),
+        use ChartName::{Line, NoLine};
+        // The line names are the names the envelope plot printed before
+        // P29-10 (`ui/feeds/envelope.rs` `short_label`, P5d D4), one per
+        // `LimitKind`; a limit that no `LimitKind` maps to draws no line.
+        let (noun, short, chart) = match self {
+            Self::SpindlePower => ("spindle power", "power", Line("Spindle power")),
+            Self::ToolDeflection => ("tool deflection", "deflection", Line("Deflection")),
+            Self::ForceBudget => ("machine force budget", "force", Line("Rigidity DOC")),
+            Self::ChipMax => ("chip band maximum", "chip max", Line("Chip band")),
+            Self::ChipMin => ("chip band minimum", "chip min", NoLine(NOT_ON_THE_PLANE)),
+            Self::RubbingFloor => ("rubbing floor", "rubbing", Line("Rubbing")),
+            Self::FluteGuard => ("flute guard", "flute guard", Line("Flute guard")),
+            Self::CuttingLength => (
+                "cutting length of the tool",
+                "cut length",
+                Line("Cut length"),
+            ),
+            Self::VendorAxial => ("vendor row depth", "vendor depth", Line("Vendor DOC")),
+            Self::VendorDepthTable => ("vendor depth table", "depth table", Line("Depth table")),
+            Self::CornerCoverage => (
+                "corner coverage of an offset ring",
+                "corner",
+                Line("Corner width"),
+            ),
+            Self::ScallopDepth => ("scallop depth", "scallop", NoLine(NOT_ON_THE_PLANE)),
+            Self::ToolDiameter => ("tool diameter", "diameter", Line("Tool diameter")),
+            Self::MoveBudget => ("move budget", "moves", Line("Min width (moves)")),
+            Self::EngagementFloor => (
+                "smallest depth and width",
+                "min engage",
+                Line("Min engagement"),
+            ),
+            Self::CuttingFeedCap => ("cutting feed ceiling", "feed cap", Line("Max feed")),
+            Self::PlannerFeedCap => ("planner feed cap", "planner cap", NoLine(NOT_ON_THE_PLANE)),
+            Self::KinematicReach => ("reachable feed", "reach", NoLine(NOT_ON_THE_PLANE)),
+            Self::PlungeRate => (
+                "vertical feed rate",
+                "plunge rate",
+                NoLine(NOT_ON_THE_PLANE),
+            ),
+            Self::SpindleMaxRpm => (
+                "largest spindle speed",
+                "spindle max",
+                NoLine(NOT_ON_THE_PLANE),
+            ),
+            Self::ZAxisRate => ("Z axis rate", "Z rate", NoLine(NOT_ON_THE_PLANE)),
+            Self::OperatorRpmCeiling => (
+                "operator RPM ceiling",
+                "rpm ceiling",
+                NoLine(NOT_ON_THE_PLANE),
+            ),
+            Self::ChartRpm => ("chart RPM", "chart rpm", NoLine(NOT_ON_THE_PLANE)),
+            Self::VendorRpmMax => ("vendor RPM maximum", "vendor rpm", NoLine(NOT_ON_THE_PLANE)),
+            Self::GantryPush => ("gantry thrust", "gantry push", NoLine(NOT_ON_THE_PLANE)),
+            Self::DrillChipWelding => (
+                "drill chip welding",
+                "chip welding",
+                NoLine(NOT_ON_THE_PLANE),
+            ),
+            Self::DrillPeckAdequacy => ("drill peck depth", "peck depth", NoLine(NOT_ON_THE_PLANE)),
+            Self::DrillPlungeFeed => ("drill plunge feed", "drill feed", NoLine(NOT_ON_THE_PLANE)),
         };
-        LimitText { noun, short }
+        LimitText { noun, short, chart }
     }
 
     /// Every member, in declaration order.

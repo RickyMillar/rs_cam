@@ -32,6 +32,7 @@ pub mod geometry_class;
 mod input;
 pub mod lock;
 pub mod operating_point;
+pub mod plane;
 pub mod planned;
 pub mod plunge;
 pub mod predict;

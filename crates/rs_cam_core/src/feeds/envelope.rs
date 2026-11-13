@@ -319,6 +319,19 @@ impl EnvelopeAxes {
     }
 }
 
+/// P29-10 10g: the part of the width x depth plane frame that a limit is
+/// ([`LimitKind::frame`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FramePart {
+    /// The end of the width axis (the tool diameter).
+    WidthEnd,
+    /// The top of the depth axis (a hard stop of the tool).
+    DepthTop,
+    /// The origin (the smallest engagement).
+    Origin,
+}
+
 /// The kind of a limit. One row per row of the P5 card table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -368,6 +381,64 @@ impl LimitKind {
         FluteGuard, CuttingLength, VendorAxial, VendorDepthTable, Rigidity, CornerCoverage,
         Power, Deflection, ChipBand, RubbingFloor, FeedCap, Diameter, Runtime, EngagementFloor,
     );
+
+    /// P29-10 10g: the part of the plane frame that this limit is, if it is
+    /// one. A hard stop of the tool or the calculator bounds the plane: the
+    /// diameter ends the width axis, the cutting length and the flute guard
+    /// end the depth axis, and the engagement floor is the origin. Every
+    /// other limit is a line inside the frame. One match, no wildcard: a
+    /// surface reads this fact and does not match on the kind.
+    #[must_use]
+    pub const fn frame(self) -> Option<FramePart> {
+        match self {
+            Self::Diameter => Some(FramePart::WidthEnd),
+            Self::CuttingLength | Self::FluteGuard => Some(FramePart::DepthTop),
+            Self::EngagementFloor => Some(FramePart::Origin),
+            Self::VendorAxial
+            | Self::VendorDepthTable
+            | Self::Rigidity
+            | Self::CornerCoverage
+            | Self::Power
+            | Self::Deflection
+            | Self::ChipBand
+            | Self::RubbingFloor
+            | Self::FeedCap
+            | Self::Runtime => None,
+        }
+    }
+
+    /// P29-10 10g: the name of the limit's line on the plane, from the one
+    /// writer of a limit name (`limits::LimitId::text`, lead ruling R4).
+    #[must_use]
+    pub const fn chart_name(self) -> &'static str {
+        let text = crate::limits::LimitId::of_limit_kind(self).text();
+        match text.chart.line() {
+            Some(name) => name,
+            None => text.short,
+        }
+    }
+
+    /// P29-10 10g: `true` when the limit's name gives its depth as a share
+    /// of the tool diameter on a flat edge ("Vendor DOC 1\u{00D7}D"): the
+    /// vendor prints a depth per pass for both depth rows.
+    #[must_use]
+    pub const fn names_depth_in_diameters(self) -> bool {
+        match self {
+            Self::VendorAxial | Self::VendorDepthTable => true,
+            Self::FluteGuard
+            | Self::CuttingLength
+            | Self::Rigidity
+            | Self::CornerCoverage
+            | Self::Power
+            | Self::Deflection
+            | Self::ChipBand
+            | Self::RubbingFloor
+            | Self::FeedCap
+            | Self::Diameter
+            | Self::Runtime
+            | Self::EngagementFloor => false,
+        }
+    }
 
     /// The name that the card, the warning and MCP print.
     #[must_use]
@@ -1016,6 +1087,39 @@ impl OwnedInputs {
     }
 }
 
+/// P29-10 10g (lead ruling R2): one solved column of the force-budget edge.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct BudgetColumn {
+    /// The width (mm).
+    pub ae_mm: f64,
+    /// The ceiling (mm); `None` where no depth below the flute meets the
+    /// budget (the edge then sits on the flute top).
+    pub ap_mm: Option<f64>,
+    /// What sets the ceiling in this column.
+    pub sets: ColumnCeiling,
+    /// The declared cut whose ceiling is the lowest in this column.
+    #[serde(serialize_with = "cut_label_ser")]
+    pub cut: CutKind,
+}
+
+fn cut_label_ser<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(cut.label())
+}
+
+/// P29-10 10g: what sets the force-budget edge in one column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnCeiling {
+    /// The depth where the peak force of the cut meets the budget.
+    ForceBudget,
+    /// A geometric cap: the force at the smallest depth the calculator
+    /// writes is already over the budget (the depth floor).
+    DepthFloor,
+    /// A geometric cap: no depth below the flute meets the budget (the edge
+    /// rides the flute top).
+    FluteTop,
+}
+
 /// CONTRACT K2b. Built only by [`SafeEnvelope::for_cut`]; no public
 /// constructor and no `Default`.
 #[derive(Debug, Clone)]
@@ -1056,6 +1160,11 @@ pub struct SafeEnvelope {
     /// stated row per limit of the boundary when `stated` is `Some`
     /// (`Subject::Stated`, `limits::of_envelope`).
     rows: Vec<crate::limits::CheckRow>,
+    /// P29-10 10g: the declared cuts on the plane at the proposal point
+    /// (the point of the planned rows) and at the stated point
+    /// (`feeds::plane`), written with the rows.
+    marks_at_proposal: Option<crate::feeds::plane::PlaneMarks>,
+    marks_at_stated: Option<crate::feeds::plane::PlaneMarks>,
     /// The operator's stated point, when every free axis is stated.
     pub stated: Option<CutPoint>,
     /// P29-7 7c: the limits that draw a depth ceiling, in the draw order,
@@ -1133,6 +1242,9 @@ struct ExactCeiling {
     role: ExactRole,
     ae_mm: f64,
     ap_mm: f64,
+    /// P29-10 10g: the declared cut that gives the ceiling, when the solve
+    /// names one (the force budget).
+    cut: Option<CutKind>,
 }
 
 /// The chip a force-budget depth is solved at.
@@ -1183,6 +1295,21 @@ impl Serialize for SafeEnvelope {
                 .map(CutKind::label),
         )?;
         map.serialize_entry("limit_rows", &self.rows)?;
+        /// The two sets of marks on the wire.
+        #[derive(Serialize)]
+        struct Marks<'m> {
+            proposal: Option<&'m crate::feeds::plane::PlaneMarks>,
+            stated: Option<&'m crate::feeds::plane::PlaneMarks>,
+        }
+        map.serialize_entry(
+            "plane_marks",
+            &Marks {
+                proposal: self.marks_at_proposal.as_ref(),
+                stated: self.marks_at_stated.as_ref(),
+            },
+        )?;
+        map.serialize_entry("force_budget_columns", &self.force_budget_columns())?;
+        map.serialize_entry("outside_cut", &self.outside_cut().map(CutKind::label))?;
         map.serialize_entry("notes", &self.notes)?;
         map.serialize_entry("stated", &self.stated)?;
         map.serialize_entry("operator", &self.operator)?;
@@ -1218,7 +1345,11 @@ struct PlannedRow {
 impl PlannedRow {
     /// The display row. `at_earlier_leave`: the body reads the earlier
     /// op's leave (P29-9 9c).
-    fn into_row(self, at_earlier_leave: bool) -> crate::limits::CheckRow {
+    fn into_row(
+        self,
+        at_earlier_leave: bool,
+        at: Option<crate::limits::PlanePoint>,
+    ) -> crate::limits::CheckRow {
         use crate::limits::{CheckState, LimitId};
         let reads_leave = at_earlier_leave
             && self.own_depth.is_none()
@@ -1246,6 +1377,7 @@ impl PlannedRow {
                 at_earlier_leave: reads_leave,
                 entry_no_number: self.entry_no_number,
                 compared,
+                at,
             },
         )
     }
@@ -1751,6 +1883,8 @@ impl SafeEnvelope {
             notes: Vec::new(),
             planned: Vec::new(),
             rows: Vec::new(),
+            marks_at_proposal: None,
+            marks_at_stated: None,
             ceilings,
             value_checks,
             stated: None,
@@ -2500,12 +2634,13 @@ impl SafeEnvelope {
                             (BudgetChip::Pick, ExactRole::Pick),
                         ];
                         for &(chip, role) in chips {
-                            if let Some((d, _)) = self.budget_depth_at(ae, chip) {
+                            if let Some((d, cut)) = self.budget_depth_at(ae, chip) {
                                 exact.push(ExactCeiling {
                                     kind: LimitKind::Rigidity,
                                     role,
                                     ae_mm: ae,
                                     ap_mm: d.ceiling_mm().unwrap_or(top),
+                                    cut: Some(cut),
                                 });
                             }
                         }
@@ -2524,6 +2659,7 @@ impl SafeEnvelope {
                             role: ExactRole::CurveChip,
                             ae_mm: ae,
                             ap_mm,
+                            cut: None,
                         });
                     }
                 }
@@ -2775,10 +2911,24 @@ impl SafeEnvelope {
     /// whole: the planned rows, then the stated point against each limit.
     fn write_rows(&mut self) {
         let at_earlier_leave = matches!(self.inputs.cuts.body_depth(), BodyDepth::EarlierLeave(_));
+        // P29-10 10g: the planned rows read the proposal point, so the marks
+        // there are the points of the rows; the marks at the stated point
+        // are the cut that the op holds (one set when the two are one point).
+        let proposal =
+            crate::feeds::plane::PlaneMarks::at(&self.inputs.cuts, self.proposal_point, true);
+        self.marks_at_stated = self.stated.map(|p| {
+            let same = (p.ap_mm - self.proposal_point.ap_mm).abs() < 1e-6
+                && (p.ae_mm - self.proposal_point.ae_mm).abs() < 1e-6;
+            crate::feeds::plane::PlaneMarks::at(&self.inputs.cuts, p, same)
+        });
         let mut rows: Vec<crate::limits::CheckRow> = std::mem::take(&mut self.planned)
             .into_iter()
-            .map(|r| r.into_row(at_earlier_leave))
+            .map(|r| {
+                let at = proposal.of_cut(r.cut).map(|m| m.at);
+                r.into_row(at_earlier_leave, at)
+            })
             .collect();
+        self.marks_at_proposal = Some(proposal);
         if let Some(p) = self.stated {
             // `of_envelope` gives one check per boundary limit, in order,
             // then the exact move budget (a count of moves).
@@ -2801,6 +2951,71 @@ impl SafeEnvelope {
     #[must_use]
     pub fn rows(&self) -> &[crate::limits::CheckRow] {
         &self.rows
+    }
+
+    /// P29-10 10g: the declared cuts on the plane at the proposal point,
+    /// the point of the planned rows (each mark is tied to the rows of its
+    /// cut, `CheckRow::cut`).
+    #[must_use]
+    pub const fn marks_at_proposal(&self) -> Option<&crate::feeds::plane::PlaneMarks> {
+        self.marks_at_proposal.as_ref()
+    }
+
+    /// P29-10 10g: the declared cuts on the plane at the stated point (the
+    /// cut that the op holds); `None` with no stated point.
+    #[must_use]
+    pub const fn marks_at_stated(&self) -> Option<&crate::feeds::plane::PlaneMarks> {
+        self.marks_at_stated.as_ref()
+    }
+
+    /// P29-10 10g (lead ruling R6): the declared cut that sets the ceiling
+    /// that places the stated point outside, when the limit that places it
+    /// outside is solved per cut (the force budget). The placement judges
+    /// the stated width at the lower of the curve chip and the pick chip
+    /// (`judged_ceiling`); this names the cut of that lower ceiling. `None`
+    /// when the point sits inside, or the limit names no cut.
+    #[must_use]
+    pub fn outside_cut(&self) -> Option<CutKind> {
+        let Some(Placement::Outside { binding, .. }) = self.operator else {
+            return None;
+        };
+        let p = self.stated?;
+        let at = |role: ExactRole| {
+            self.exact
+                .iter()
+                .find(|e| e.kind == binding && e.role == role && (e.ae_mm - p.ae_mm).abs() < 1e-12)
+        };
+        match (at(ExactRole::CurveChip), at(ExactRole::Pick)) {
+            (curve, Some(pick)) if curve.is_none_or(|c| pick.ap_mm <= c.ap_mm) => pick.cut,
+            (Some(curve), _) => curve.cut,
+            (None, _) => None,
+        }
+    }
+
+    /// P29-10 10g (lead ruling R2): the force-budget edge column by column
+    /// (the solved columns of the drawn `Rigidity` edge): the width, the
+    /// ceiling, what sets it and the declared cut that gives it. Empty with
+    /// no force-budget edge.
+    #[must_use]
+    pub fn force_budget_columns(&self) -> Vec<BudgetColumn> {
+        let Some(model) = self.budget.as_ref() else {
+            return Vec::new();
+        };
+        model
+            .solved
+            .0
+            .iter()
+            .map(|(ae_mm, (depth, cut))| BudgetColumn {
+                ae_mm: *ae_mm,
+                ap_mm: depth.ceiling_mm(),
+                sets: match depth {
+                    BudgetDepth::Solved(_) => ColumnCeiling::ForceBudget,
+                    BudgetDepth::BelowFloor => ColumnCeiling::DepthFloor,
+                    BudgetDepth::NoRootBelowFlute => ColumnCeiling::FluteTop,
+                },
+                cut: *cut,
+            })
+            .collect()
     }
 
     /// P29-9 9c: why a depth ceiling draws no edge on this envelope, when

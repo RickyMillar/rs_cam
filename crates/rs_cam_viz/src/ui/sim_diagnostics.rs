@@ -1726,7 +1726,7 @@ pub fn draw_cut_chart_section(
             samples: &set.samples,
             diameter_mm: set.diameter_mm,
             budget_n: set.budget_n,
-            force_field: set.force_field.as_ref(),
+            force_plane: set.force_plane.as_ref(),
             playhead,
             move_count,
         },
@@ -2045,9 +2045,13 @@ fn peak_text(
             // The population maximum is the last histogram edge (the
             // overflow bin's upper edge, core's layout).
             let peak = *distribution.histogram.edges.last()?;
+            // P29-10 10g (item 4b): the force card holds no row (the force
+            // reading is report-only, ruling F6), so this is its one writer;
+            // "peak 387 % of budget" clipped at the rail width, and the card
+            // title and its histogram already say the value is the peak.
             Some(match distribution.histogram.ceiling.filter(|b| *b > 0.0) {
                 Some(budget) => format!(
-                    "peak {} of budget",
+                    "{} of budget",
                     histogram::format_share(peak / budget * 100.0)
                 ),
                 None => unit_peak(peak),

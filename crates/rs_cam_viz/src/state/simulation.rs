@@ -245,11 +245,14 @@ pub struct CutMetricSet {
     /// The force budget line (N), `tool_load::cut_force::budget_line`:
     /// `Some` only under the `ForceBudget` depth-cap rule (lead ruling 3).
     pub budget_n: Option<f64>,
-    /// P17b: the force law sampled over the plane at the planned advance
-    /// per tooth ([`force_field::ForceField`]), the ground of the chart's
-    /// iso-force contours. `Some` only with `budget_n` (the same rule) and
-    /// a planned feed, spindle and flute count that give an advance.
-    pub force_field: Option<force_field::ForceField>,
+    /// P17b, P29-10 10g: the force plane of the body cut (core
+    /// `tool_load::force_field::ForcePlane`, the session door
+    /// `ProjectSession::force_plane`): the field at the planned advance per
+    /// tooth and its level lines at the shares of the machine force budget,
+    /// the ground of the chart. Built for every op with a force line (lead
+    /// ruling O4), once per load report; `None` for a drill, no force line
+    /// or no envelope.
+    pub force_plane: Option<rs_cam_core::tool_load::force_field::ForcePlane>,
 }
 
 /// The memo behind [`SimulationState::cached_cut_metrics`].
@@ -422,7 +425,7 @@ fn build_cut_metric_set(
         samples: Vec::new(),
         diameter_mm: 0.0,
         budget_n: None,
-        force_field: None,
+        force_plane: None,
     };
     let Some(verdict) = verdict else {
         return set;
@@ -494,35 +497,17 @@ fn build_cut_metric_set(
         }
         None => rs_cam_core::tool_load::cut_force::cut_points(&ctx, &env),
     };
-    // P17b: the iso-force field, only under the force budget, at the
-    // PLANNED advance per tooth: the op's steady feed (P20e: under the op
-    // cap and the machine ceiling) over its effective spindle
-    // (the project default when the op states none, the cycle-time door)
-    // and the built tool's flutes. The view top is the top of the scene
-    // the chart draws (`EnvelopeScene::with_depth_mark` at the deepest
-    // sample, as `draw_cut_chart` builds it), which bounds every range the
-    // chart picks. The envelope's own view top is not enough: on the
-    // rivmap Face 5 it is 1.06 mm under samples to 2 mm, so the field
-    // stopped under the 25 % level and no contour drew (P17b round 1).
-    if let (Some(_), Some(env_arc)) = (set.budget_n, set.envelope.as_deref()) {
-        let rpm = f64::from(rs_cam_core::compute::catalog::effective_spindle_rpm(
-            &tc.operation,
-            session.post_config().spindle_speed,
-        ));
-        let flutes = f64::from(ctx.tool().flute_count);
-        let fz_mm = if rpm > 0.0 && flutes > 0.0 {
-            ctx.steady_feed().mm_min() / (rpm * flutes)
-        } else {
-            0.0
-        };
+    // P17b, P29-10 10g: the force plane of the body cut through the one
+    // core door (the field, its chip and its level lines: assembly sites 18
+    // to 20 left the viz), for every op with a force line (lead ruling O4).
+    // The view top is the top of the scene the chart draws
+    // (`EnvelopeScene::with_depth_mark` at the deepest sample, as
+    // `draw_cut_chart` builds it), which bounds every range the chart
+    // picks (P17b round 1: the envelope's own view top stopped the field
+    // under the 25 % level on the rivmap Face 5).
+    if let Some(env_arc) = set.envelope.as_deref() {
         let ap_top = force_field::field_top(env_arc, &set.samples);
-        set.force_field = force_field::ForceField::build(
-            ctx.tool(),
-            ctx.material(),
-            set.diameter_mm,
-            ap_top,
-            fz_mm,
-        );
+        set.force_plane = session.force_plane(index, set.diameter_mm, ap_top);
     }
     set
 }

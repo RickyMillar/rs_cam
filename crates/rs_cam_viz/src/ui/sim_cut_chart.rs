@@ -17,16 +17,23 @@
 //! The layers, from the ground up:
 //!
 //! - The iso-force contours (P17b item 3, operator: "faint background
-//!   lines"): the level set of the set's force field
-//!   (`state::simulation::force_field`, core's law at the planned advance
-//!   per tooth) at [`CONTOUR_SHARES`] of the force budget. The three under
-//!   the budget are `TEXT_FAINT` [`CONTOUR_WIDTH`]; the budget line is
-//!   `CAUTION` [`BUDGET_CONTOUR_WIDTH`], the strongest, the colour of the
-//!   over-budget dots. Each is named on its line ("25 %", "100 % budget")
-//!   in its own colour. They paint under every fill (the kit has one slot
-//!   under the fills, [`ChartLine::beneath`]; the wash is faint enough that
-//!   this is the "between the fill and the cells" the brief asks). No
-//!   budget, no field, no contour (lead ruling 3).
+//!   lines"): the level lines of the set's force plane (core
+//!   `tool_load::force_field::ForcePlane`, the body cut's law at the
+//!   planned advance per tooth, built once per load report) at
+//!   [`CONTOUR_SHARES`] of the machine force budget. The three under the
+//!   budget are `TEXT_FAINT` [`CONTOUR_WIDTH`]. P29-10 10g (lead ruling
+//!   O4): the field draws for every op with a force line; where the budget
+//!   is a limit of the body cut the budget line is `CAUTION`
+//!   [`BUDGET_CONTOUR_WIDTH`], the colour of the over-budget dots, named
+//!   "100 % budget"; where it is not (a finish pass) it is `TEXT_FAINT`
+//!   and named "budget, no limit here" (core `BudgetRole::line_name`), and
+//!   no dot draws. They paint under every fill (the kit has one slot under
+//!   the fills, [`ChartLine::beneath`]). A drill has no field.
+//! - P29-10 10g (ruling O5): the planned cuts at the STATED point (the cut
+//!   that the samples show, core `SafeEnvelope::marks_at_stated`), each a
+//!   hollow square: `TEXT_MUTED`, no tone, because the planned rows
+//!   describe the proposal; when the stated point is the proposal they take
+//!   the tone of their rows. The hover names the cut.
 //! - The heat map (P17b item 1, operator: "brighter where more cuts"): the
 //!   samples binned over the DATA range by cutting time, [`GRID_COLUMNS`]
 //!   columns and at most [`GRID_ROWS`] rows ([`square_rows`]: the cells
@@ -85,16 +92,18 @@
 use rs_cam_core::feeds::envelope::{CutPoint, SafeEnvelope};
 use rs_cam_core::tool_load::cut_force::CutPoint3;
 
+use rs_cam_core::tool_load::force_field::{BudgetRole, ForcePlane};
+
 use super::components::chart::{
     self, Axis, ChartLine, ChartMap, Label, LabelAt, LabelGround, Mark, PlaneChart,
 };
 use super::components::{histogram, text};
 use super::feeds::envelope::{
-    self, DEPTH_AXIS_TITLE, EnvelopeScene, GHOST_RADIUS, OUTLINE_WIDTH, RECOMMENDATION_WIDTH,
-    VIEW_HEADROOM, WIDTH_AXIS_TITLE, WIDTH_EDGE_TEXT, recommendation_color,
+    self, DEPTH_AXIS_TITLE, EnvelopeScene, GHOST_RADIUS, OUTLINE_WIDTH, PLANNED_RADIUS,
+    PLANNED_WIDTH, RECOMMENDATION_WIDTH, VIEW_HEADROOM, WIDTH_AXIS_TITLE, WIDTH_EDGE_TEXT,
+    recommendation_color,
 };
 use super::tokens;
-use crate::state::simulation::force_field::{ForceField, contours};
 
 /// The columns of the heat grid across the width range.
 pub const GRID_COLUMNS: usize = 48;
@@ -131,8 +140,9 @@ pub const FAINTEST_ALPHA: f32 = histogram::WASH_OUT;
 /// round-3 finding); it keeps a quiet off-scale row instead.
 pub const OFF_SCALE_FACTOR: f64 = 3.0;
 
-/// The iso-force contour levels, as shares of the force budget.
-pub const CONTOUR_SHARES: [f64; 4] = [0.25, 0.5, 0.75, 1.0];
+/// The iso-force contour levels, as shares of the force budget (core
+/// `tool_load::force_field::CONTOUR_SHARES`).
+pub use rs_cam_core::tool_load::force_field::CONTOUR_SHARES;
 
 /// The width of a contour under the budget, in points.
 pub const CONTOUR_WIDTH: f32 = 1.0;
@@ -156,8 +166,14 @@ pub const GUIDE: &str = "Each sample of the cut on the envelope of the operation
                          width as a share of the tool diameter and its engaged depth. The cells \
                          are brighter where more of the cutting time is. The faint lines are the \
                          cut force at the planned feed, as shares of the machine's force budget. \
-                         A dot is a sample over the budget. Click a dot or a cell to go to that \
-                         move.";
+                         A dot is a sample over the budget. A hollow square is a planned cut at \
+                         the stated cut. Click a dot or a cell to go to that move.";
+
+/// The colour of a planned-cut mark with no tone on this chart: the ink of
+/// the planned dot (`TEXT_STRONG`). The heat cells are squares in the
+/// `TEXT_BODY` ink, so a muted outline (the Passes plot's neutral mark)
+/// reads as one more cell here (P29-10 10g, judged on the screenshot).
+pub const PLANNED_CUT_COLOR: egui::Color32 = tokens::TEXT_STRONG;
 
 /// The legend captions, in their order.
 pub const LEGEND_CUT_TIME: &str = "cut time";
@@ -177,11 +193,12 @@ pub struct CutChartInput<'a> {
     pub samples: &'a [CutPoint3],
     /// The tool diameter D (mm) the width shares by.
     pub diameter_mm: f64,
-    /// The force budget line (N); `None`: no over-budget dot, no contour.
+    /// The force budget line (N) of the body cut; `None`: no over-budget
+    /// dot (a cut with no force limit).
     pub budget_n: Option<f64>,
-    /// The force law over the plane at the planned advance per tooth;
-    /// `None`: no contour.
-    pub force_field: Option<&'a ForceField>,
+    /// The force plane of the body cut (core, built once per load report);
+    /// `None`: no contour (a drill, no force line).
+    pub force_plane: Option<&'a ForcePlane>,
     /// The playhead as a toolpath-local move, when it is in this toolpath.
     pub playhead: Option<usize>,
     /// The toolpath's move count, for the header caption.
@@ -424,9 +441,10 @@ pub fn over_budget_dots(samples: &[CutPoint3], budget: Option<f64>) -> (Vec<CutP
     let Some(budget) = budget else {
         return (Vec::new(), 0);
     };
+    // P29-10 10g (site 16): core says which sample is over the line.
     let mut over: Vec<CutPoint3> = samples
         .iter()
-        .filter(|s| s.force_n.is_some_and(|f| f.is_finite() && f > budget))
+        .filter(|s| s.over_budget(Some(budget)))
         .copied()
         .collect();
     over.sort_by(|a, b| b.weight_s.total_cmp(&a.weight_s));
@@ -461,37 +479,44 @@ pub fn header_caption(move_count: usize) -> String {
     )
 }
 
-/// The label of the contour at `share` of the budget: "25 %", "100 %
-/// budget".
+/// The label of the contour at `share` of the budget: "25 %"; the budget
+/// line takes its core name ("100 % budget", or "budget, no limit here"
+/// where the budget is no limit of the cut, lead ruling O4).
 #[must_use]
-pub fn contour_label(share: f64) -> String {
-    let pct = histogram::format_share(share * 100.0);
+pub fn contour_label(share: f64, role: BudgetRole) -> String {
     if (share - 1.0).abs() < 1e-9 {
-        format!("{pct} budget")
+        role.line_name().to_owned()
     } else {
-        pct
+        histogram::format_share(share * 100.0)
     }
 }
 
-/// The contour polylines of `field` at each of [`CONTOUR_SHARES`] of
-/// `budget_n`, in `[ae mm, ap mm]`, paired with the share. Empty with no
-/// field or no budget.
+/// The colour and the width of the contour at `share`: the budget line is
+/// `CAUTION` where the budget is a limit of the cut, else `TEXT_FAINT` as
+/// every other level.
 #[must_use]
-pub fn contour_lines(
-    field: Option<&ForceField>,
-    budget_n: Option<f64>,
-) -> Vec<(f64, Vec<Vec<[f64; 2]>>)> {
-    let (Some(field), Some(budget)) = (field, budget_n) else {
-        return Vec::new();
-    };
-    if !(budget.is_finite() && budget > 0.0) {
-        return Vec::new();
+pub fn contour_stroke(share: f64, role: BudgetRole) -> (egui::Color32, f32) {
+    let budget_line = (share - 1.0).abs() < 1e-9;
+    match (budget_line, role) {
+        (true, BudgetRole::Limit) => (tokens::CAUTION, BUDGET_CONTOUR_WIDTH),
+        (true, BudgetRole::NoLimitHere) => (tokens::TEXT_FAINT, BUDGET_CONTOUR_WIDTH),
+        (false, BudgetRole::Limit | BudgetRole::NoLimitHere) => (tokens::TEXT_FAINT, CONTOUR_WIDTH),
     }
-    CONTOUR_SHARES
-        .into_iter()
-        .map(|share| (share, contours(field, share * budget)))
-        .filter(|(_, lines)| !lines.is_empty())
-        .collect()
+}
+
+/// The contour polylines of the force plane, in `[ae mm, ap mm]`, paired
+/// with the share: the level lines core built once per load report (no
+/// contour is traced per frame). Empty with no plane.
+#[must_use]
+pub fn contour_lines(plane: Option<&ForcePlane>) -> Vec<(f64, &[Vec<[f64; 2]>])> {
+    plane
+        .map(|p| {
+            p.levels
+                .iter()
+                .map(|level| (level.share, level.lines.as_slice()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The runs of `points` at or under the depth `top`: a run ends at the
@@ -643,13 +668,57 @@ pub fn cell_hover(grid: &CellGrid, i: usize, diameter_mm: f64) -> String {
     lines.join("\n")
 }
 
-/// The hover line of an over-budget dot.
+/// The hover line of an over-budget dot (P29-10 10g, site 17: core
+/// writes it, `CutPoint3::over_budget_words`).
 #[must_use]
-pub fn dot_hover(force_n: f64, budget_n: f64) -> String {
+pub fn dot_hover(sample: &CutPoint3, budget_n: Option<f64>) -> Option<String> {
+    sample.over_budget_words(budget_n)
+}
+
+/// P29-10 10g: the planned marks of the chart at the stated point, each
+/// with its colour: [`PLANNED_CUT_COLOR`] (no tone: the planned rows
+/// describe the proposal), and the tone of its rows only when the stated point is the
+/// proposal (`PlaneMarks::describes_rows`, ruling O5).
+#[must_use]
+pub fn stated_marks(
+    env: &SafeEnvelope,
+) -> Vec<(rs_cam_core::feeds::plane::PlaneMark, egui::Color32)> {
+    let Some(marks) = env.marks_at_stated() else {
+        return Vec::new();
+    };
+    let mut out: Vec<_> = marks
+        .marks()
+        .iter()
+        .map(|m| {
+            let color = if marks.describes_rows() {
+                envelope::mark_color(env.rows(), m.cut)
+            } else {
+                PLANNED_CUT_COLOR
+            };
+            (*m, color)
+        })
+        .collect();
+    // A mark in `CAUTION` paints last, on top of a muted one at its point.
+    out.sort_by_key(|(_, color)| *color == tokens::CAUTION);
+    out
+}
+
+/// The hover of a planned mark of the chart: the cut at the stated cut;
+/// its rows when they describe this point, else where they are.
+#[must_use]
+pub fn stated_mark_hover(
+    env: &SafeEnvelope,
+    mark: &rs_cam_core::feeds::plane::PlaneMark,
+) -> String {
+    if env.marks_at_stated().is_some_and(|m| m.describes_rows()) {
+        return envelope::mark_hover(env, mark);
+    }
     format!(
-        "force {} N \u{00b7} over the budget {} N",
-        histogram::format_value(force_n),
-        histogram::format_value(budget_n)
+        "{} \u{00B7} ap {:.2} \u{00D7} ae {:.2} mm at the stated cut\nIts limit rows describe \
+         the proposal: see the Passes tab.",
+        mark.cut.label(),
+        mark.at.ap_mm,
+        mark.at.ae_mm
     )
 }
 
@@ -761,15 +830,13 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
     // The iso-force contours, under the fills, the budget line last (the
     // strongest). Each level's runs under the axis top; the longest run
     // of a level carries its name.
-    let contour_set = contour_lines(input.force_field, input.budget_n);
+    let contour_set = contour_lines(input.force_plane);
+    let role = input
+        .force_plane
+        .map_or(BudgetRole::NoLimitHere, |p| p.role);
     let mut contour_labels: Vec<Label> = Vec::new();
     for (share, lines) in &contour_set {
-        let budget_line = (*share - 1.0).abs() < 1e-9;
-        let (color, width) = if budget_line {
-            (tokens::CAUTION, BUDGET_CONTOUR_WIDTH)
-        } else {
-            (tokens::TEXT_FAINT, CONTOUR_WIDTH)
-        };
+        let (color, width) = contour_stroke(*share, role);
         let runs: Vec<Vec<[f64; 2]>> = lines
             .iter()
             .flat_map(|line| clip_below(line, view.ap_top))
@@ -786,7 +853,7 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         if let Some(longest) = runs.iter().max_by_key(|run| run.len()) {
             contour_labels.push(
                 Label::new(
-                    contour_label(*share),
+                    contour_label(*share, role),
                     color,
                     LabelAt::line_end(longest.clone()),
                 )
@@ -862,8 +929,28 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         ));
     }
 
-    // The marks: the over-budget dots, the playhead ring, then the
-    // planned point LAST on its halo (item 5).
+    // The marks: the planned cuts (P29-10 10g), the over-budget dots, the
+    // playhead ring, then the planned point LAST on its halo (item 5).
+    // A mark at the planned (stated) point is under its white dot: the dot
+    // names that point, so the mark is left out.
+    let marks: Vec<_> = stated_marks(input.env)
+        .into_iter()
+        .filter(|(m, _)| {
+            !input.env.stated.is_some_and(|p| {
+                (p.ap_mm - m.at.ap_mm).abs() < 1e-6 && (p.ae_mm - m.at.ae_mm).abs() < 1e-6
+            })
+        })
+        .collect();
+    for (mark, color) in &marks {
+        plot = plot.mark(Mark::square(
+            at_mark(CutPoint {
+                ap_mm: mark.at.ap_mm,
+                ae_mm: mark.at.ae_mm,
+            }),
+            PLANNED_RADIUS,
+            egui::Stroke::new(PLANNED_WIDTH, *color),
+        ));
+    }
     for s in &dots {
         plot = plot.mark(Mark::dot(
             [sx(s.ae_mm), s.ap_mm],
@@ -933,9 +1020,24 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
             .filter(|(d, _)| *d <= HIT_RADIUS)
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, s)| *s);
-        match dot {
-            Some(s) => Hit::Dot(s),
-            None => {
+        let mark = || {
+            marks
+                .iter()
+                .map(|(m, _)| {
+                    let at = at_mark(CutPoint {
+                        ap_mm: m.at.ap_mm,
+                        ae_mm: m.at.ae_mm,
+                    });
+                    (map.to_screen(at[0], at[1]).distance(pos), m)
+                })
+                .filter(|(d, _)| *d <= HIT_RADIUS + PLANNED_RADIUS)
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, m)| *m)
+        };
+        match (dot, mark()) {
+            (Some(s), _) => Hit::Dot(s),
+            (None, Some(m)) => Hit::Mark(m),
+            (None, None) => {
                 let (x, y) = map.from_screen(pos);
                 if y > grid.y_range().1 {
                     Hit::Air
@@ -950,9 +1052,22 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         && let Some(pos) = response.interact_pointer_pos()
         && frame.contains(pos)
     {
+        // A planned mark is a hover only: a click on it seeks the cell
+        // under it, so no cell is lost under a mark.
+        let cell_under = || {
+            let (x, y) = map.from_screen(pos);
+            (y <= grid.y_range().1)
+                .then(|| {
+                    grid.cells()
+                        .get(grid.index_of(x, y))
+                        .and_then(|c| c.first_move)
+                })
+                .flatten()
+        };
         seek = match hit_at(pos) {
             Hit::Dot(s) => Some(s.move_index),
             Hit::Cell(i) => grid.cells().get(i).and_then(|c| c.first_move),
+            Hit::Mark(_) => cell_under(),
             Hit::Air => None,
         };
     }
@@ -966,11 +1081,12 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
                     grid.index_of(sx(s.ae_mm), s.ap_mm),
                     input.diameter_mm,
                 );
-                Some(match (s.force_n, input.budget_n) {
-                    (Some(f), Some(b)) => format!("{}\n{cell}", dot_hover(f, b)),
-                    (None, _) | (_, None) => cell,
+                Some(match dot_hover(&s, input.budget_n) {
+                    Some(words) => format!("{words}\n{cell}"),
+                    None => cell,
                 })
             }
+            Hit::Mark(m) => Some(stated_mark_hover(input.env, &m)),
             Hit::Cell(i) => Some(cell_hover(&grid, i, input.diameter_mm)),
             Hit::Air => None,
         };
@@ -994,6 +1110,8 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
 /// What sits under the pointer.
 enum Hit {
     Dot(CutPoint3),
+    /// A planned cut (P29-10 10g).
+    Mark(rs_cam_core::feeds::plane::PlaneMark),
     Cell(usize),
     /// The empty extension above the data range.
     Air,
@@ -1052,7 +1170,9 @@ impl Swatch {
     const fn width(self) -> f32 {
         match self {
             Self::Ramp => SWATCH * LEGEND_RAMP_SQUARES as f32,
-            Self::OverBudget | Self::Planned | Self::Playhead => SWATCH,
+            // P29-10 10g: the planned dot and a planned-cut square.
+            Self::Planned => 2.0 * SWATCH,
+            Self::OverBudget | Self::Playhead => SWATCH,
         }
     }
 
@@ -1072,8 +1192,17 @@ impl Swatch {
                 let _ = painter.circle_filled(rect.center(), DOT_RADIUS, tokens::CAUTION);
             }
             Self::Planned => {
-                let _ =
-                    painter.circle_filled(rect.center(), envelope::DOT_RADIUS, tokens::TEXT_STRONG);
+                let dot = rect.left_center() + egui::vec2(SWATCH / 2.0, 0.0);
+                let _ = painter.circle_filled(dot, envelope::DOT_RADIUS, tokens::TEXT_STRONG);
+                let _ = painter.rect_stroke(
+                    egui::Rect::from_center_size(
+                        dot + egui::vec2(SWATCH, 0.0),
+                        egui::Vec2::splat(2.0 * PLANNED_RADIUS),
+                    ),
+                    0.0,
+                    egui::Stroke::new(PLANNED_WIDTH, PLANNED_CUT_COLOR),
+                    egui::StrokeKind::Middle,
+                );
             }
             Self::Playhead => {
                 let _ = painter.circle_stroke(
