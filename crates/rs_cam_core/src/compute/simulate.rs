@@ -283,14 +283,20 @@ pub fn group_stock_cut_direction(face_up: FaceUp) -> StockCutDirection {
 /// builder used to write all three by hand.
 ///
 /// F029: refuses a tool outside its domain; no cutter is built from it.
+///
+/// P29-11 11-1: the flute count of each sample is the flute count of the
+/// built tool, so every load door of a sample reads one count
+/// (`feeds::cut_load::OperatingPoint::of_sample`). A debug build asserts it.
 pub fn entry_tool_fields(
     tool: &ToolConfig,
 ) -> Result<(Arc<ToolDefinition>, u32, String), crate::tool::ToolGeometryError> {
-    Ok((
-        Arc::new(crate::compute::cutter::build_cutter(tool)?),
-        tool.flute_count_planning(),
-        tool.summary(),
-    ))
+    let cutter = crate::compute::cutter::build_cutter(tool)?;
+    let flute_count = tool.flute_count_planning();
+    debug_assert_eq!(
+        flute_count, cutter.flute_count,
+        "a sample's flute count is the flute count of its built tool"
+    );
+    Ok((Arc::new(cutter), flute_count, tool.summary()))
 }
 
 /// Whether a toolpath's dexel engagement metrics mean nothing

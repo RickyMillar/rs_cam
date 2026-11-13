@@ -86,24 +86,28 @@ pub fn peak_chip_per_tooth(
     tool: &crate::tool::ToolDefinition,
     thinning: crate::feeds::geometry::RadialThinning,
 ) -> Result<PeakChipReading, PeakChipRefusal> {
-    let advance = achieved_advance_per_tooth(sample, predicted_feeds)
-        .ok_or(PeakChipRefusal::NoDivisor)?
-        .mm();
+    // A sample with no positive `rpm x flutes` divisor has no chip.
+    if achieved_advance_per_tooth(sample, predicted_feeds).is_none() {
+        return Err(PeakChipRefusal::NoDivisor);
+    }
+    // P29-11 11-1: the one point of a sample (the flute count of the tool;
+    // on a product sample its chip is the achieved advance to the bit).
+    let point = crate::feeds::cut_load::OperatingPoint::of_sample(
+        sample,
+        tool,
+        super::effective_feed_for_sample(sample, predicted_feeds),
+    );
     match thinning {
         // P29-1: a cut that thins reads the chip of the one load, on the
         // power gate's engagement of the sample.
         crate::feeds::geometry::RadialThinning::Applied => {
             let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)
                 .ok_or(PeakChipRefusal::NoEngagement)?;
-            let chip = crate::feeds::cut_load::CutLoad::of_line(
-                &engagement,
-                crate::feeds::cut_load::OperatingPoint::of_sample_for_chip(sample, advance),
-                Some(tool),
-                None,
-            )
-            .chip(thinning)
-            .ok()
-            .ok_or(PeakChipRefusal::NoEngagement)?;
+            let chip =
+                crate::feeds::cut_load::CutLoad::of_line(&engagement, point, Some(tool), None)
+                    .chip(thinning)
+                    .ok()
+                    .ok_or(PeakChipRefusal::NoEngagement)?;
             Ok(PeakChipReading {
                 peak_chip_mm: chip.peak_mm,
                 lift: chip.lift,
@@ -115,7 +119,7 @@ pub fn peak_chip_per_tooth(
             let lift = sample_thinning_lift(sample, tool, thinning)
                 .ok_or(PeakChipRefusal::NoEngagement)?;
             Ok(PeakChipReading {
-                peak_chip_mm: advance / lift,
+                peak_chip_mm: point.fz_mm() / lift,
                 lift,
             })
         }

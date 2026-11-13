@@ -186,7 +186,11 @@ fn points_of(
         .filter(|(_, s)| s.arc_engagement_radians.is_some())
         .filter_map(|&(i, s)| {
             let engagement = super::deflection::sample_engagement(ctx.tool(), s)?;
-            let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+            let fz = super::deflection::deflection_feed_per_tooth_mm(
+                s,
+                ctx.tool(),
+                &trace.predicted_feeds,
+            );
             Some(CutPoint3 {
                 ae_mm: engagement.ae_mm(),
                 ap_mm: s.axial_engagement_mm,

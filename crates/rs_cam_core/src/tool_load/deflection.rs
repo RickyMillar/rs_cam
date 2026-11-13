@@ -219,9 +219,9 @@ pub fn sample_tip_deflection_mm(
     // via `effective_feed_for_sample`, so a path the optimizer feeds down
     // for deflection reads safe here too. A sample with no chipload signal
     // yields `None` and is skipped (no deflection-relevant cutting load).
-    // P29-1: the one load. The chip is the caller's; the edge sum takes
-    // the tool's flute count (`OperatingPoint::of_sample_for_deflection`
-    // states the rule of the gate's chip).
+    // P29-1: the one load. The chip is the caller's
+    // ([`deflection_feed_per_tooth_mm`]); the edge sum takes the tool's flute
+    // count, the count of `OperatingPoint::of_sample` (P29-11 11-1).
     crate::feeds::cut_load::CutLoad::of(
         &engagement,
         crate::feeds::cut_load::OperatingPoint::of_chip(feed_per_tooth_mm, tool.flute_count),
@@ -234,26 +234,29 @@ pub fn sample_tip_deflection_mm(
 
 /// **The feed per tooth the deflection gate evaluates one sample at.**
 ///
-/// The effective feed ([`super::effective_feed_for_sample`]) divided by
-/// `rpm × flutes`, with the flute count held at one or more. A sample
-/// with no spindle speed falls back to its commanded
-/// `chipload_mm_per_tooth`.
+/// The chip of the one point of a sample
+/// ([`crate::feeds::cut_load::OperatingPoint::of_sample`], P29-11 11-1): the
+/// effective feed ([`super::effective_feed_for_sample`]) divided by
+/// `rpm × flutes`, with the flute count of the tool. A sample with no
+/// spindle speed falls back to its commanded `chipload_mm_per_tooth`.
 ///
 /// This is NOT [`super::display::achieved_advance_per_tooth`]: that
 /// function refuses a sample with no divisor, and this one falls back.
-/// The gate ([`evaluate`]) and the cut-metrics distribution
-/// ([`super::distribution`]) both call this function, so they cannot
-/// resolve the feed differently.
+/// The gate ([`evaluate`]), the force reading and the cut-metrics
+/// distribution ([`super::distribution`]) call this function, so they
+/// cannot resolve the feed differently.
 #[must_use]
 pub fn deflection_feed_per_tooth_mm(
     sample: &SimulationCutSample,
+    tool: &ToolDefinition,
     predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
 ) -> f64 {
-    // P29-1: the chip rule lives with the other operating points.
-    crate::feeds::cut_load::OperatingPoint::deflection_chip_of_sample(
+    crate::feeds::cut_load::OperatingPoint::of_sample(
         sample,
+        tool,
         super::effective_feed_for_sample(sample, predicted_feeds),
     )
+    .fz_mm()
 }
 
 /// The headline deflection verdict of the toolpath (the one driver,
@@ -348,7 +351,7 @@ pub(super) fn judge(
         // modulation), mirroring the power + chipload gates so all three
         // evaluate the cut that will actually run. With no predicted-feed
         // map this is the sample's commanded chipload (unchanged).
-        let eff_fz = deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+        let eff_fz = deflection_feed_per_tooth_mm(s, tool, &trace.predicted_feeds);
 
         let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s, eff_fz) else {
             continue;

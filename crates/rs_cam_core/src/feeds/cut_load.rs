@@ -40,10 +40,10 @@
 //!   `axial_doc_mm`; `tool_load::deflection::sample_engagement` reads
 //!   `axial_engagement_mm`. `CutLoad` takes the engagement that the caller
 //!   built.
-//! - **The operating point differs by door.** Each constructor of
-//!   [`OperatingPoint`] states the chip and the flute count that its door
-//!   takes. For one sample the doors can give different values when the
-//!   flute count of the sample is not the flute count of the tool.
+//!
+//! P29-11 commit 11-1 closed the open item "the operating point differs by
+//! door": every load door of a sample reads [`OperatingPoint::of_sample`],
+//! with the flute count of the tool.
 //!
 //! The sentry is `tests/one_cut_gives_one_load_on_every_door_p29_1.rs`.
 
@@ -102,8 +102,8 @@ impl OperatingPoint {
 
     /// A cut that states its chip and no feed: a forward read inside a
     /// solver (`cutter_constraints`, `force_budget::peak_force_n`), the
-    /// wall step of a Waterline, and a sample door that got its chip as an
-    /// argument. `Z` is the flute count of the edge sum. The chip keeps its
+    /// wall step of a Waterline, and the deflection door of a sample, which
+    /// gets its chip from [`Self::of_sample`] as an argument. `Z` is the flute count of the edge sum. The chip keeps its
     /// bits: no feed is derived from it.
     #[must_use]
     pub const fn of_chip(fz_mm: f64, flute_count: u32) -> Self {
@@ -123,8 +123,8 @@ impl OperatingPoint {
     /// set, the feed is not finite or the speed is not positive. The edge
     /// sum takes `Z built`, the flute count of the built tool: the
     /// predictor builds the tool after it has the chip, and then calls
-    /// [`Self::with_edge_flute_count`]. The two counts are equal for a tool
-    /// that states its flute count. Open item of P29 (module doc).
+    /// [`Self::with_edge_flute_count`]. The two counts are equal:
+    /// `build_cutter` builds the tool with the planning flute count.
     #[must_use]
     pub fn of_predictor(feed_mm_min: Option<f64>, rpm: f64, planning_flute_count: u32) -> Self {
         let flute_count = f64::from(planning_flute_count.max(1));
@@ -155,78 +155,44 @@ impl OperatingPoint {
         }
     }
 
-    /// The point of the power gate for one sample
-    /// (`tool_load::power::sample_power_kw`).
+    /// **THE operating point of one simulation sample** (P29-11 commit
+    /// 11-1, `P29-11_DESIGN.md` section 1 item 3). Every load door of a
+    /// sample builds its point here: the power gate
+    /// (`tool_load::power::sample_power_kw`), the deflection gate and the
+    /// force reading (`tool_load::deflection::deflection_feed_per_tooth_mm`)
+    /// and the chip gate (`tool_load::display::peak_chip_per_tooth`).
     ///
-    /// The feed is `feed_mm_min` (the gate passes
+    /// One flute-count rule: `Z` is the flute count of the TOOL, for the
+    /// chip, the edge sum and the power edge term. A product sample states
+    /// the same count: `compute::simulate::entry_tool_fields` writes the
+    /// planning count of the tool that `build_cutter` builds, and asserts
+    /// in a debug build that the two are equal.
+    ///
+    /// The feed is `feed_mm_min` (each door passes
     /// `tool_load::effective_feed_for_sample`), the speed is the sample's.
-    /// `Z` is the flute count of the SAMPLE, and the flute count of the
-    /// tool when the trace left the sample's at zero (a zero would remove
-    /// the edge term). The deflection door takes another `Z`
-    /// ([`Self::of_sample_for_deflection`]). Open item of P29 (module doc).
+    /// The chip is `feed / (rpm x Z)`. With no positive divisor (no spindle
+    /// speed) the chip is the sample's commanded `chipload_mm_per_tooth`.
+    /// The power reads the feed and the speed, not the chip; the chip gate
+    /// refuses a sample with no divisor before it builds the point
+    /// (`tool_load::display::achieved_advance_per_tooth`).
     #[must_use]
-    pub fn of_sample_for_power(
+    pub fn of_sample(
         sample: &SimulationCutSample,
         tool: &ToolDefinition,
         feed_mm_min: f64,
     ) -> Self {
-        let flute_count = if sample.flute_count > 0 {
-            sample.flute_count
-        } else {
-            tool.flute_count
-        };
-        Self::planned(feed_mm_min, f64::from(sample.spindle_rpm), flute_count)
-    }
-
-    /// The point of the deflection gate, the force card and the modulator
-    /// summary for one sample
-    /// (`tool_load::deflection::deflection_feed_per_tooth_mm`).
-    ///
-    /// The chip is `feed / (rpm x max(Z sample, 1))` with `feed_mm_min` the
-    /// effective feed of the sample. A sample with no spindle speed takes
-    /// its commanded `chipload_mm_per_tooth`. The edge sum takes the flute
-    /// count of the TOOL, not of the sample. The power door takes the
-    /// sample's ([`Self::of_sample_for_power`]). Open item of P29 (module
-    /// doc).
-    #[must_use]
-    pub fn of_sample_for_deflection(
-        sample: &SimulationCutSample,
-        tool: &ToolDefinition,
-        feed_mm_min: f64,
-    ) -> Self {
+        let flute_count = tool.flute_count;
+        let divisor = f64::from(sample.spindle_rpm) * f64::from(flute_count);
         Self {
-            fz_mm: Self::deflection_chip_of_sample(sample, feed_mm_min),
+            fz_mm: if divisor > 0.0 {
+                feed_mm_min / divisor
+            } else {
+                sample.chipload_mm_per_tooth
+            },
             feed_mm_min: Some(feed_mm_min),
             rpm: Some(f64::from(sample.spindle_rpm)),
-            flute_count: tool.flute_count,
+            flute_count,
         }
-    }
-
-    /// The chip rule of [`Self::of_sample_for_deflection`], for the door
-    /// that passes the chip on as a number
-    /// (`tool_load::deflection::deflection_feed_per_tooth_mm`; its readers
-    /// then build [`Self::of_chip`] with the tool's flute count).
-    #[must_use]
-    pub fn deflection_chip_of_sample(sample: &SimulationCutSample, feed_mm_min: f64) -> f64 {
-        let flutes = f64::from(sample.flute_count.max(1));
-        if sample.spindle_rpm > 0 {
-            feed_mm_min / (f64::from(sample.spindle_rpm) * flutes)
-        } else {
-            sample.chipload_mm_per_tooth
-        }
-    }
-
-    /// The point of the chip gate for one sample
-    /// (`tool_load::display::peak_chip_per_tooth`).
-    ///
-    /// The chip is `advance_mm`, the achieved advance per tooth of
-    /// `tool_load::display::achieved_advance_per_tooth` (the effective feed
-    /// over the sample's `rpm x Z`, refused with no positive divisor). The
-    /// deflection door falls back where this door refuses
-    /// ([`Self::of_sample_for_deflection`]). Open item of P29 (module doc).
-    #[must_use]
-    pub const fn of_sample_for_chip(sample: &SimulationCutSample, advance_mm: f64) -> Self {
-        Self::of_chip(advance_mm, sample.flute_count)
     }
 
     /// The chip per tooth (mm).

@@ -172,7 +172,7 @@ fn the_force_card_peak_is_the_force_behind_the_deflection_gate() {
     assert_eq!(points.len(), 3, "every hand-built sample is a cut point");
     for p in &points {
         let s = &trace.samples[p.sample_index];
-        let fz = deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+        let fz = deflection_feed_per_tooth_mm(s, &tool, &trace.predicted_feeds);
         let force = sample_peak_force_n(&tool, &material, s, fz).expect("a force");
         assert_eq!(
             p.force_n,
@@ -219,7 +219,7 @@ fn the_force_card_peak_is_the_force_behind_the_deflection_gate() {
         "the reading's peak is the card's peak"
     );
     let s = &trace.samples[2];
-    let fz = deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+    let fz = deflection_feed_per_tooth_mm(s, &tool, &trace.predicted_feeds);
     assert_eq!(
         Some(reading.peak_n),
         sample_peak_force_n(&tool, &material, s, fz),

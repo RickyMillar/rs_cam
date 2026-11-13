@@ -564,7 +564,11 @@ fn cut_force_distribution(
                 .and_then(|s| super::deflection::sample_engagement(ctx.tool(), s))
                 .map_or(0.0, |e| e.ae_mm());
             let fz_mm = sample.map_or(0.0, |s| {
-                super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds)
+                super::deflection::deflection_feed_per_tooth_mm(
+                    s,
+                    ctx.tool(),
+                    &trace.predicted_feeds,
+                )
             });
             let depth_mm = sample.map_or(0.0, |s| s.axial_engagement_mm);
             (
@@ -763,7 +767,11 @@ pub fn gate_population(
             })
         }
         DistributionMetric::Criterion(CriterionKind::Deflection) => collect(lookup, |s| {
-            let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+            let fz = super::deflection::deflection_feed_per_tooth_mm(
+                s,
+                ctx.tool(),
+                &trace.predicted_feeds,
+            );
             super::deflection::sample_tip_deflection_mm(ctx.tool(), ctx.material(), s, fz)
         }),
         DistributionMetric::Criterion(CriterionKind::DepthOfCut) => collect(lookup, |s| {

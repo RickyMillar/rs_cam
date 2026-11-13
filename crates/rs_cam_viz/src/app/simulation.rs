@@ -864,16 +864,14 @@ fn peak_deflection_for_move(
         .filter(|sample| sample.toolpath_id == toolpath_id && sample.move_index == local_move)
         .filter_map(|sample| {
             // Effective feed per tooth (after kinematic prediction / F-039
-            // modulation), mirroring the deflection gate so the live colour
-            // matches the post-sim verdict.
-            let eff_feed =
-                rs_cam_core::tool_load::effective_feed_for_sample(sample, &trace.predicted_feeds);
-            let flutes = sample.flute_count.max(1) as f64;
-            let eff_fz = if sample.spindle_rpm > 0 {
-                eff_feed / (sample.spindle_rpm as f64 * flutes)
-            } else {
-                sample.chipload_mm_per_tooth
-            };
+            // modulation): the deflection gate's own door (P29-11 11-1, the
+            // one point of a sample), so the live colour matches the
+            // post-sim verdict.
+            let eff_fz = rs_cam_core::tool_load::deflection::deflection_feed_per_tooth_mm(
+                sample,
+                tool,
+                &trace.predicted_feeds,
+            );
             // S6: the sample's own material through the one helper; a
             // not-judged sample gives no colour reading.
             let rs_cam_core::stock::cut_as::EffectiveMaterial::Judged(material) =

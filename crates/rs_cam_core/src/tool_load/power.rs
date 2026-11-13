@@ -191,11 +191,11 @@ pub fn sample_power_kw(
     // cut; the section is the cutter's own (a V-bit removes half the
     // rectangle). The old arc-equivalent slab `(psi / pi) x 2 r` is retired.
     let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)?;
-    // P29-1: the one load. `OperatingPoint::of_sample_for_power` states the
-    // flute count (the sample's own, else the tool's).
+    // P29-1: the one load. P29-11 11-1: the one point of a sample
+    // (`OperatingPoint::of_sample`, the flute count of the tool).
     crate::feeds::cut_load::CutLoad::of_line(
         &engagement,
-        crate::feeds::cut_load::OperatingPoint::of_sample_for_power(sample, tool, feed_mm_min),
+        crate::feeds::cut_load::OperatingPoint::of_sample(sample, tool, feed_mm_min),
         Some(tool),
         Some(*line),
     )

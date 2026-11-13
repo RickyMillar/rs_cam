@@ -12,9 +12,12 @@
 //!   flute count is the tool's), the planned doors and the sample doors
 //!   agree within 1e-12 relative. The arc round trip `ae -> psi -> ae` is
 //!   not exact, so this claim is not bit for bit.
-//! - Claim C (printed, not asserted): the values of the sample doors when
-//!   the flute count of the sample is not the flute count of the tool. This
-//!   is the open item of P29 that `cut_load.rs` names.
+//! - Claim C (P29-11 commit 11-1, a synthetic sample): every sample door
+//!   reads one operating point, `OperatingPoint::of_sample`, with the flute
+//!   count of the tool. So a sample whose flute count is not the tool's
+//!   gives the same four values, bit for bit, as a sample with the tool's
+//!   count. A product sample has the tool's count
+//!   (`compute::simulate::entry_tool_fields` asserts it in a debug build).
 //! - Claim D: outside `feeds/cut_load.rs` no product code calls a model
 //!   function for a forward read. The exceptions are counted and named.
 //! - Claim E (P29-3): the two straight-plunge doors (the operating-point
@@ -30,8 +33,7 @@
 
 #![expect(
     clippy::expect_used,
-    clippy::print_stderr,
-    reason = "test code: an expect is how a test reports a failure; the test prints claim C for the reader"
+    reason = "test code: an expect is how a test reports a failure"
 )]
 
 mod common;
@@ -98,7 +100,8 @@ fn close(what: &str, a: f64, b: f64) {
 fn sample_doors(tool: &ToolDefinition, material: &Material, s: &SimulationCutSample) -> [f64; 4] {
     let line = material.force_line().expect("a force line");
     let no_predicted = rs_cam_core::machine::kinematics::PredictedFeedMap::default();
-    let fz = rs_cam_core::tool_load::deflection::deflection_feed_per_tooth_mm(s, &no_predicted);
+    let fz =
+        rs_cam_core::tool_load::deflection::deflection_feed_per_tooth_mm(s, tool, &no_predicted);
     [
         rs_cam_core::tool_load::power::sample_power_kw(tool, &line, s, FEED).expect("power"),
         rs_cam_core::tool_load::cut_force::sample_peak_force_n(tool, material, s, fz)
@@ -125,18 +128,9 @@ fn each_sample_door_equals_the_one_load_bit_for_bit() {
     let for_power = Engagement::from_sample(&s, &tool).expect("the power gate's engagement");
     let for_force = rs_cam_core::tool_load::deflection::sample_engagement(&tool, &s)
         .expect("the deflection gate's engagement");
-    let power_load = CutLoad::of(
-        &for_power,
-        OperatingPoint::of_sample_for_power(&s, &tool, FEED),
-        &tool,
-        &material,
-    );
-    let force_load = CutLoad::of(
-        &for_force,
-        OperatingPoint::of_sample_for_deflection(&s, &tool, FEED),
-        &tool,
-        &material,
-    );
+    let point = OperatingPoint::of_sample(&s, &tool, FEED);
+    let power_load = CutLoad::of(&for_power, point, &tool, &material);
+    let force_load = CutLoad::of(&for_force, point, &tool, &material);
     bits("power", power, power_load.power_kw().expect("power"));
     bits(
         "peak force",
@@ -148,19 +142,18 @@ fn each_sample_door_equals_the_one_load_bit_for_bit() {
         deflection,
         force_load.deflection_mm().expect("deflection"),
     );
-    let advance = FEED / (f64::from(RPM) * f64::from(s.flute_count));
+    bits(
+        "the chip of the sample point",
+        point.fz_mm(),
+        FEED / (f64::from(RPM) * f64::from(tool.flute_count)),
+    );
     bits(
         "peak chip",
         chip,
-        CutLoad::of(
-            &for_power,
-            OperatingPoint::of_sample_for_chip(&s, advance),
-            &tool,
-            &material,
-        )
-        .chip(RadialThinning::Applied)
-        .expect("a side cut has a chip")
-        .peak_mm,
+        CutLoad::of(&for_power, point, &tool, &material)
+            .chip(RadialThinning::Applied)
+            .expect("a side cut has a chip")
+            .peak_mm,
     );
 }
 
@@ -258,30 +251,21 @@ fn the_planned_doors_and_the_sample_doors_agree_on_one_cut() {
 }
 
 #[test]
-fn the_doors_of_a_sample_whose_flute_count_is_not_the_tools_are_printed() {
+fn a_sample_whose_flute_count_is_not_the_tools_reads_the_tools_count() {
     let (tool, material) = (tool(), material());
     let same = sample_doors(&tool, &material, &sample(&tool, tool.flute_count));
-    let other_z = tool.flute_count + 1;
-    let other = sample_doors(&tool, &material, &sample(&tool, other_z));
-    eprintln!(
-        "P29-1 claim C (open item): tool Z {}, sample Z {} against sample Z {}",
-        tool.flute_count, tool.flute_count, other_z
-    );
-    let names = [
-        ("power (the sample's Z in the edge term)", "kW"),
-        (
-            "peak force (chip from the sample's Z, edge sum with the tool's Z)",
-            "N",
-        ),
-        ("deflection (as the force)", "mm"),
-        ("peak chip (the sample's Z)", "mm"),
-    ];
-    for ((name, unit), (same, other)) in names.into_iter().zip(same.into_iter().zip(other)) {
-        eprintln!(
-            "  {name}: {same:.6} {unit} against {other:.6} {unit} (ratio {:.4})",
-            other / same
-        );
+    let other = sample_doors(&tool, &material, &sample(&tool, tool.flute_count + 1));
+    for (name, (same, other)) in ["power", "peak force", "deflection", "peak chip"]
+        .into_iter()
+        .zip(same.into_iter().zip(other))
+    {
+        bits(name, other, same);
     }
+    assert_eq!(
+        OperatingPoint::of_sample(&sample(&tool, tool.flute_count + 1), &tool, FEED).flute_count(),
+        tool.flute_count,
+        "the one point of a sample takes the tool's flute count"
+    );
 }
 
 /// A file that may hold a needle: the path, the count and the reason.
