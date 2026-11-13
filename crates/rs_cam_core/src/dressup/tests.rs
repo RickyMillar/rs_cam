@@ -2748,3 +2748,64 @@ fn the_rest_ladder_of_a_non_centre_tool_keeps_the_core_out_of_wood_p22_0c() {
         "core findings on the core ladder: {hits:?}"
     );
 }
+
+/// P29-8e (lead ruling Q8, F6): one cut gives one entry, whatever its move
+/// count. A descent followed by a corner arc and a long line, the arc as one
+/// `G2` move or as a fine polyline (0.5 mm chords, as the pipeline sees it
+/// before arc fit): at a 20 degree angle on a tool radius of 3.175 mm the
+/// walk budget (2.747 mm) is under the minimum run, and the old walk folded
+/// the arc but refused the polyline (a straight plunge). Both now fold.
+#[test]
+fn a_fine_polyline_and_one_arc_give_the_same_entry_p29_8e() {
+    use crate::toolpath::MoveIntent;
+    let r = 3.175;
+    let entry = |polyline: bool| -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to_with_intent(P3::new(0.0, 0.0, -2.0), 500.0, MoveIntent::EntryPlunge);
+        if polyline {
+            // The arc about (r, 0) from 180 to 90 degrees, clockwise.
+            let steps = 10;
+            for k in 1..=steps {
+                let a = std::f64::consts::PI * (1.0 - 0.5 * f64::from(k) / f64::from(steps));
+                tp.feed_to_with_intent(
+                    P3::new(r + r * a.cos(), r * a.sin(), -2.0),
+                    1000.0,
+                    MoveIntent::ClearingCut,
+                );
+            }
+        } else {
+            tp.arc_cw_to_with_intent(P3::new(r, r, -2.0), r, 0.0, 1000.0, MoveIntent::ClearingCut);
+        }
+        tp.feed_to_with_intent(P3::new(40.0, r, -2.0), 1000.0, MoveIntent::ClearingCut);
+        tp.rapid_to(P3::new(40.0, r, 10.0));
+        without_provenance(apply_entry(
+            AnnotatedToolpath::new(tp),
+            EntryStyle::Ramp {
+                max_angle_deg: 20.0,
+            },
+            500.0,
+            no_probe(0.0),
+            r,
+        ))
+        .toolpath
+    };
+    for polyline in [false, true] {
+        let tp = entry(polyline);
+        let ramps = tp
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryRamp)
+            .count();
+        let plunges = tp
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .count();
+        assert!(
+            ramps > 0,
+            "polyline {polyline}: the descent folds into a ramp"
+        );
+        assert_eq!(plunges, 0, "polyline {polyline}: no straight plunge stays");
+    }
+}

@@ -98,6 +98,14 @@
 //!   plunge now run at the op plunge rate (they ran at half the first
 //!   linear feed). Only feeds move: no count, length or box moved, and no
 //!   fresh arm moved. No known row moved.
+//! - P29-8e e4 (2026-11-13, lead ruling Q8, F6): field-only bless of
+//!   `arc_count`, `cutting_length_mm`, `gcode_hash`, `linear_count`,
+//!   `move_count`, `moves_hash`, `span_count` and `spans_hash` of
+//!   `pocket/each_face_flipped`, `pocket/extend_open`, `profile/each_face`,
+//!   `profile/fresh` and `profile/rest` (40 fields, `P29-8e_TAB_REPLUNGE.md`
+//!   section 15.2). The fold walk holds at least the run its gate asks for,
+//!   so a ring start on a fine polyline at the 20 degree rule folds along
+//!   the cut instead of the straight plunge. No known row moved.
 //!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`

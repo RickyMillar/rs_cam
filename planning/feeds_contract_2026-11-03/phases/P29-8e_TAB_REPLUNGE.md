@@ -971,3 +971,14 @@ different peak: the ramp is the pipeline's, before arc fit). The 1000 calculator
   longer walk reaches. `test_job.toml` generates nothing at HEAD (no `spindle_rpm`).
 - Every moved ramp stays on the kept cut (0.0 mm, above). The fold walks only the cut after the
   descent, before the boundary clip, so the clip keeps every move inside the boundary as before.
+
+### 15.5 Result on e4 (measured)
+
+The code (`dressup/entry_descent.rs`: `fold_min_run_mm`, `fold_walk_length`; the walk site in
+`dressup/mod.rs`) gives the predictions of 15.2 to 15.4: the op golden moves exactly the 40 rows of
+15.2 (re-blessed, field-only, those arms only; the known 46 stay), FM1 moves exactly the one cell
+of 15.3 (re-blessed; `MATRIX_SUMMARY.md` counts `load.depth.reported` 14 -> 13 and
+`load.depth.within` 15 -> 16), and no wanaka operator op or tracked fixture moves. The new lib test
+`a_fine_polyline_and_one_arc_give_the_same_entry_p29_8e` (one corner arc as one `G2` move and as
+0.5 mm chords, 20 degrees, tool radius 3.175 mm) passes and fails on the old walk (the polyline
+case plunged).

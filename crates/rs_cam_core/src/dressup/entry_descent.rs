@@ -118,6 +118,24 @@ pub(super) fn fold_walk_budget(max_angle_deg: f64) -> f64 {
     ENTRY_CLEARANCE / max_angle_deg.to_radians().tan() / 2.0
 }
 
+/// The shortest run of following cut that the fold gate of [`emit_ramp`]
+/// admits: the tool radius (at least 1 mm) and, for a tool that does not
+/// cut at its centre, its minimum ramp leg (G-SIMCORE).
+pub(super) fn fold_min_run_mm(tool_radius_mm: f64, safety: &EntrySafety<'_>) -> f64 {
+    tool_radius_mm
+        .max(1.0)
+        .max(safety.core.map_or(0.0, |core| core.min_ramp_leg_mm()))
+}
+
+/// P29-8e (lead ruling Q8, F6): how far [`collect_following_cut`] walks for
+/// a fold: the walk budget, and at least the run the gate asks for. With
+/// the budget alone, a budget under the minimum run (a 20 degree rule angle
+/// on a tool radius of 2.75 mm or more) refused every fine polyline, while
+/// one arc move of the same cut passed: the same pass gave two answers.
+pub(super) fn fold_walk_length(max_angle_deg: f64, min_run_mm: f64) -> f64 {
+    fold_walk_budget(max_angle_deg).max(min_run_mm)
+}
+
 /// Sample spacing (mm) used to linearise an arc in the following cut.
 const FOLD_ARC_SPACING_MM: f64 = 0.5;
 

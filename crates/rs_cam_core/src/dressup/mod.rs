@@ -44,7 +44,8 @@ use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 use air_cut::{material_above_cutter, sample_is_air_for_tool, swept_path_is_all_air};
 pub use entry_descent::RAMP_FOLD_MAX_LAPS;
 use entry_descent::{
-    RampFold, collect_following_cut, find_next_xy_direction, fold_walk_budget, upcoming_run,
+    RampFold, collect_following_cut, find_next_xy_direction, fold_min_run_mm, fold_walk_length,
+    upcoming_run,
 };
 use link::{LINK_Z_MATCH_TOL, bridge_corridor_is_swept};
 
@@ -588,8 +589,10 @@ pub fn apply_entry_at(
                     let ramp_dir = find_next_xy_direction(&toolpath.moves, i);
                     // G-RAMPCONTAIN: the following cut, for the ramp to fold
                     // along. `max_angle_deg` bounds the walk, so the scan is
-                    // half a ramp length of path and not the whole pass.
-                    let want = fold_walk_budget(max_angle_deg);
+                    // half a ramp length of path and not the whole pass;
+                    // P29-8e (Q8): never less than the run the gate asks for.
+                    let min_run = fold_min_run_mm(tool_radius_mm, &safety);
+                    let want = fold_walk_length(max_angle_deg, min_run);
                     let follow = collect_following_cut(&toolpath.moves, i, want);
                     let closed = follow.len() >= 3
                         && follow.last().is_some_and(|p| {
@@ -600,7 +603,7 @@ pub fn apply_entry_at(
                     let fold = RampFold {
                         follow: &follow,
                         closed,
-                        min_run_mm: tool_radius_mm.max(1.0),
+                        min_run_mm: min_run,
                         lap_cap: safety.fold_lap_cap,
                     };
                     let refused = emit_ramp(
