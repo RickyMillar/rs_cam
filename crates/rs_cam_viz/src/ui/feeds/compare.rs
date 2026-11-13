@@ -34,7 +34,7 @@ use crate::ui::components::role_of_tone;
 use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, SectionHeader, Source};
 use crate::ui::sim_diagnostics::{limit_data_row_with_face, row_hover};
 use crate::ui::{AppEvent, theme, tokens};
-use rs_cam_core::limits::{CheckRow, Subject};
+use rs_cam_core::limits::CheckRow;
 
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
 
@@ -247,22 +247,30 @@ struct CutRows<'a> {
 
 impl CardLimits<'_> {
     /// Part one, "As the op stands": the rows of the cut that the op holds
-    /// now (the stated point against each limit). Lead ruling L1: step 10i
-    /// adds the declared cuts at the stated point to this part, and the
-    /// face row reads only this part.
+    /// now (`CheckRow::is_stated`). P29-10 10i (lead ruling L1): every
+    /// declared cut at the stated point, then the stated point against each
+    /// limit that is not a limit of each cut. The face row reads only this
+    /// part.
     fn as_it_stands(&self) -> Vec<&CheckRow> {
-        self.envelope
-            .iter()
-            .filter(|row| matches!(row.subject(), Subject::Stated))
-            .collect()
+        self.envelope.iter().filter(|row| row.is_stated()).collect()
     }
 
     /// Part two, "If you apply ⚡": the planned rows at the proposal,
     /// grouped by cut in the declaration order (core writes them by limit,
     /// then by cut; the first row of a cut fixes its place).
     fn cuts(&self) -> Vec<CutRows<'_>> {
+        self.cuts_where(CheckRow::is_planned)
+    }
+
+    /// P29-10 10i: part one by cut, with the folds of part two.
+    fn stated_cuts(&self) -> Vec<CutRows<'_>> {
+        self.cuts_where(|row| row.is_stated())
+    }
+
+    /// The rows of `keep` that name a declared cut, grouped by cut.
+    fn cuts_where(&self, keep: impl Fn(&CheckRow) -> bool) -> Vec<CutRows<'_>> {
         let mut out: Vec<CutRows<'_>> = Vec::new();
-        for row in self.envelope {
+        for row in self.envelope.iter().filter(|row| keep(row)) {
             let Some(cut) = row.cut() else { continue };
             match out.iter_mut().find(|group| group.cut == cut) {
                 Some(group) => group.rows.push(row),
@@ -286,11 +294,13 @@ impl CardLimits<'_> {
     /// THE face row (ruling O1, lead ruling 1 on 10f): the worst row of
     /// part one by the one core rank (`CheckRow::rank_cmp`), only when it
     /// exceeds. A proposal row never reaches the face: the face describes
-    /// the op as it stands.
+    /// the op as it stands. P29-10 10i: a row that core keeps out of the
+    /// face rank (`CheckRow::ranks_for_the_face`, Q2 open) is in the drawer
+    /// only.
     pub(crate) fn face_row(&self) -> Option<&CheckRow> {
         self.as_it_stands()
             .into_iter()
-            .filter(|row| row.tone().exceeds())
+            .filter(|row| row.tone().exceeds() && row.ranks_for_the_face())
             .min_by(|a, b| a.rank_cmp(b))
     }
 
@@ -398,12 +408,12 @@ fn cut_words(rows: &[&CheckRow]) -> Vec<&'static str> {
 /// core words of `limits::quiet_summary`) that opens to its rows; a cut
 /// with a row that exceeds stays open: a title (the cut and its caveat
 /// words), the rows that hold a number and one closed "no number · n" line.
-fn draw_cut(ui: &mut egui::Ui, group: &CutRows<'_>) {
+fn draw_cut(ui: &mut egui::Ui, part: &str, group: &CutRows<'_>) {
     let mut title = group.cut.label().to_owned();
     for word in cut_words(&group.rows) {
         title.push_str(&format!(" \u{00B7} {word}"));
     }
-    let id = format!("feeds_card_limits_{title}");
+    let id = format!("feeds_card_limits_{part}_{title}");
     let quiet = rs_cam_core::limits::quiet_summary(&group.rows);
     if let Some(summary) = quiet {
         let tail = cut_words(&group.rows)
@@ -453,7 +463,17 @@ pub(crate) fn draw_limits_drawer<B>(
             let stands = limits.as_it_stands();
             if !stands.is_empty() {
                 SectionHeader::new(AS_IT_STANDS_TITLE).small_caps().show(ui);
-                draw_group_rows(ui, "feeds_card_limits_stands", &stands);
+                // P29-10 10i: the stated point against the limits that are
+                // not limits of each cut, then each declared cut at the
+                // stated point with the folds of part two.
+                let point_rows: Vec<&CheckRow> = stands
+                    .into_iter()
+                    .filter(|row| row.cut().is_none())
+                    .collect();
+                draw_group_rows(ui, "feeds_card_limits_stands", &point_rows);
+                for group in &limits.stated_cuts() {
+                    draw_cut(ui, "stands", group);
+                }
             }
             let cuts = limits.cuts();
             if !cuts.is_empty() || !limits.rpm.is_empty() {
@@ -464,7 +484,7 @@ pub(crate) fn draw_limits_drawer<B>(
                     .row(DataRow::record(proposal_line(limits.proposal)))
                     .show(ui);
                 for group in &cuts {
-                    draw_cut(ui, group);
+                    draw_cut(ui, "applied", group);
                 }
                 if !limits.rpm.is_empty() {
                     let rpm: Vec<&CheckRow> = limits.rpm.iter().collect();

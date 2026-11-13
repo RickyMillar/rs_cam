@@ -821,6 +821,12 @@ impl ConfiguredEntry {
     /// stated values only: the entry is a value check of the cut the op
     /// states.
     ///
+    /// P29-10 10i (lead ruling 1): the entry feed of a ramp or a helix is
+    /// written from the stored cut feed over the body lift `lift` (the
+    /// unlifted feed), so it carries the interval of both writes
+    /// ([`StoredFeedChip::of_second_write`]). A plunge feed, and a ramp or
+    /// a helix that falls back to the plunge feed, is one write.
+    ///
     /// # Errors
     ///
     /// The errors of [`Self::planned_feed_mm_min`], and
@@ -830,10 +836,19 @@ impl ConfiguredEntry {
         op: &crate::compute::catalog::OperationConfig,
         kind: EntryKind,
         flute_count: u32,
+        lift: f64,
     ) -> Result<StoredFeedChip, EntryNoNumber> {
         let feed = self.planned_feed_mm_min(op, kind)?;
         let rpm = Self::stated_rpm(op)?;
-        Ok(StoredFeedChip::of(feed, rpm, flute_count))
+        let second_write = match kind {
+            EntryKind::Ramp | EntryKind::Helix => op.entry_feed_rate().filter(usable).is_some(),
+            EntryKind::Plunge | EntryKind::PeckLadder => false,
+        };
+        Ok(if second_write {
+            StoredFeedChip::of_second_write(feed, rpm, flute_count, lift)
+        } else {
+            StoredFeedChip::of(feed, rpm, flute_count)
+        })
     }
 
     /// The spindle speed (rpm) the op states.
@@ -866,9 +881,17 @@ impl ConfiguredEntry {
 /// follows the end that the check reads (lead ruling, P29-9 section 15).
 ///
 /// The interval is derived from the write step, not a typed tolerance. It
-/// covers one write. A value that went through two writes (the ramp feed
-/// reads the stored cut feed over the lift, then rounds again) can sit up to
-/// `1 + 1 / lift` steps under its source; this rule does not cover that.
+/// covers one write ([`Self::of`]).
+///
+/// P29-10 10i (lead ruling 1): a feed written from another stored feed
+/// carries the interval of both writes ([`Self::of_second_write`]). The
+/// ramp feed is the stored cut feed `f_s` over the body lift `L` (the
+/// unlifted feed), rounded down again: `r = floor(f_s / L)` in whole steps
+/// `s`, so `r <= f_s / L < r + s`. The true cut feed is any `F` in
+/// `[f_s, f_s + s)` (the first write), so the true ramp `F / L` is under
+/// `(f_s + s) / L < r + s + s / L`. The ramp chip interval is thus
+/// `[r, r + (1 + 1 / L) s) / (rpm x Z)`. The two steps come from the two
+/// rounding writes; no constant.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StoredFeedChip {
     stated_mm: f64,
@@ -891,6 +914,48 @@ impl StoredFeedChip {
         Self {
             stated_mm: feed_mm_min / per_rev,
             high_mm: high_feed / per_rev,
+        }
+    }
+
+    /// P29-10 10i (lead ruling 1): the chip of the stored feed
+    /// `feed_mm_min` written from another stored feed over the lift `lift`
+    /// (at or above 1): the interval of both writes, `[f, f + (1 + 1 /
+    /// lift) step)` over `rpm x Z` (the derivation is in the type doc). A
+    /// feed that is not a whole step states itself only.
+    #[must_use]
+    pub fn of_second_write(feed_mm_min: f64, rpm: f64, flute_count: u32, lift: f64) -> Self {
+        let per_rev = rpm * f64::from(flute_count.max(1));
+        let step = crate::feeds::suggest::FEED_WRITE_STEP_MM_MIN;
+        let whole_step = (feed_mm_min / step).fract() == 0.0;
+        let lift = if lift.is_finite() && lift >= 1.0 {
+            lift
+        } else {
+            1.0
+        };
+        let high_feed = if whole_step {
+            feed_mm_min + step + step / lift
+        } else {
+            feed_mm_min
+        };
+        Self {
+            stated_mm: feed_mm_min / per_rev,
+            high_mm: high_feed / per_rev,
+        }
+    }
+
+    /// P29-10 10i: the chip interval of a cut fed at this chip over the
+    /// lift `lift` (the slot ring at the unlifted feed): both ends over the
+    /// lift.
+    #[must_use]
+    pub fn over_lift(self, lift: f64) -> Self {
+        let lift = if lift.is_finite() && lift > 0.0 {
+            lift
+        } else {
+            1.0
+        };
+        Self {
+            stated_mm: self.stated_mm / lift,
+            high_mm: self.high_mm / lift,
         }
     }
 
@@ -921,6 +986,43 @@ impl StoredFeedChip {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// P29-10 10i (lead ruling 1): a ramp feed written from a stored cut
+    /// feed over the lift reaches `1 + 1/lift` steps above itself. The
+    /// operator Face (idx 0): cut feed 6488 at 18000 rpm, 2 flutes, lift
+    /// 1.00623 (Garr at 8 mm on 18 mm); the ramp is `floor(6488 / lift)`.
+    #[test]
+    fn a_second_write_carries_the_interval_of_both_writes_p29_10() {
+        use crate::feeds::suggest::FEED_WRITE_STEP_MM_MIN as STEP;
+        let (rpm, z) = (18_000.0, 2_u32);
+        let per_rev = rpm * f64::from(z);
+        let lift: f64 = 1.006_23;
+        let cut = 6488.0;
+        let ramp = (cut / lift / STEP).floor() * STEP;
+        let chip = StoredFeedChip::of_second_write(ramp, rpm, z, lift);
+        // Every true cut feed in [cut, cut + step) gives a true ramp inside.
+        for k in 0..=100 {
+            let true_cut = cut + STEP * f64::from(k) / 100.0 * (1.0 - 1e-9);
+            let true_ramp_chip = true_cut / lift / per_rev;
+            assert!(
+                chip.stated_mm() <= true_ramp_chip && true_ramp_chip < chip.high_mm(),
+                "a true ramp {true_ramp_chip} inside [{}, {})",
+                chip.stated_mm(),
+                chip.high_mm()
+            );
+        }
+        // At the edge inside: a bound just under the high end holds; one
+        // write would not hold it.
+        let bound = chip.high_mm() * (1.0 - 1e-6);
+        assert!(bound <= chip.high_mm());
+        assert!(StoredFeedChip::of(ramp, rpm, z).high_mm() < bound);
+        // Just outside: a bound past the high end is outside the interval.
+        let outside = chip.high_mm() * (1.0 + 1e-6);
+        assert!(chip.high_mm() < outside);
+        // The width is exactly 1 + 1/lift steps.
+        let width = (chip.high_mm() - chip.stated_mm()) * per_rev;
+        assert!((width - STEP * (1.0 + 1.0 / lift)).abs() < 1e-9);
+    }
 
     #[test]
     fn the_stored_defaults_are_the_door_rows() {

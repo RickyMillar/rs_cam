@@ -790,6 +790,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     let column = BodyColumn {
         ae_mm: STEPOVER_MM,
         chip_mm: Some(fz),
+        stored: None,
     };
     let budget_n = machine
         .rigidity

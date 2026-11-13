@@ -26,6 +26,7 @@ data/:
 import bisect
 import glob
 import json
+import math
 import os
 import re
 import sys
@@ -178,16 +179,23 @@ def main():
           "and cut group.", ok, detail, n1)
 
     # Claim 2: every margin is the side rule of its judged value and its
-    # bound (section 6 claim 3). The judged value is the value, except on
-    # an entry chip row: its chip reads a stored whole-mm/min entry feed,
-    # and the row judges the end of that feed's interval toward the inside
-    # (P29-9: [f, f + 1) mm/min, so the judged chip is value x (f + 1) / f
-    # for a floor). The script recovers f from the two margins and asserts
-    # that it is one whole feed for every such row of the op.
+    # bound (section 6 claim 3). The judged value is the value, except on a
+    # chip row that reads a stored whole-mm/min feed: it judges the end of
+    # that feed's interval toward the inside. An entry chip row reads the
+    # entry feed; P29-10 10i (lead ruling 1) a ramp or helix feed written
+    # from the stored cut feed over the lift L has the interval of both
+    # writes, [f, f + k) with k = 1 + 1/L in [1, 2], so the judged chip is
+    # value x (f + k) / f for a floor. The script recovers f for k = 1 and
+    # k = 2 and asserts that a whole feed lies between them. A stated cut
+    # chip row (P29-10 10i) reads the stored op feed, one write (k = 1): the
+    # script asserts f is the op feed of the CLI record.
     detail, ok, n, n_entry = [], True, 0, 0
     entry_feeds = {}
     chip_limits = {"chip_min", "chip_max", "rubbing_floor"}
+    op_feed = {line["index"]: (line.get("current") or {}).get("feed_rate")
+               for line in cli_lines("operator")}
     sources = [(idx, r) for idx, env in envs.items() for r in env["limit_rows"]]
+    tp_index = {tp["toolpath_id"]: i for i, tp in enumerate(report["limit_rows"])}
     sources += [(None, r) for tp in report["limit_rows"] for r in tp["rows"]]
     for idx, r in sources:
         c = r["check"]
@@ -201,9 +209,10 @@ def main():
         n += 1
         if abs(want - c["margin"]) <= REL * max(1.0, abs(want)):
             continue
-        entry_chip = (r["subject"]["kind"] == "planned" and "entry" in (r["subject"]["cut"] or "")
-                      and c["limit"] in chip_limits)
-        if not entry_chip:
+        kind = r["subject"]["kind"]
+        is_entry = kind in ("planned", "stated_cut") and "entry" in (r["subject"]["cut"] or "")
+        is_stated_cut = kind == "stated_cut" and not is_entry
+        if c["limit"] not in chip_limits or not (is_entry or is_stated_cut):
             ok = False
             detail.append(f"{r['face']}: margin {c['margin']} against {want}")
             continue
@@ -212,19 +221,32 @@ def main():
                   else c["bound"] * (1 + c["margin"]))
         ratio = judged / c["value"]
         if c["side"] == "ceiling":
-            ratio = 1 / ratio  # a ceiling judges the low end: value x f / (f + 1)
-        f = 1 / (ratio - 1) if ratio > 1 else float("inf")
-        entry_feeds.setdefault(idx, set()).add(round(f))
-        n_entry += 1
-        if abs(f - round(f)) > 0.05:
+            ratio = 1 / ratio  # a ceiling judges the low end: value x f / (f + k)
+        if ratio <= 1:
             ok = False
-            detail.append(f"idx {idx}: {r['face']}: the judged value is not the end of a whole "
-                          f"feed interval (f = {f:.4f})")
+            detail.append(f"idx {idx}: {r['face']}: the judged value is not inside the value")
+            continue
+        n_entry += 1
+        if is_stated_cut:
+            f = 1 / (ratio - 1)
+            want_f = op_feed.get(idx)
+            if want_f is None or abs(f - want_f) > 0.5:
+                ok = False
+                detail.append(f"idx {idx}: {r['face']}: f = {f:.4f}, the op feed {want_f}")
+            entry_feeds.setdefault(idx, set()).add(f"op {f:.1f}")
+            continue
+        f1, f2 = 1 / (ratio - 1), 2 / (ratio - 1)
+        whole = math.floor(f2 + 1e-6) >= math.ceil(f1 - 1e-6)
+        entry_feeds.setdefault(idx, set()).add(f"{f1:.1f}..{f2:.1f}")
+        if not whole:
+            ok = False
+            detail.append(f"idx {idx}: {r['face']}: no whole feed between {f1:.4f} and {f2:.4f}")
     for idx, feeds in sorted(entry_feeds.items(), key=lambda kv: str(kv[0])):
         detail.append(f"idx {idx}: entry chip rows judge the end of the interval of the stored "
                       f"feed {sorted(feeds)} mm/min")
     detail.append(f"{n} rows with a value, a bound and a margin; {n - n_entry} on the plain side "
-                  f"rule, {n_entry} entry chip rows at the end of their stored-feed interval")
+                  f"rule, {n_entry} chip rows (entries, stated cuts) at the end of their "
+                  f"stored-feed interval")
     claim("2", "Every margin is the side rule of its judged value and its bound.", ok, detail[:14],
           n)
 
@@ -267,7 +289,10 @@ def main():
             cases.append(("planned", r["subject"]["at"], r))
         stated_marks = {m["cut"]: m["at"] for m in env["plane_marks"]["stated"]["marks"]}
         for r in env["limit_rows"]:
-            if (r["subject"]["kind"] != "stated" or r["check"]["limit"] != "force_budget"
+            # P29-10 10i: the stated body force-budget row is the stated cut
+            # row of the body (`stated_cut`).
+            if (r["subject"]["kind"] != "stated_cut" or r["subject"].get("cut") != "body"
+                    or r["check"]["limit"] != "force_budget"
                     or r["check"]["bound"] is None or "body" not in stated_marks):
                 continue
             cases.append(("stated", stated_marks["body"], r))

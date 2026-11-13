@@ -704,10 +704,10 @@ pub enum SuggestWarning {
     /// or the stated point sits outside the safe envelope. A warning; the
     /// write goes ahead.
     OutsideEnvelope {
-        /// The limit that the point crosses.
+        /// The limit that the point crosses. P29-10 10i (lead ruling 4):
+        /// the warning carries no margin; the number of the stated point is
+        /// its stated row (`SafeEnvelope::rows`, `Check::binding`).
         binding: crate::feeds::envelope::LimitKind,
-        /// The negative share of the limit (`-0.2`: 20 % past it).
-        margin: f64,
         /// The depth of the point (mm).
         ap_mm: f64,
         /// The width of the point (mm).

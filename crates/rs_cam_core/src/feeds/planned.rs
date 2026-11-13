@@ -122,7 +122,8 @@ pub const fn sets_a_ceiling(presence: Presence, depth: PlaneDepth) -> bool {
 pub struct PlannedCut {
     /// The kind.
     pub kind: CutKind,
-    /// The group of the kind (`CutKind::group`).
+    /// The group of the cut ([`planned_group`]: the group of the kind, the
+    /// drill group for a drill cycle depth).
     pub group: CutGroup,
     /// P29-8 8d: the body plane, or the cut's own depth.
     pub depth: PlaneDepth,
@@ -147,6 +148,33 @@ pub struct BodyColumn {
     /// The advance per tooth of the body (mm); `None` for a reader of the
     /// width only (the power fold).
     pub chip_mm: Option<f64>,
+    /// P29-10 10i: the chip interval of the stored op feed when the column
+    /// is the stated cut (`chip_mm` is its stated chip); `None` for a chip
+    /// the calculator gives (the proposal, an edge column).
+    pub stored: Option<StoredFeedChip>,
+}
+
+/// P29-10 10i (lead ruling 3): **THE group of a declared cut before the
+/// simulation**: the group of its kind, except a cut whose depth is the
+/// drill cycle (`DeclaredDepth::None(NoEngagementModel::DrillCycle)`: the
+/// body of a Drill or an Alignment Pin Drill). A drill op's body is not a
+/// milling cut: it is judged in the drill group, so `limits::scope` answers
+/// for it as for the drill cycle (the chip band, the rubbing floor and the
+/// vendor depth table `NotJudged` row `P28-20`), and the drill gates stay
+/// its judge. The sample side reads the drill group for the same op
+/// (`tool_load::locality::judged_group`).
+#[must_use]
+pub const fn planned_group(cut: &DeclaredCut) -> CutGroup {
+    match cut.depth {
+        DeclaredDepth::None(NoEngagementModel::DrillCycle) => CutGroup::Drill,
+        DeclaredDepth::Stated(_)
+        | DeclaredDepth::OfTool(_)
+        | DeclaredDepth::AtLeast(_)
+        | DeclaredDepth::EarlierLeave
+        | DeclaredDepth::None(_)
+        | DeclaredDepth::Own(_)
+        | DeclaredDepth::Axial => cut.kind.group(),
+    }
 }
 
 /// P29-8 8d: the chip of each entry kind of one op, from the entry rule
@@ -161,8 +189,15 @@ struct EntryChips {
 }
 
 impl EntryChips {
-    fn of(operation: &OperationConfig, entry: &ConfiguredEntry, flute_count: u32) -> Self {
-        let chip = |kind| entry.planned_chip_mm(operation, kind, flute_count);
+    /// `lift`: the body lift of the unlifted feed that a ramp or a helix
+    /// entry feed is written from (P29-10 10i, lead ruling 1).
+    fn of(
+        operation: &OperationConfig,
+        entry: &ConfiguredEntry,
+        flute_count: u32,
+        lift: f64,
+    ) -> Self {
+        let chip = |kind| entry.planned_chip_mm(operation, kind, flute_count, lift);
         Self {
             plunge: chip(EntryKind::Plunge),
             ramp: chip(EntryKind::Ramp),
@@ -387,6 +422,11 @@ impl DeclaredCuts {
             ap,
         )
         .mm();
+        let thinning = list.body_facts().thins_chip;
+        // P29-10 10i (lead ruling 1): the lift of the unlifted feed at the
+        // stated width (else D), the lift a ramp feed is written over.
+        let stated_ae = operation.stepover().filter(|v| usable(*v)).unwrap_or(d_mm);
+        let entry_lift = thinning.lift(list.full_feed_width(stated_ae, d_mm), lift_d_eng_mm);
         Self {
             list,
             d_mm,
@@ -396,9 +436,9 @@ impl DeclaredCuts {
                 .map_or(BodyDepth::None(NoEngagementModel::NoStatedDepth), |c| {
                     BodyDepth::of_declared(c.depth, tool.geometry_hint(), facts)
                 }),
-            thinning: list.body_facts().thins_chip,
+            thinning,
             lift_d_eng_mm,
-            entry_chips: EntryChips::of(operation, entry, tool.flute_count_planning()),
+            entry_chips: EntryChips::of(operation, entry, tool.flute_count_planning(), entry_lift),
             entry_rpm: ConfiguredEntry::stated_rpm(operation),
         }
     }
@@ -525,21 +565,23 @@ impl DeclaredCuts {
             },
         };
         let body_chip = column.chip_mm.ok_or(PlannedNoNumber::NoBodyChip);
+        let unlift = || {
+            self.thinning
+                .lift(self.list.full_feed_width(ae, d), self.lift_d_eng_mm)
+        };
+        // P29-10 10i: a cut fed at the op feed at the stated point reads the
+        // interval of the stored op feed (the slot ring over its lift).
         let stored_chip = match cut.feed {
             DeclaredFeed::EntryRule(kind) => self.entry_chips.get(kind).ok(),
-            DeclaredFeed::OpFeed
-            | DeclaredFeed::Unlifted
-            | DeclaredFeed::PlannerCapped
-            | DeclaredFeed::DrillCycle => None,
+            DeclaredFeed::OpFeed => column.stored,
+            DeclaredFeed::Unlifted => column.stored.map(|c| c.over_lift(unlift())),
+            DeclaredFeed::PlannerCapped | DeclaredFeed::DrillCycle => None,
         };
         let chip_mm = match cut.feed {
             DeclaredFeed::OpFeed => body_chip,
-            DeclaredFeed::Unlifted => body_chip.map(|fz| {
-                let lift = self
-                    .thinning
-                    .lift(self.list.full_feed_width(ae, d), self.lift_d_eng_mm);
-                UnliftedFeed::over_lift(fz, lift).mm_min()
-            }),
+            DeclaredFeed::Unlifted => {
+                body_chip.map(|fz| UnliftedFeed::over_lift(fz, unlift()).mm_min())
+            }
             DeclaredFeed::PlannerCapped => Err(PlannedNoNumber::PlannerCapped),
             DeclaredFeed::EntryRule(kind) => self
                 .entry_chips
@@ -550,7 +592,7 @@ impl DeclaredCuts {
         };
         PlannedCut {
             kind: cut.kind,
-            group: cut.kind.group(),
+            group: planned_group(cut),
             depth,
             width_mm,
             chip_mm,
@@ -912,6 +954,7 @@ pub fn worst_power(
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: None,
+        stored: None,
     };
     let cells = judge_declared_cuts::<SpindlePowerPlanned>(cuts, column, &env);
     let mut best: Option<(PowerCase, f64, f64)> = None;
@@ -945,6 +988,7 @@ pub fn power_case_width(cuts: &DeclaredCuts, case: PowerCase, ae: f64) -> f64 {
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: None,
+        stored: None,
     };
     judge_declared_cuts::<SpindlePowerPlanned>(cuts, column, &env)
         .iter()

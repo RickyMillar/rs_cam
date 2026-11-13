@@ -1219,7 +1219,6 @@ mod tests {
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
     use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
     use rs_cam_core::feeds::suggest::{NoProject, SuggestContext, SuggestWarning};
-    use rs_cam_core::limits::Subject;
 
     /// P29-10 10f (site 25): the `OutsideEnvelope` stage line reads the
     /// stated row: its core face without the subject, never a margin that
@@ -1249,11 +1248,10 @@ mod tests {
         let stated = env
             .rows()
             .iter()
-            .find(|r| matches!(r.subject(), Subject::Stated) && r.tone().exceeds())
+            .find(|r| r.is_stated() && r.tone().exceeds())
             .expect("a stated row exceeds at a 10 mm depth");
         let warning = SuggestWarning::OutsideEnvelope {
             binding: LimitKind::Rigidity,
-            margin: -0.5,
             ap_mm: 10.0,
             ae_mm: 5.0,
         };

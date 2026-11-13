@@ -1000,14 +1000,14 @@ impl RsCamApp {
         let outside_envelope = warnings.iter().find_map(|w| {
             if let rs_cam_core::feeds::suggest::SuggestWarning::OutsideEnvelope {
                 binding,
-                margin,
                 ap_mm,
                 ae_mm,
             } = w
             {
+                // P29-10 10i (lead ruling 4): no margin from the placement;
+                // the stated row with `check.binding` holds the number.
                 Some(serde_json::json!({
                     "binding": binding.label(),
-                    "margin": margin,
                     "ap_mm": ap_mm,
                     "ae_mm": ae_mm,
                 }))

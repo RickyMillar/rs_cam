@@ -350,3 +350,110 @@ caution, caveat "at the suggested chip").
   the printed value; the G-code before a simulation runs it); (d) keep
   the row out of the face rank for good (the predicate of today), the
   drawer shows it.
+
+## 12. Measured beside predicted (10i)
+
+The row probe of PB and 10h ran on the 10i tree (`dump_10i.jsonl`), with
+the envelope placement on the record. "Measured" is the diff against the
+HEAD dump.
+
+### The face line of the 18 operator ops
+
+All 18 face lines are as predicted in section 11 (the same cut, limit and
+tone on every op; the face words: "· worst case" on the ramp rows and "·
+may not occur" on the first slot, helix and plunge rows):
+
+| idx | Predicted | Measured |
+|---|---|---|
+| 0, 3, 4, 5, 8, 9, 10, 12, 13 | none | none |
+| 1 | first slot · depth 420 % over force cap (caution) | first slot · depth 420 % over force cap · may not occur (caution) |
+| 2 | first slot · depth 120 % (caution) | the same |
+| 6 | ramp entry · chip min 76 % under floor (caution) | ramp entry · chip min 76 % under floor · worst case (caution) |
+| 7 | ramp entry · chip min 76 % under floor (caution) | the same as idx 6 |
+| 11 | ramp entry · chip min 66 % under floor (caution) | the same, "· worst case" |
+| 14 | first slot · depth 109 % (caution) | the same |
+| 15 | first slot · depth 106 % (caution) | the same |
+| 16 | helix entry · chip min 91 % under floor (caution) | the same, "· may not occur" |
+| 17 | plunge entry · plunge rate 17 % over limit (caution) | the same, "· may not occur" |
+
+Open on Q2 (held off the face by `CheckRow::ranks_for_the_face`, shown in
+the drawer): idx 1 (body +21 %, planner cap +24 %), 2 (planner cap
++2.9 %), 7 and 8 (body and slot ring +27 %), 14 (+3.4 %), 15 (+3.1 %).
+Without the predicate these would be danger lines.
+
+`nz_wanaka_21.toml` idx 1 keeps a depth line: "first slot · depth 340 %
+over force cap · may not occur", caveats `advisory`, `at_suggested_chip`
+(the planner cap reads 266 %, the number of today's stated row).
+
+### The rows
+
+- Part one: 658 stated cut rows (operator), 643 (`nz_wanaka_21`), 139 on
+  each rivmap file, one per declared cut and planned limit. The
+  `of_envelope` rows of the planned limits leave part one: on the operator
+  file 18 `ChipMax` (per point, `NotJudgedHere`), 15 force budget, 15
+  deflection, 13 vendor depth table, 8 power.
+- Part two changes, as predicted: operator idx 0 and 12, the ramp and
+  helix `ChipMin` rows `Exceeds` to `Within` with "stored feed" (ruling 1);
+  their `ChipMax` rows take the caveat "stored feed" (the bound is inside
+  the wider interval); idx 3 and 4 (and `nz_wanaka_21` idx 3 and 4), the
+  body chip and rubbing rows `Within` to `NotJudgedHere` row P28-20 and the
+  body power row to `NotJudgedHere` row P28-10 (ruling 3); the drill cycle
+  rows keep their state and now name P28-20 and P28-10 in place of
+  `S-NotJudgedHere`.
+- Not predicted in the note, a consequence of ruling 1 with no state or
+  tone change: the margin of the entry `ChipMin` and `RubbingFloor` rows
+  on every op with a whole-step ramp feed moves with the wider interval
+  (operator idx 1, 2, 8, 14, 15, 17; `nz_wanaka_21` idx 15; live idx 1);
+  on idx 0, 12 and `nz_wanaka_21` idx 15 the rubbing face percent moves.
+- Readiness and the verdict rows: no change.
+
+### Ruling 4: the placement against the stated rows
+
+On the four files no op has the placement "outside" with no stated row
+over, and no op has the placement "inside" with a stated depth or width
+row over. Where the placement is outside (operator idx 1, 2, 14, 15;
+`nz_wanaka_21` idx 1, 2, 14, 15; live idx 1), the stated row with
+`check.binding` is the row of the binding limit: on operator idx 1, 2, 14,
+15 the planner cap force-budget row reads 387 %, 74 %, 73 %, 57 %, the
+numbers of the placement (one number); live idx 1: the first slot
+force-budget row, 85 %.
+
+The reverse in the wide sense is not empty: on 20 ops the placement is
+inside and a stated value-check row exceeds (chip minimum, chip maximum,
+rubbing floor, plunge rate). The placement does not judge these per-cut
+limits (they have no edge on the plane), so the two do not contradict:
+operator idx 6, 7, 8, 11, 16, 17; `nz_wanaka_21` idx 5, 9, 10, 13, 16, 17;
+rivmap100 idx 0 to 3; live idx 0, 2, 3.
+
+### The wire (P29-10 10i)
+
+- New subject kind `stated_cut` {cut, occurs, at} in `limit_rows` (MCP
+  `get_safe_envelope`, `get_suggest_rationale`, `get_tool_load_report`
+  envelope part; CLI `suggest`, `project`).
+- New caveat `at_suggested_chip`; new reason `no_stated_feed`.
+- `envelope.operator`: `{kind: inside}` or `{kind: outside, binding}`; the
+  `margin` key is gone. `outside_envelope` (the MCP `apply_feeds` reply):
+  the `margin` key is gone. The `project.outside_envelope` message names
+  the limit, not a share.
+- `exemption` of a planned or stated cell that the scope does not judge
+  names its scope row (P28-20, P28-10, P28-17, P28-04) in place of
+  `S-NotJudgedHere`.
+
+### Cost, the explainer and the text caps
+
+- The time-budget test alone, six runs (load average 2.27): 182, 185, 186,
+  193, 185, 182 ms (before 10i: 173 to 187 ms at 1.36). The stated judge
+  runs once per envelope, outside the edge solves.
+- `P29-10_explainer/data/` regenerated on the 10i tree (the envelope
+  replies through the probe of the `get_safe_envelope` reply code, the CLI
+  records through the release CLI). `assert_claims.py` reads the new
+  subject: claim 2 accepts a stated cut chip row at the end of the
+  interval of the op feed of its CLI record, and an entry chip row at the
+  end of an interval of `1 + 1/lift` steps (it asserts a whole feed between
+  the one-step and the two-step reading); claim 4 reads the stated body
+  force-budget row as a `stated_cut` row. 11 of 11 claims pass.
+- IC1 (`the_inspector_text_is_bounded_ic1`): each fixture now paints one
+  face line (Pocket and 3D Rough "ramp entry · chip min 89 % under floor ·
+  worst case", 3D Finish "body · chip min 78 % under floor"); the Passes
+  caps rise by that line (41 to 42, 38 to 39, 30 to 31). This closes open
+  item 4 of `P29-10_DESIGN.md` section 17.

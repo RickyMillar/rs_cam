@@ -115,6 +115,7 @@ fn binding_cut_at(tool: &ToolConfig, ae: f64, target_um: f64) -> (CutKind, f64, 
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),
+        stored: None,
     };
     let material = oak();
     let env = ForceEnv {

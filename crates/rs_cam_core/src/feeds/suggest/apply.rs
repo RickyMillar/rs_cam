@@ -1111,12 +1111,11 @@ pub fn apply(
         rec.speeds_explored,
     ));
     if let Some(pick) = &rec.pick
-        && let Placement::Outside { binding, margin } = pick.placement
+        && let Placement::Outside { binding, .. } = pick.placement
     {
         let p = pick.point.get();
         warnings.push(SuggestWarning::OutsideEnvelope {
             binding,
-            margin,
             ap_mm: p.ap_mm,
             ae_mm: p.ae_mm,
         });

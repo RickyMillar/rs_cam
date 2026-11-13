@@ -417,7 +417,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
         },
         SuggestWarning::OutsideEnvelope {
             binding,
-            margin,
             ap_mm,
             ae_mm,
         } => RationaleEntry {
@@ -429,10 +428,11 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 "Cut {ap_mm:.2} x {ae_mm:.2} mm is outside the safe envelope: {}",
                 binding.label()
             ),
+            // P29-10 10i (lead ruling 4): no margin from the placement; the
+            // stated row of the limit holds the number.
             detail: Some(format!(
-                "The point is {:.0} % past the {} limit. The value is written; it is a warning \
-                 (ruling Q6).",
-                -margin * 100.0,
+                "The point is past the {} limit; its stated row gives the number. The value is \
+                 written; it is a warning (ruling Q6).",
                 binding.label()
             )),
         },

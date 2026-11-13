@@ -197,6 +197,7 @@ fn binding_cut_at(
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),
+        stored: None,
     };
     let env = ForceEnv {
         tool: cutter,

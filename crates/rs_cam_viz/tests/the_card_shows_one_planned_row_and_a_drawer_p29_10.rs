@@ -62,7 +62,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::limits::{CheckRow, Subject};
+use rs_cam_core::limits::CheckRow;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
@@ -330,10 +330,7 @@ fn the_card_shows_one_planned_row_and_a_drawer_p29_10() {
             );
         }
 
-        let stated: Vec<&CheckRow> = envelope
-            .iter()
-            .filter(|row| matches!(row.subject(), Subject::Stated))
-            .collect();
+        let stated: Vec<&CheckRow> = envelope.iter().filter(|row| row.is_stated()).collect();
         let applied: Vec<&CheckRow> = envelope
             .iter()
             .filter(|row| row.is_planned())
@@ -343,10 +340,12 @@ fn the_card_shows_one_planned_row_and_a_drawer_p29_10() {
         let faces: BTreeSet<&str> = all.iter().map(|row| row.face()).collect();
         // The face row describes the op as it stands (lead ruling 1 on
         // 10f): the worst STATED row by the rank, only when it exceeds.
+        // P29-10 10i: a row that core keeps out of the face rank (Q2 open)
+        // never paints the face.
         let expected = stated
             .iter()
             .copied()
-            .filter(|row| row.tone().exceeds())
+            .filter(|row| row.tone().exceeds() && row.ranks_for_the_face())
             .min_by(|a, b| a.rank_cmp(b));
         let over = all.iter().filter(|row| row.tone().exceeds()).count();
         let applied_over = applied.iter().filter(|row| row.tone().exceeds()).count();

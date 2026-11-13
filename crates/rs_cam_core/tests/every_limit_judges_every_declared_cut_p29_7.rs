@@ -271,8 +271,10 @@ fn state<A>(cell: &PlannedCell<A>) -> State {
     }
 }
 
-fn want(limit: LimitId, kind: CutKind) -> State {
-    match scope(limit, kind.group()) {
+/// P29-10 10i (lead ruling 3): the scope reads the group of the declared
+/// cut (`planned::planned_group`: the drill group for a drill cycle depth).
+fn want(limit: LimitId, group: CutGroup) -> State {
+    match scope(limit, group) {
         Scope::Judged => State::Judged,
         Scope::NotJudged(n) => State::NotJudged(n.row),
         Scope::NotACutLimit(_) => State::NotACutLimit,
@@ -362,9 +364,15 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
         };
         let cuts = DeclaredCuts::of_operation(&op, &tool, &ConfiguredEntry::registry_default(&op));
         let declared: Vec<CutKind> = cuts.list().iter().map(|c| c.kind).collect();
+        let groups: Vec<CutGroup> = cuts
+            .list()
+            .iter()
+            .map(rs_cam_core::feeds::planned::planned_group)
+            .collect();
         let column = BodyColumn {
             ae_mm: 0.4 * tool.diameter,
             chip_mm: Some(0.05),
+            stored: None,
         };
         let force = ForceEnv {
             tool: &tool_def,
@@ -426,10 +434,10 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
         for (limit, got) in all {
             let kinds: Vec<CutKind> = got.iter().map(|(k, _)| *k).collect();
             assert_eq!(kinds, declared, "{name} {limit:?}: one cell for each cut");
-            for (kind, s) in got {
+            for ((kind, s), group) in got.into_iter().zip(groups.iter().copied()) {
                 assert_eq!(
                     s,
-                    want(limit, kind),
+                    want(limit, group),
                     "{name} {limit:?} {kind:?}: the scope cell"
                 );
                 cuts_seen += 1;
@@ -505,6 +513,7 @@ fn claim_2_each_drawn_edge_is_the_lowest_over_the_declared_cuts() {
             let column = BodyColumn {
                 ae_mm: ae,
                 chip_mm: Some(point.chip.get().0),
+                stored: None,
             };
             if let Some(l) = env.limit(LimitKind::Rigidity)
                 && let Some(drawn) = l.ap_ceiling_at(ae)
@@ -648,6 +657,7 @@ fn claim_4_the_slot_ring_and_the_planner_cap_bind_and_each_reason_occurs() {
         let column = BodyColumn {
             ae_mm: 0.4 * tool.diameter,
             chip_mm: Some(0.05),
+            stored: None,
         };
         for cut in cuts.list().iter() {
             let planned = cuts.planned(cut, column);

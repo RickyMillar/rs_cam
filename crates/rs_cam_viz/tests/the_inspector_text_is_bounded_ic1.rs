@@ -446,10 +446,18 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // layout rule. The caps are the counts without it: Pocket 41, 3D Rough
     // 38, 3D Finish 30. The extra line is a count of the merge rule, not a
     // line the operator reads.
+    // P29-10 10i (lead ruling L1): every declared cut is judged at the
+    // stated point, so the face line now has rows of the entries and of the
+    // body as the op stands. Each fixture paints ONE face line (sections 10
+    // and 11 of `P29-10i_DESIGN.md`): Pocket and 3D Rough "ramp entry ·
+    // chip min 89 % under floor · worst case", 3D Finish "body · chip min
+    // 78 % under floor". It closes the open item 4 of section 17 (the IC1
+    // fixtures paint no face line): Pocket Passes 41 -> 42, 3D Rough 38 ->
+    // 39, 3D Finish 30 -> 31.
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 41, 17, 22]),
-        ("3D Rough", [7, 38, 15, 15]),
-        ("3D Finish", [9, 30, 16, 14]),
+        ("Pocket", [10, 42, 17, 22]),
+        ("3D Rough", [7, 39, 15, 15]),
+        ("3D Finish", [9, 31, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -633,7 +641,6 @@ fn face_line_fixture() -> (AppState, ToolpathId) {
 /// surfaces of `the_inspector_text_is_bounded_ic1` do.
 #[test]
 fn the_face_line_is_bounded_ic1() {
-    use rs_cam_core::limits::Subject;
     let (mut state, id) = face_line_fixture();
     let envelope = state
         .session()
@@ -644,7 +651,7 @@ fn the_face_line_is_bounded_ic1() {
         .expect("the session envelope builds");
     let face = envelope
         .iter()
-        .filter(|row| matches!(row.subject(), Subject::Stated) && row.tone().exceeds())
+        .filter(|row| row.is_stated() && row.tone().exceeds() && row.ranks_for_the_face())
         .min_by(|a, b| a.rank_cmp(b))
         .map(|row| row.face().to_owned())
         .expect("non-vacuity: a stated row exceeds, so the card paints a face line");

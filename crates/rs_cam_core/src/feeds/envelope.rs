@@ -17,6 +17,7 @@
 //! compute cannot reach the apply funnel. The refusals of the compiler are
 //! `compile_fail` doctests on [`envelope_refusals`].
 
+use crate::feeds::entry_rule::StoredFeedChip;
 use serde::Serialize;
 use serde::ser::SerializeMap;
 
@@ -773,8 +774,11 @@ pub struct JudgedValue {
 }
 
 /// Where a point sits against the boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+///
+/// P29-10 10i (lead ruling 4): the wire carries the decision (`kind`) and
+/// the limit (`binding`), never the margin: the number of the stated point
+/// is its stated row (`SafeEnvelope::rows`).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Placement {
     /// Inside every edge. `margin` is the smallest share of a limit left.
     Inside {
@@ -789,6 +793,21 @@ pub enum Placement {
         /// The negative share of the limit.
         margin: f64,
     },
+}
+
+impl Serialize for Placement {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        match self {
+            Self::Inside { .. } => map.serialize_entry("kind", "inside")?,
+            Self::Outside { binding, .. } => {
+                map.serialize_entry("kind", "outside")?;
+                map.serialize_entry("binding", binding)?;
+            }
+        }
+        map.end()
+    }
 }
 
 /// One point of the speeds grid. Its values come from one closed-form
@@ -1340,6 +1359,13 @@ struct PlannedRow {
     stored_feed: bool,
     /// P29-10 PB: the chip floor is a reference, with the reason.
     advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
+    /// P29-10 10i: the point the row judges.
+    judged_at: crate::limits::JudgedAt,
+    /// P29-10 10i (ruling 5): a depth ceiling read at the suggested chip.
+    at_suggested_chip: bool,
+    /// P29-10 10i (ruling 3): the scope row of a cell the scope does not
+    /// judge.
+    scope_row: Option<&'static str>,
     /// The check.
     check: crate::limits::Check,
 }
@@ -1377,6 +1403,13 @@ impl PlannedRow {
                 lower_bound: self.lower_bound,
                 stored_feed: self.stored_feed,
                 advisory_floor: self.advisory_floor,
+                judged_at: self.judged_at,
+                ceiling_chip: if self.at_suggested_chip {
+                    crate::limits::CeilingChipSource::Suggested
+                } else {
+                    crate::limits::CeilingChipSource::OfThePoint
+                },
+                scope_row: self.scope_row,
                 at_earlier_leave: reads_leave,
                 entry_no_number: self.entry_no_number,
                 compared,
@@ -1430,11 +1463,50 @@ fn ceiling_edge_of(kind: LimitKind) -> Option<CeilingEdge> {
     }
 }
 
-/// The speeds that the proposal ships: the calculator result and its
-/// commanded advance per tooth.
-struct ProposalSpeeds {
+/// P29-10 10i: the speeds of the chip and power rows at a judged point.
+struct PointSpeeds {
+    /// The calculator at the point: the chip band, the matched row and the
+    /// vertical-rate limit.
     r: FeedsResult,
-    fz: f64,
+    /// The spindle speed (rpm), the feed (mm/min) and the rated power (kW)
+    /// at that speed; `None` when the op states no feed or speed (the
+    /// stated point, ruling 5).
+    rpm_feed_kw: Option<(f64, f64, f64)>,
+    /// The body chip (mm per tooth), or `None` (ruling 5).
+    fz: Option<f64>,
+    /// The chip interval of the stored op feed (the stated point).
+    stored: Option<StoredFeedChip>,
+}
+
+/// P29-10 10i: the chip a depth ceiling reads at a judged point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CeilingChip {
+    /// The proposal: the curve chip, and for the force budget the lower
+    /// ceiling of the curve chip and the pick chip (`judged_ceiling`).
+    CurveAndPick,
+    /// The stated chip (the stored op feed over the stated speed).
+    Stated(f64),
+    /// Ruling 5: the op states no feed or speed: the chip of the drawn
+    /// edge, and the row says so (`Caveat::AtSuggestedChip`).
+    Suggested(f64),
+}
+
+/// **P29-10 10i (lead ruling L1): the point at which the declared cuts
+/// are judged.** One judge, two points: `read_declared_cuts` takes this as
+/// its one argument, and its two constructors are the only places that
+/// differ: [`SafeEnvelope::at_proposal`] and [`SafeEnvelope::at_stated`].
+struct JudgedPoint {
+    at: crate::limits::JudgedAt,
+    /// The point (depth, width).
+    point: CutPoint,
+    /// The depth of the body plane at the point; `None` with no depth
+    /// before the simulation.
+    plane_ap: Option<f64>,
+    /// The chip of the depth ceilings.
+    ceiling_chip: CeilingChip,
+    /// The speeds of the chip and power rows; `None` gives no such rows
+    /// (the proposal with no commanded chip, as before 10i).
+    speeds: Option<PointSpeeds>,
 }
 
 /// The rows of one planned limit at the proposal, with their unit.
@@ -1472,6 +1544,11 @@ struct CutRow {
     /// P29-10 PB: the chip floor of the row is a reference (its low side is
     /// advisory), with the reason.
     advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
+    /// P29-10 10i (ruling 5): a depth ceiling read at the suggested chip.
+    at_suggested_chip: bool,
+    /// P29-10 10i (ruling 3): the scope row of a cell the scope does not
+    /// judge.
+    scope_row: Option<&'static str>,
 }
 
 impl CutRow {
@@ -1494,6 +1571,39 @@ impl CutRow {
             own_basis: None,
             stored_feed: false,
             advisory_floor: None,
+            at_suggested_chip: false,
+            scope_row: None,
+        }
+    }
+
+    /// P29-10 10i: the row of a cell; a cell that the scope does not judge
+    /// carries its row of `EXEMPTIONS` (ruling 3: the drill cycle names
+    /// `P28-20`, not `S-NotJudgedHere`).
+    fn of_cell<A>(
+        cut: CutKind,
+        presence: crate::compute::catalog::Presence,
+        depth: PlaneDepth,
+        value: Option<f64>,
+        cell: &crate::feeds::planned::PlannedCell<A>,
+        bound: Result<Option<f64>, crate::limits::NoNumberReason>,
+    ) -> Self {
+        use crate::feeds::planned::PlannedCell;
+        let scope_row = match cell {
+            PlannedCell::NotJudged(n) => Some(n.row),
+            PlannedCell::Judged(_) | PlannedCell::NotACutLimit(_) => None,
+        };
+        Self {
+            scope_row,
+            ..Self::of(cut, presence, depth, value, bound)
+        }
+    }
+
+    /// P29-10 10i (ruling 5): the row of a depth ceiling read at the
+    /// suggested chip.
+    fn at_suggested_chip(self, at_suggested_chip: bool) -> Self {
+        Self {
+            at_suggested_chip,
+            ..self
         }
     }
 
@@ -1546,6 +1656,7 @@ impl CutRow {
     /// The check record of the row.
     fn check(
         &self,
+        judged_at: crate::limits::JudgedAt,
         limit: crate::limits::LimitId,
         unit: &'static str,
         side: crate::limits::BoundSide,
@@ -1606,6 +1717,9 @@ impl CutRow {
             lower_bound: self.lower_bound,
             stored_feed: self.stored_feed,
             advisory_floor: self.advisory_floor,
+            judged_at,
+            at_suggested_chip: self.at_suggested_chip,
+            scope_row: self.scope_row,
             check: Check {
                 limit,
                 value: self.value,
@@ -1984,7 +2098,8 @@ impl SafeEnvelope {
             env.notes.push(EnvelopeNote::NoDepth(reason));
         }
         env.add_exact_ceilings(&plan, ExactPhase::Proposal);
-        env.read_declared_cuts();
+        let proposal = env.at_proposal();
+        env.planned = env.read_declared_cuts(&proposal);
         env.notes.extend(runtime_notes);
         if plan.computed_width {
             env.notes.push(EnvelopeNote::ComputedWidth);
@@ -2806,12 +2921,17 @@ impl SafeEnvelope {
     ///   the cuts that the plan always cuts.
     /// - A value check gives one row per declared cut: the planned peak
     ///   chip of the cut at the speeds of the proposal against the bound.
-    fn read_declared_cuts(&mut self) {
+    ///
+    /// P29-10 10i (lead ruling L1): ONE judge, two points. `jp` is the
+    /// proposal ([`Self::at_proposal`], part two of the drawer) or the
+    /// stated cut ([`Self::at_stated`], part one); every row writer reads
+    /// the point, its depth, its chip and its speeds from `jp` only. Only
+    /// the proposal names the binding cut of an edge.
+    fn read_declared_cuts(&mut self, jp: &JudgedPoint) -> Vec<PlannedRow> {
         let tool = crate::compute::cutter::build_cutter(&self.inputs.tool).ok();
-        let speeds = self.proposal_speeds();
         let mut out = Vec::new();
         for edge in self.ceilings.clone() {
-            let Some(rows) = self.ceiling_rows(edge, tool.as_ref(), speeds.as_ref()) else {
+            let Some(rows) = self.ceiling_rows(edge, tool.as_ref(), jp) else {
                 // P29-9 9c: a limit that draws no edge for a reason of scope
                 // says so on the record, one row per declared cut (no op has
                 // a silent missing value). No number moves.
@@ -2825,6 +2945,7 @@ impl SafeEnvelope {
                             PlaneDepth::Body | PlaneDepth::Axial => None,
                         };
                         CutRow::of(c.kind, c.presence, depth, value, Err(reason)).check(
+                            jp.at,
                             edge.limit(),
                             "mm",
                             BoundSide::Ceiling,
@@ -2857,26 +2978,33 @@ impl SafeEnvelope {
                 CeilingEdge::Power => first_by(&|r| r.value.map(|v| -v)),
             };
             let kind = edge.kind();
-            for l in &mut self.boundary {
-                if l.kind == kind && matches!(l.edge, Edge::ApCurve { .. } | Edge::ApCeiling { .. })
-                {
-                    l.binding_cut = binding;
+            if jp.at == crate::limits::JudgedAt::Proposal {
+                for l in &mut self.boundary {
+                    if l.kind == kind
+                        && matches!(l.edge, Edge::ApCurve { .. } | Edge::ApCeiling { .. })
+                    {
+                        l.binding_cut = binding;
+                    }
                 }
             }
             let basis = self.limit(kind).map(|l| l.basis.clone());
-            out.extend(
-                rows.rows
-                    .iter()
-                    .map(|r| r.check(edge.limit(), rows.unit, BoundSide::Ceiling, basis.clone())),
-            );
+            out.extend(rows.rows.iter().map(|r| {
+                r.check(
+                    jp.at,
+                    edge.limit(),
+                    rows.unit,
+                    BoundSide::Ceiling,
+                    basis.clone(),
+                )
+            }));
         }
-        if let Some(sp) = speeds.as_ref() {
+        if let Some(sp) = jp.speeds.as_ref() {
             for check in self.value_checks.clone() {
-                let (side, kind, rows) = self.value_rows(check, sp);
+                let (side, kind, rows) = self.value_rows(check, jp.point, sp);
                 let basis = kind.and_then(|k| self.limit(k)).map(|l| l.basis.clone());
                 out.extend(
                     rows.iter()
-                        .map(|r| r.check(check.limit(), check.unit(), side, basis.clone())),
+                        .map(|r| r.check(jp.at, check.limit(), check.unit(), side, basis.clone())),
                 );
             }
         }
@@ -2923,11 +3051,17 @@ impl SafeEnvelope {
                     .map(crate::feeds::entry_rule::EntryNoNumber::clause);
             }
         }
-        self.planned = out;
+        out
     }
 
     /// P29-10: THE rows of the envelope, written once when the envelope is
-    /// whole: the planned rows, then the stated point against each limit.
+    /// whole: the planned rows at the proposal, then the rows of the cut as
+    /// the op stands. P29-10 10i (lead ruling L1): every declared cut at the
+    /// stated point, by the one judge (`read_declared_cuts` at
+    /// [`Self::at_stated`]); then the stated point against each limit that
+    /// is not a limit of each cut (`of_envelope`; a limit with a planned
+    /// role has its stated rows by cut, so its `of_envelope` row would be a
+    /// second number of one limit).
     fn write_rows(&mut self) {
         let at_earlier_leave = matches!(self.inputs.cuts.body_depth(), BodyDepth::EarlierLeave(_));
         // P29-10 10g: the planned rows read the proposal point, so the marks
@@ -2949,20 +3083,67 @@ impl SafeEnvelope {
             .collect();
         self.marks_at_proposal = Some(proposal);
         if let Some(p) = self.stated {
+            let stated_point = self.at_stated(p);
+            let mut stated = self.read_declared_cuts(&stated_point);
+            self.mark_outside_row(&mut stated);
+            let marks = self.marks_at_stated.as_ref();
+            rows.extend(stated.into_iter().map(|r| {
+                let at = marks.and_then(|m| m.of_cut(r.cut)).map(|m| m.at);
+                r.into_row(at_earlier_leave, at)
+            }));
             // `of_envelope` gives one check per boundary limit, in order,
             // then the exact move budget (a count of moves).
             let checks = crate::limits::of_envelope(self, p);
-            rows.extend(checks.into_iter().enumerate().map(|(i, check)| {
+            rows.extend(checks.into_iter().enumerate().filter_map(|(i, check)| {
+                match planned_limit_of(check.limit) {
+                    PlaneRole::NotACutLimit(_) => {}
+                    PlaneRole::DepthCeiling(_) | PlaneRole::ValueCheck(_) => return None,
+                }
                 let compared = self
                     .boundary
                     .get(i)
                     .map_or(crate::limits::Compared::Load, |l| {
                         crate::limits::Compared::of_edge(&l.edge)
                     });
-                crate::limits::CheckRow::stated(check, compared)
+                Some(crate::limits::CheckRow::stated(check, compared))
             }));
         }
         self.rows = rows;
+    }
+
+    /// P29-10 10i (lead ruling 4): one number on screen. When the
+    /// placement puts the stated point outside a limit with a planned role,
+    /// the stated cut row of that limit carries `Check::binding`: the row of
+    /// the cut that sets the ceiling there ([`Self::outside_cut`]), else the
+    /// row of that limit with the lowest margin. Every text about the
+    /// stated point reads that row; the placement keeps its pick chip for
+    /// the decision only and no surface prints its margin.
+    fn mark_outside_row(&self, rows: &mut [PlannedRow]) {
+        let Some(Placement::Outside { binding, .. }) = self.operator else {
+            return;
+        };
+        let limit = crate::limits::LimitId::of_limit_kind(binding);
+        match planned_limit_of(limit) {
+            PlaneRole::DepthCeiling(_) | PlaneRole::ValueCheck(_) => {}
+            PlaneRole::NotACutLimit(_) => return,
+        }
+        let of_cut = self.outside_cut().and_then(|cut| {
+            rows.iter()
+                .position(|r| r.check.limit == limit && r.cut == cut)
+        });
+        let lowest = || {
+            rows.iter()
+                .enumerate()
+                .filter(|(_, r)| r.check.limit == limit)
+                .min_by(|(_, a), (_, b)| {
+                    let m = |r: &PlannedRow| r.check.margin.unwrap_or(f64::INFINITY);
+                    m(a).total_cmp(&m(b))
+                })
+                .map(|(i, _)| i)
+        };
+        if let Some(row) = of_cut.or_else(lowest).and_then(|i| rows.get_mut(i)) {
+            row.check.binding = true;
+        }
     }
 
     /// P29-10: THE rows of the envelope: the planned rows at the proposal,
@@ -3057,27 +3238,88 @@ impl SafeEnvelope {
         }
     }
 
-    /// The speeds that the proposal ships (one calculator call), for the
-    /// power rows and the chip rows. `None` with no commanded chip.
-    fn proposal_speeds(&self) -> Option<ProposalSpeeds> {
+    /// The proposal as a judged point: the proposal depth and width, the
+    /// speeds that the proposal ships (one calculator call); no speeds with
+    /// no commanded chip.
+    fn at_proposal(&self) -> JudgedPoint {
         let p = self.proposal_point;
         let r = self.inputs.calc_at(p);
         let fz = chip_of(&r, self.inputs.tool.flute_count_planning());
-        (fz > 0.0).then_some(ProposalSpeeds { r, fz })
+        let speeds = (fz > 0.0).then_some(PointSpeeds {
+            rpm_feed_kw: Some((r.rpm, r.feed_rate_mm_min, r.available_power_kw)),
+            fz: Some(fz),
+            stored: None,
+            r,
+        });
+        JudgedPoint {
+            at: crate::limits::JudgedAt::Proposal,
+            point: p,
+            plane_ap: self.proposal.get().ap_mm(),
+            ceiling_chip: CeilingChip::CurveAndPick,
+            speeds,
+        }
     }
 
-    /// The rows of one depth ceiling at the proposal (see
+    /// P29-10 10i: the stated cut as a judged point: the stated depth and
+    /// width, the stored op feed over the stated speed (one write,
+    /// `StoredFeedChip`), the calculator at the point for the chip band;
+    /// with no stated feed or speed the depth ceilings read the chip of
+    /// the drawn edge (ruling 5) and the chip rows have no number.
+    fn at_stated(&self, p: CutPoint) -> JudgedPoint {
+        let z = self.inputs.tool.flute_count_planning();
+        let operator = operator_chip(&self.inputs.operation, &self.inputs.tool);
+        let ceiling_chip = match operator {
+            Some(c) => CeilingChip::Stated(c.fz_mm),
+            None => CeilingChip::Suggested(self.curve_fz(p.ae_mm)),
+        };
+        // The rule of the proposal: the point has a depth of the body plane
+        // when the envelope proposes a depth (a surface offset has none
+        // before the simulation, P16).
+        let plane_ap = self.proposal.get().ap_mm().map(|_| p.ap_mm);
+        JudgedPoint {
+            at: crate::limits::JudgedAt::Stated,
+            point: p,
+            plane_ap,
+            ceiling_chip,
+            speeds: Some(PointSpeeds {
+                r: self.inputs.calc_at(p),
+                rpm_feed_kw: operator.map(|c| {
+                    (
+                        c.rpm,
+                        c.feed_mm_min,
+                        self.inputs.machine.power_at_rpm(c.rpm),
+                    )
+                }),
+                fz: operator.map(|c| c.fz_mm),
+                stored: operator.map(|c| StoredFeedChip::of(c.feed_mm_min, c.rpm, z)),
+            }),
+        }
+    }
+
+    /// The rows of one depth ceiling at the judged point `jp` (see
     /// [`Self::read_declared_cuts`]), or `None` when the op gives the limit
     /// no number there.
     fn ceiling_rows(
         &self,
         edge: CeilingEdge,
         tool: Option<&ToolDefinition>,
-        speeds: Option<&ProposalSpeeds>,
+        jp: &JudgedPoint,
     ) -> Option<CutRows> {
         use crate::feeds::planned::{PlannedCell, PowerEnv, SpindlePowerPlanned};
-        let p = self.proposal_point;
+        let p = jp.point;
         let cuts = &self.inputs.cuts;
+        // P29-10 10i: the chip of the depth ceilings at the point: the
+        // curve chip (and the pick chip of the force budget) at the
+        // proposal; the stated chip at the stated point, or the suggested
+        // chip of the drawn edge with no stated feed (ruling 5).
+        let (curve_chip, pick_chip, suggested) = match jp.ceiling_chip {
+            CeilingChip::CurveAndPick => {
+                (self.curve_fz(p.ae_mm), Some(self.pick_fz(p.ae_mm)), false)
+            }
+            CeilingChip::Stated(fz) => (fz, None, false),
+            CeilingChip::Suggested(fz) => (fz, None, true),
+        };
+        let suggested_on = |depth: PlaneDepth| suggested && depth == PlaneDepth::Body;
         // P29-9 9b: a body that states a lower bound of its depth is judged
         // at the bound (a Project Curve has no proposal depth); every other
         // body at the proposal depth.
@@ -3091,7 +3333,7 @@ impl SafeEnvelope {
             BodyDepth::AtLeast(b) => (Some(b), true),
             BodyDepth::EarlierLeave(leave) => (Some(leave), false),
             BodyDepth::Plane(_) | BodyDepth::NoEarlierLeave(_) | BodyDepth::None(_) => {
-                (self.proposal.get().ap_mm(), false)
+                (jp.plane_ap, false)
             }
         };
         let bound_of = |depth: PlaneDepth| match depth {
@@ -3101,6 +3343,7 @@ impl SafeEnvelope {
         let column = |fz: f64| BodyColumn {
             ae_mm: p.ae_mm,
             chip_mm: Some(fz),
+            stored: None,
         };
         let not_judged = Err(NoNumberReason::NotJudgedHere);
         // P29-8 8d: a cut on the body plane is judged at the proposal
@@ -3122,21 +3365,19 @@ impl SafeEnvelope {
                     material: &self.inputs.material,
                     bound: model.budget_n,
                 };
-                let curve = judge_declared_cuts::<ForceBudgetPlanned>(
-                    cuts,
-                    column(self.curve_fz(p.ae_mm)),
-                    &env,
-                );
-                let pick = judge_declared_cuts::<ForceBudgetPlanned>(
-                    cuts,
-                    column(self.pick_fz(p.ae_mm)),
-                    &env,
-                );
+                let curve =
+                    judge_declared_cuts::<ForceBudgetPlanned>(cuts, column(curve_chip), &env);
+                let pick = pick_chip
+                    .map(|fz| judge_declared_cuts::<ForceBudgetPlanned>(cuts, column(fz), &env));
                 curve
                     .iter()
-                    .zip(pick.iter())
-                    .map(|(a, b)| {
-                        let bound = match (a.value, b.value) {
+                    .enumerate()
+                    .map(|(i, a)| {
+                        let b = pick
+                            .as_ref()
+                            .and_then(|pick| pick.iter().nth(i))
+                            .map_or(a.value, |e| e.value);
+                        let bound = match (a.value, b) {
                             (PlannedCell::Judged(Some(x)), PlannedCell::Judged(Some(y))) => {
                                 Ok(match (x.ceiling_mm(), y.ceiling_mm()) {
                                     (Some(u), Some(v)) => Some(u.min(v)),
@@ -3154,8 +3395,16 @@ impl SafeEnvelope {
                                 _,
                             ) => not_judged,
                         };
-                        CutRow::of(a.kind, a.presence, a.depth, value_of(a.depth), bound)
-                            .at_lower_bound(bound_of(a.depth))
+                        CutRow::of_cell(
+                            a.kind,
+                            a.presence,
+                            a.depth,
+                            value_of(a.depth),
+                            &a.value,
+                            bound,
+                        )
+                        .at_lower_bound(bound_of(a.depth))
+                        .at_suggested_chip(suggested_on(a.depth))
                     })
                     .collect()
             }
@@ -3199,6 +3448,7 @@ impl SafeEnvelope {
                             let depth = PlaneDepth::of_declared(c.depth);
                             CutRow::of(c.kind, c.presence, depth, value_of(depth), Err(reason))
                                 .with_basis(own_basis.clone())
+                                .at_suggested_chip(suggested_on(depth))
                         })
                         .collect(),
                     (Some(_) | None, None) => return None,
@@ -3208,50 +3458,48 @@ impl SafeEnvelope {
                             material: &self.inputs.material,
                             bound: inputs_deflection_limit_um(&self.inputs),
                         };
-                        judge_declared_cuts::<DeflectionPlanned>(
-                            cuts,
-                            column(self.curve_fz(p.ae_mm)),
-                            &env,
-                        )
-                        .iter()
-                        .map(|e| {
-                            let value = value_of(e.depth);
-                            let bound = match (e.value, e.depth) {
-                                // P29-8 8d: a plunge has no side-cut model; no
-                                // root is no number here, not "inside".
-                                (PlannedCell::Judged(_), PlaneDepth::Axial) => {
-                                    Err(NoNumberReason::NotModelled)
-                                }
-                                // 10h: a body with no depth before the
-                                // simulation has no value to judge. A ramp
-                                // or a helix with no own depth has no
-                                // engagement (P29-8 8d: an entry is a slot
-                                // at its own depth only).
-                                (PlannedCell::Judged(_), PlaneDepth::Body)
-                                    if value.is_none()
-                                        || matches!(
-                                            e.kind,
-                                            CutKind::Entry(
-                                                crate::limits::EntryKind::Ramp
-                                                    | crate::limits::EntryKind::Helix,
-                                            )
-                                        ) =>
-                                {
-                                    Err(NoNumberReason::NotModelled)
-                                }
-                                (
-                                    PlannedCell::Judged(root),
-                                    PlaneDepth::Body | PlaneDepth::Own(_),
-                                ) => Ok(root),
-                                (PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_), _) => {
-                                    not_judged
-                                }
-                            };
-                            CutRow::of(e.kind, e.presence, e.depth, value, bound)
-                                .at_lower_bound(bound_of(e.depth))
-                                .with_basis(own_basis.clone())
-                        })
-                        .collect()
+                        judge_declared_cuts::<DeflectionPlanned>(cuts, column(curve_chip), &env)
+                            .iter()
+                            .map(|e| {
+                                let value = value_of(e.depth);
+                                let bound = match (e.value, e.depth) {
+                                    // P29-8 8d: a plunge has no side-cut model; no
+                                    // root is no number here, not "inside".
+                                    (PlannedCell::Judged(_), PlaneDepth::Axial) => {
+                                        Err(NoNumberReason::NotModelled)
+                                    }
+                                    // 10h: a body with no depth before the
+                                    // simulation has no value to judge. A ramp
+                                    // or a helix with no own depth has no
+                                    // engagement (P29-8 8d: an entry is a slot
+                                    // at its own depth only).
+                                    (PlannedCell::Judged(_), PlaneDepth::Body)
+                                        if value.is_none()
+                                            || matches!(
+                                                e.kind,
+                                                CutKind::Entry(
+                                                    crate::limits::EntryKind::Ramp
+                                                        | crate::limits::EntryKind::Helix,
+                                                )
+                                            ) =>
+                                    {
+                                        Err(NoNumberReason::NotModelled)
+                                    }
+                                    (
+                                        PlannedCell::Judged(root),
+                                        PlaneDepth::Body | PlaneDepth::Own(_),
+                                    ) => Ok(root),
+                                    (
+                                        PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_),
+                                        _,
+                                    ) => not_judged,
+                                };
+                                CutRow::of_cell(e.kind, e.presence, e.depth, value, &e.value, bound)
+                                    .at_lower_bound(bound_of(e.depth))
+                                    .with_basis(own_basis.clone())
+                                    .at_suggested_chip(suggested_on(e.depth))
+                            })
+                            .collect()
                     }
                 }
             }
@@ -3264,23 +3512,27 @@ impl SafeEnvelope {
                     d_mm: self.inputs.tool.diameter,
                     top_mm: self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM),
                 };
-                judge_declared_cuts::<VendorDepthTablePlanned>(
-                    cuts,
-                    column(self.curve_fz(p.ae_mm)),
-                    &env,
-                )
-                .iter()
-                .map(|e| {
-                    let bound = match e.value {
-                        PlannedCell::Judged(Some((mm, true))) => Ok(Some(mm)),
-                        PlannedCell::Judged(Some((_, false))) => Ok(None),
-                        PlannedCell::Judged(None) => Err(NoNumberReason::NotModelled),
-                        PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
-                    };
-                    CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
+                judge_declared_cuts::<VendorDepthTablePlanned>(cuts, column(curve_chip), &env)
+                    .iter()
+                    .map(|e| {
+                        let bound = match e.value {
+                            PlannedCell::Judged(Some((mm, true))) => Ok(Some(mm)),
+                            PlannedCell::Judged(Some((_, false))) => Ok(None),
+                            PlannedCell::Judged(None) => Err(NoNumberReason::NotModelled),
+                            PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
+                        };
+                        CutRow::of_cell(
+                            e.kind,
+                            e.presence,
+                            e.depth,
+                            value_of(e.depth),
+                            &e.value,
+                            bound,
+                        )
                         .at_lower_bound(bound_of(e.depth))
-                })
-                .collect()
+                        .at_suggested_chip(suggested_on(e.depth))
+                    })
+                    .collect()
             }
             // The power of each declared cut at the speeds of the proposal,
             // through the calculator's power terms (Step 6 reads the same
@@ -3294,9 +3546,27 @@ impl SafeEnvelope {
                     return None;
                 }
                 body_ap?;
-                let sp = speeds?;
+                let sp = jp.speeds.as_ref()?;
+                // P29-10 10i (ruling 5): no stated feed or speed: no power.
+                let (Some((rpm, feed, available_kw)), Some(fz)) = (sp.rpm_feed_kw, sp.fz) else {
+                    let rows = cuts
+                        .list()
+                        .iter()
+                        .map(|c| {
+                            let depth = PlaneDepth::of_declared(c.depth);
+                            CutRow::of(
+                                c.kind,
+                                c.presence,
+                                depth,
+                                None,
+                                Err(NoNumberReason::NoStatedFeed),
+                            )
+                        })
+                        .collect();
+                    return Some(CutRows { unit: "kW", rows });
+                };
                 // P29-9 9c: the body power at the earlier op's leave, else at
-                // the proposal depth.
+                // the depth of the point.
                 let power_ap = match cuts.body_depth() {
                     BodyDepth::EarlierLeave(leave) => leave,
                     BodyDepth::Plane(_)
@@ -3322,8 +3592,8 @@ impl SafeEnvelope {
                     power_ap,
                 );
                 let power = |w: f64| {
-                    super::power_model_terms(&input, line, power_ap, w, effective_d, sp.r.rpm)
-                        .kw_at_feed(sp.r.feed_rate_mm_min)
+                    super::power_model_terms(&input, line, power_ap, w, effective_d, rpm)
+                        .kw_at_feed(feed)
                 };
                 // P29-8 8d: an entry (at its own depth, or a plunge) at its
                 // own engagement (the declared cut, `DeclaredCut::at`) and its
@@ -3352,13 +3622,13 @@ impl SafeEnvelope {
                     entry_power_kw: &entry_power,
                 };
                 let available = |depth: PlaneDepth| match depth {
-                    PlaneDepth::Body => Ok(Some(sp.r.available_power_kw)),
+                    PlaneDepth::Body => Ok(Some(available_kw)),
                     PlaneDepth::Own(_) | PlaneDepth::Axial => match entry_rpm {
                         Some(rpm) => Ok(Some(self.inputs.machine.power_at_rpm(rpm))),
                         None => Err(NoNumberReason::NotModelled),
                     },
                 };
-                judge_declared_cuts::<SpindlePowerPlanned>(cuts, column(sp.fz), &env)
+                judge_declared_cuts::<SpindlePowerPlanned>(cuts, column(fz), &env)
                     .iter()
                     .map(|e| match e.value {
                         PlannedCell::Judged(Some((_, kw, _))) => {
@@ -3372,7 +3642,7 @@ impl SafeEnvelope {
                             Err(NoNumberReason::NotModelled),
                         ),
                         PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
-                            CutRow::of(e.kind, e.presence, e.depth, None, not_judged)
+                            CutRow::of_cell(e.kind, e.presence, e.depth, None, &e.value, not_judged)
                         }
                     })
                     .collect()
@@ -3387,14 +3657,16 @@ impl SafeEnvelope {
         Some(CutRows { unit, rows })
     }
 
-    /// The rows of one value check at the proposal: the planned peak chip
-    /// of each declared cut at the speeds of the proposal against the
-    /// bound, its side and the envelope kind of its basis. No rows with no
-    /// matched row or no band.
+    /// The rows of one value check at the point `p` with the speeds `sp`:
+    /// the planned peak chip of each declared cut against the bound, its
+    /// side and the envelope kind of its basis. No rows with no matched row
+    /// or no band. P29-10 10i (ruling 5): a cut that reads the body chip
+    /// when the op states no feed or speed is `NoNumber(NoStatedFeed)`.
     fn value_rows(
         &self,
         check: ValueCheck,
-        sp: &ProposalSpeeds,
+        p: CutPoint,
+        sp: &PointSpeeds,
     ) -> (BoundSide, Option<LimitKind>, Vec<CutRow>) {
         use crate::feeds::planned::{
             ChipEnv, ChipMaxPlanned, ChipMinPlanned, ChipReading, PlannedCell, RubbingFloorPlanned,
@@ -3403,7 +3675,9 @@ impl SafeEnvelope {
             ValueCheck::ChipMax => (BoundSide::Ceiling, LimitKind::ChipBand),
             ValueCheck::ChipMin => (BoundSide::Floor, LimitKind::ChipBand),
             ValueCheck::RubbingFloor => (BoundSide::Floor, LimitKind::RubbingFloor),
-            ValueCheck::VerticalRate => return (BoundSide::Ceiling, None, self.vertical_rows(sp)),
+            ValueCheck::VerticalRate => {
+                return (BoundSide::Ceiling, None, self.vertical_rows(p, sp));
+            }
         };
         let kind = Some(kind);
         let r = &sp.r;
@@ -3420,11 +3694,17 @@ impl SafeEnvelope {
             return (side, kind, Vec::new());
         };
         let floor = crate::feeds::planned::ChipFloor::of_result(r);
-        let p = self.proposal_point;
         let cuts = &self.inputs.cuts;
         let column = BodyColumn {
             ae_mm: p.ae_mm,
-            chip_mm: Some(sp.fz),
+            chip_mm: sp.fz,
+            stored: sp.stored,
+        };
+        // Ruling 5: the reason of a body-chip cut with no stated chip.
+        let no_chip = |depth: PlaneDepth| match (sp.fz, depth) {
+            (None, PlaneDepth::Body) => NoNumberReason::NoStatedFeed,
+            (Some(_), PlaneDepth::Body | PlaneDepth::Own(_) | PlaneDepth::Axial)
+            | (None, PlaneDepth::Own(_) | PlaneDepth::Axial) => NoNumberReason::NotModelled,
         };
         let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
             self.inputs.tool.geometry_hint(),
@@ -3472,14 +3752,12 @@ impl SafeEnvelope {
                         c.stored_feed,
                         c.advisory_floor,
                     ),
-                    PlannedCell::Judged(None) => {
-                        (None, None, Err(NoNumberReason::NotModelled), false, None)
-                    }
+                    PlannedCell::Judged(None) => (None, None, Err(no_chip(e.depth)), false, None),
                     PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
                         (None, None, Err(NoNumberReason::NotJudgedHere), false, None)
                     }
                 };
-                CutRow::of(e.kind, e.presence, e.depth, value, bound)
+                CutRow::of_cell(e.kind, e.presence, e.depth, value, &e.value, bound)
                     .judged_at(judged)
                     .with_stored_feed(stored_feed)
                     .with_advisory_floor(advisory_floor)
@@ -3492,14 +3770,15 @@ impl SafeEnvelope {
     /// `VerticalRateLimit::bound` at the stated speed (a value check, no
     /// ceiling, no feed moves); a cut with no vertical feed is
     /// `NotApplicable(NoVerticalFeed)`.
-    fn vertical_rows(&self, sp: &ProposalSpeeds) -> Vec<CutRow> {
+    fn vertical_rows(&self, p: CutPoint, sp: &PointSpeeds) -> Vec<CutRow> {
         use crate::feeds::planned::{
             PlannedCell, VerticalEnv, VerticalRatePlanned, VerticalReading,
         };
         let cuts = &self.inputs.cuts;
         let column = BodyColumn {
-            ae_mm: self.proposal_point.ae_mm,
-            chip_mm: Some(sp.fz),
+            ae_mm: p.ae_mm,
+            chip_mm: sp.fz,
+            stored: sp.stored,
         };
         let env = VerticalEnv {
             limit: sp.r.plunge.vertical_limit(),
@@ -3509,7 +3788,9 @@ impl SafeEnvelope {
         judge_declared_cuts::<VerticalRatePlanned>(cuts, column, &env)
             .iter()
             .map(|e| {
-                let row = |value, bound| CutRow::of(e.kind, e.presence, e.depth, value, bound);
+                let row = |value, bound| {
+                    CutRow::of_cell(e.kind, e.presence, e.depth, value, &e.value, bound)
+                };
                 match e.value {
                     PlannedCell::Judged(VerticalReading::Value {
                         value_mm_min,
@@ -4810,6 +5091,7 @@ fn budget_solve(
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),
+        stored: None,
     };
     lowest_ceiling::<ForceBudgetPlanned>(&inputs.cuts, column, &env, budget_rank)
         .and_then(|(kind, answer)| answer.map(|d| (d, kind)))
@@ -4832,6 +5114,7 @@ fn deflection_solve(
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),
+        stored: None,
     };
     lowest_ceiling::<DeflectionPlanned>(&inputs.cuts, column, &env, |answer| *answer)
         .and_then(|(kind, answer)| answer.map(|mm| (mm, kind)))
@@ -4845,6 +5128,7 @@ fn table_solve(cuts: &DeclaredCuts, ae: f64, fz: f64, env: &TableEnv) -> ((f64, 
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),
+        stored: None,
     };
     lowest_ceiling::<VendorDepthTablePlanned>(cuts, column, env, |answer| answer.map(|(mm, _)| mm))
         .and_then(|(kind, answer)| answer.map(|c| (c, kind)))
@@ -5270,6 +5554,7 @@ mod tests {
                     let column = BodyColumn {
                         ae_mm: ae,
                         chip_mm: Some(fz),
+                        stored: None,
                     };
                     let full = judge_declared_cuts::<ForceBudgetPlanned>(cuts, column, &force)
                         .lowest_always(budget_rank);

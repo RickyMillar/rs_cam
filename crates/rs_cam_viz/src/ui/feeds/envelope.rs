@@ -1005,7 +1005,7 @@ pub fn binding_planned_row(env: &SafeEnvelope) -> Option<&rs_cam_core::limits::C
     let limit = rs_cam_core::limits::LimitId::of_limit_kind(kind);
     env.rows()
         .iter()
-        .find(|row| row.cut() == Some(cut) && row.check().limit == limit)
+        .find(|row| row.is_planned() && row.cut() == Some(cut) && row.check().limit == limit)
 }
 
 /// The header row: the small-caps title and the ⚡ chip at the right. A
@@ -1335,7 +1335,7 @@ pub fn mark_tone_color(
 ) -> egui::Color32 {
     let tone = rows
         .iter()
-        .filter(|r| r.cut() == Some(cut))
+        .filter(|r| r.is_planned() && r.cut() == Some(cut))
         .min_by(|a, b| a.rank_cmp(b))
         .map_or(rs_cam_core::limits::Tone::NoNumber, |r| r.tone());
     crate::ui::components::tone_color(tone, crate::ui::components::ToneSurface::PlotMark)
@@ -1356,7 +1356,7 @@ pub fn mark_hover(env: &SafeEnvelope, mark: &rs_cam_core::feeds::plane::PlaneMar
     for row in env
         .rows()
         .iter()
-        .filter(|r| r.cut() == Some(mark.cut) && r.holds_a_number())
+        .filter(|r| r.is_planned() && r.cut() == Some(mark.cut) && r.holds_a_number())
     {
         let check = row.check();
         let bound = check

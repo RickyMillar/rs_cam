@@ -54,6 +54,7 @@ impl PlaneMarks {
         let column = BodyColumn {
             ae_mm: point.ae_mm,
             chip_mm: None,
+            stored: None,
         };
         let marks = cuts
             .list()

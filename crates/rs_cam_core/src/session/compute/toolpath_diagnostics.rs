@@ -502,15 +502,13 @@ impl ProjectSession {
             .safe_envelope(tc)
             .and_then(Result::ok)
             .and_then(|envelope| match (envelope.stated, envelope.operator) {
-                (
-                    Some(point),
-                    Some(crate::feeds::envelope::Placement::Outside { binding, margin }),
-                ) => Some(crate::feeds::suggest::SuggestWarning::OutsideEnvelope {
-                    binding,
-                    margin,
-                    ap_mm: point.ap_mm,
-                    ae_mm: point.ae_mm,
-                }),
+                (Some(point), Some(crate::feeds::envelope::Placement::Outside { binding, .. })) => {
+                    Some(crate::feeds::suggest::SuggestWarning::OutsideEnvelope {
+                        binding,
+                        ap_mm: point.ap_mm,
+                        ae_mm: point.ae_mm,
+                    })
+                }
                 (Some(_) | None, Some(crate::feeds::envelope::Placement::Inside { .. }) | None)
                 | (None, Some(crate::feeds::envelope::Placement::Outside { .. })) => None,
             });

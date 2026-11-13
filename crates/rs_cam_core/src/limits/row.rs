@@ -49,8 +49,23 @@ pub enum Subject {
         /// depth holds that depth here (`own_depth` true).
         at: Option<PlanePoint>,
     },
-    /// The operator's stated point against one limit of the boundary: the
-    /// cut as the op stands.
+    /// P29-10 10i (lead ruling L1): a declared cut at the STATED point (the
+    /// cut as the op stands), judged by the same driver as a planned cut at
+    /// the proposal (`SafeEnvelope::read_declared_cuts`, one judge, two
+    /// points): the stated depth and width, the stored op feed over the
+    /// stated speed (`StoredFeedChip`), the entry rule's feeds. `at`: the
+    /// point of the cut on the plane at the stated point.
+    StatedCut {
+        /// The declared cut.
+        #[serde(serialize_with = "cut_label")]
+        cut: CutKind,
+        /// Whether the plan always cuts it.
+        occurs: Occurs,
+        /// The plane point of the cut at the stated point.
+        at: Option<PlanePoint>,
+    },
+    /// The operator's stated point against one limit of the boundary that
+    /// is not a limit of each cut (`of_envelope`): the cut as the op stands.
     Stated,
     /// The samples of one cut group after the simulation.
     Group {
@@ -94,7 +109,7 @@ impl Subject {
     /// The subject in words, for the face.
     fn label(&self) -> String {
         match self {
-            Self::Planned { cut, .. } => cut.label().to_owned(),
+            Self::Planned { cut, .. } | Self::StatedCut { cut, .. } => cut.label().to_owned(),
             Self::Stated => "stated point".to_owned(),
             Self::Group {
                 group,
@@ -115,7 +130,7 @@ impl Subject {
     /// of today, so it outranks every other subject (ruling O6).
     const fn rank(&self) -> u8 {
         match self {
-            Self::Stated => 0,
+            Self::Stated | Self::StatedCut { .. } => 0,
             Self::Planned { .. } | Self::Group { .. } | Self::MeasuredPoint | Self::Rpm => 1,
         }
     }
@@ -240,6 +255,10 @@ pub enum Caveat {
     /// A finish pass judged at the earlier op's leave
     /// (`BodyDepth::EarlierLeave`).
     AtEarlierLeave,
+    /// P29-10 10i (lead ruling 5): the op states no feed or speed, so a
+    /// depth ceiling at the stated point reads the chip of the drawn edge
+    /// (the suggested chip).
+    AtSuggestedChip,
 }
 
 impl Caveat {
@@ -255,6 +274,7 @@ impl Caveat {
             Self::NoSamples => 6,
             Self::SampleDepth { .. } => 7,
             Self::AtEarlierLeave => 8,
+            Self::AtSuggestedChip => 9,
         }
     }
 
@@ -275,7 +295,8 @@ impl Caveat {
             | Self::Advisory
             | Self::NoSamples
             | Self::SampleDepth { .. }
-            | Self::AtEarlierLeave => None,
+            | Self::AtEarlierLeave
+            | Self::AtSuggestedChip => None,
         }
     }
 
@@ -290,7 +311,8 @@ impl Caveat {
             | Self::Advisory
             | Self::NoSamples
             | Self::SampleDepth { .. }
-            | Self::AtEarlierLeave => false,
+            | Self::AtEarlierLeave
+            | Self::AtSuggestedChip => false,
         }
     }
 
@@ -303,9 +325,11 @@ impl Caveat {
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
             | Self::MayOccur { .. } => true,
-            Self::Advisory | Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => {
-                false
-            }
+            Self::Advisory
+            | Self::NoSamples
+            | Self::SampleDepth { .. }
+            | Self::AtEarlierLeave
+            | Self::AtSuggestedChip => false,
         }
     }
 
@@ -336,6 +360,11 @@ impl Caveat {
                 depth: SampleDepth::EngagedEdge,
             } => "the sample depth read is the engaged edge depth".to_owned(),
             Self::AtEarlierLeave => "judged at the leave of the earlier op".to_owned(),
+            Self::AtSuggestedChip => {
+                "the op states no feed or speed: the depth is judged at the suggested chip of \
+                 the drawn edge"
+                    .to_owned()
+            }
         }
     }
 }
@@ -351,6 +380,28 @@ const fn advisory_floor_clause(why: AdvisoryLowSide) -> &'static str {
         }
         AdvisoryLowSide::NoWidthWindow => "the vendor row prints no width (ae) window",
     }
+}
+
+/// P29-10 10i (lead ruling 5): the chip a depth ceiling row reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CeilingChipSource {
+    /// The chip of its point (the proposal speeds, the stated op feed), or
+    /// a row that is no depth ceiling.
+    OfThePoint,
+    /// The op states no feed or speed: the suggested chip of the drawn
+    /// edge (`Caveat::AtSuggestedChip`).
+    Suggested,
+}
+
+/// P29-10 10i (lead ruling L1): the point at which a declared cut is
+/// judged: one judge, two points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JudgedAt {
+    /// The proposal that ⚡ writes (part two of the drawer).
+    Proposal,
+    /// The cut as the op stands (part one of the drawer).
+    Stated,
 }
 
 /// The tone of a row: what a surface colours it. One rule ([`Tone::of`]).
@@ -451,6 +502,14 @@ pub struct PlannedFacts {
     pub stored_feed: bool,
     /// P29-10 PB: the chip floor is a reference, with the reason.
     pub advisory_floor: Option<AdvisoryLowSide>,
+    /// P29-10 10i: the point the row judges (the proposal or the stated
+    /// cut).
+    pub judged_at: JudgedAt,
+    /// P29-10 10i (ruling 5): the chip a depth ceiling reads.
+    pub ceiling_chip: CeilingChipSource,
+    /// P29-10 10i (ruling 3): the exemption row of a cell that the scope
+    /// does not judge (`limits::scope`, `NotJudged::row`).
+    pub scope_row: Option<&'static str>,
     /// The row reads the earlier op's leave.
     pub at_earlier_leave: bool,
     /// Why the entry rule gives the cut no feed (`EntryNoNumber::clause`).
@@ -539,7 +598,8 @@ impl CheckRow {
         }
     }
 
-    /// A declared cut before the simulation (the envelope).
+    /// A declared cut before the simulation (the envelope), at the proposal
+    /// or at the stated point (`PlannedFacts::judged_at`).
     #[must_use]
     pub(crate) fn planned(cut: CutKind, check: Check, facts: PlannedFacts) -> Self {
         let PlannedFacts {
@@ -548,6 +608,9 @@ impl CheckRow {
             lower_bound,
             stored_feed,
             advisory_floor,
+            judged_at,
+            ceiling_chip,
+            scope_row,
             at_earlier_leave,
             entry_no_number,
             compared,
@@ -572,6 +635,10 @@ impl CheckRow {
         if at_earlier_leave {
             caveats.push(Caveat::AtEarlierLeave);
         }
+        match ceiling_chip {
+            CeilingChipSource::OfThePoint => {}
+            CeilingChipSource::Suggested => caveats.push(Caveat::AtSuggestedChip),
+        }
         let mut extra = Vec::new();
         if let Some(o) = own_depth {
             extra.push(format!("own depth {} mm ({})", num(o.mm), o.rule));
@@ -584,14 +651,13 @@ impl CheckRow {
         } else {
             Occurs::Always
         };
-        Self::new(
-            Subject::Planned { cut, occurs, at },
-            check,
-            compared,
-            caveats,
-            &extra,
-            None,
-        )
+        // P29-10 10i: one builder for both points; the subject names the
+        // point.
+        let subject = match judged_at {
+            JudgedAt::Proposal => Subject::Planned { cut, occurs, at },
+            JudgedAt::Stated => Subject::StatedCut { cut, occurs, at },
+        };
+        Self::new(subject, check, compared, caveats, &extra, scope_row)
     }
 
     /// The stated point against one limit (`of_envelope`).
@@ -712,7 +778,7 @@ impl CheckRow {
     #[must_use]
     pub const fn cut(&self) -> Option<CutKind> {
         match self.subject {
-            Subject::Planned { cut, .. } => Some(cut),
+            Subject::Planned { cut, .. } | Subject::StatedCut { cut, .. } => Some(cut),
             Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
         }
     }
@@ -721,7 +787,7 @@ impl CheckRow {
     #[must_use]
     pub const fn plane_point(&self) -> Option<PlanePoint> {
         match self.subject {
-            Subject::Planned { at, .. } => at,
+            Subject::Planned { at, .. } | Subject::StatedCut { at, .. } => at,
             Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
         }
     }
@@ -755,7 +821,8 @@ impl CheckRow {
             | Caveat::Advisory
             | Caveat::NoSamples
             | Caveat::SampleDepth { .. }
-            | Caveat::AtEarlierLeave => None,
+            | Caveat::AtEarlierLeave
+            | Caveat::AtSuggestedChip => None,
         })
     }
 
@@ -767,9 +834,11 @@ impl CheckRow {
     pub const fn is_headline(&self) -> bool {
         match self.subject {
             Subject::Group { headline, .. } => headline,
-            Subject::Planned { .. } | Subject::Stated | Subject::MeasuredPoint | Subject::Rpm => {
-                false
-            }
+            Subject::Planned { .. }
+            | Subject::StatedCut { .. }
+            | Subject::Stated
+            | Subject::MeasuredPoint
+            | Subject::Rpm => false,
         }
     }
 
@@ -805,10 +874,48 @@ impl CheckRow {
         self.caveats.contains(&Caveat::NoSamples)
     }
 
-    /// `true` for a planned row.
+    /// `true` for a planned row: a declared cut at the PROPOSAL (part two
+    /// of the Suggest drawer, "If you apply").
     #[must_use]
     pub const fn is_planned(&self) -> bool {
-        self.cut().is_some()
+        match self.subject {
+            Subject::Planned { .. } => true,
+            Subject::StatedCut { .. }
+            | Subject::Stated
+            | Subject::Group { .. }
+            | Subject::MeasuredPoint
+            | Subject::Rpm => false,
+        }
+    }
+
+    /// P29-10 10i: `true` for a row of the cut as the op stands (part one
+    /// of the Suggest drawer): a declared cut at the stated point, or the
+    /// stated point against a limit that is not a limit of each cut.
+    #[must_use]
+    pub const fn is_stated(&self) -> bool {
+        match self.subject {
+            Subject::StatedCut { .. } | Subject::Stated => true,
+            Subject::Planned { .. }
+            | Subject::Group { .. }
+            | Subject::MeasuredPoint
+            | Subject::Rpm => false,
+        }
+    }
+
+    /// **P29-10 10i, Q2 open (lead ruling 2 of `P29-10i_DESIGN.md`
+    /// section 10): `true` when a row may reach the face line of the
+    /// Suggest card.** A stated cut row of the chip maximum does not rank:
+    /// the stored op feed is the cut before the simulation's feed
+    /// modulation, which caps the chip at the band (the measurement of
+    /// section 11), and the lead rules the face of that row later. The
+    /// drawer shows the row as it is. Every other row ranks. The Q2 ruling
+    /// changes this one predicate.
+    #[must_use]
+    pub const fn ranks_for_the_face(&self) -> bool {
+        !matches!(
+            (&self.subject, self.check.limit),
+            (Subject::StatedCut { .. }, LimitId::ChipMax)
+        )
     }
 
     /// THE rank of two rows (ruling O6, lead rulings after 10d): an
@@ -881,7 +988,8 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
             | NoNumberReason::NoToolBody
             | NoNumberReason::NotModelled
             | NoNumberReason::OnlyALowerBound
-            | NoNumberReason::NoEarlierLeave,
+            | NoNumberReason::NoEarlierLeave
+            | NoNumberReason::NoStatedFeed,
         )
         | CheckState::Within
         | CheckState::Exceeds
@@ -897,7 +1005,8 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
             | Caveat::Advisory
             | Caveat::NoSamples
             | Caveat::SampleDepth { .. }
-            | Caveat::AtEarlierLeave => None,
+            | Caveat::AtEarlierLeave
+            | Caveat::AtSuggestedChip => None,
         })
     })
 }
@@ -1523,7 +1632,8 @@ impl NoNumberReason {
             | Self::NoVendorRow
             | Self::NoForceLine
             | Self::NoToolBody
-            | Self::NoEarlierLeave => true,
+            | Self::NoEarlierLeave
+            | Self::NoStatedFeed => true,
             Self::NoMaterialRemoved
             | Self::NotModelled
             | Self::OnlyALowerBound
@@ -1546,6 +1656,7 @@ impl NoNumberReason {
             Self::NotModelled => "not modelled",
             Self::OnlyALowerBound => "inside at a lower bound",
             Self::NoEarlierLeave => "no earlier leave",
+            Self::NoStatedFeed => "no stated feed",
             Self::NoBound => "no limit here",
             Self::NotJudgedHere => "not judged here",
         }
@@ -1567,6 +1678,7 @@ impl NoNumberReason {
                 "the value is a lower bound inside the limit, so the check proves nothing"
             }
             Self::NoEarlierLeave => "no earlier op of the setup states a leave",
+            Self::NoStatedFeed => "the op states no feed or no spindle speed",
             Self::NoBound => "the limit gives this cut no bound",
             Self::NotJudgedHere => "this limit is not judged on this cut",
         }

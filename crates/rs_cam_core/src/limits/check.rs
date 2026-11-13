@@ -76,6 +76,9 @@ pub enum NoNumberReason {
     /// leaves, and no earlier op of the setup that cuts the same model
     /// states a leave (or the reader has no project).
     NoEarlierLeave,
+    /// P29-10 10i (lead ruling 5): the op states no feed or no spindle
+    /// speed, so the cut at the stated point has no chip.
+    NoStatedFeed,
     /// A value with no bound. This is a scope exemption of the P28 audit
     /// (today: the depth of a finish or semi-finish pass, ruling R2), NOT a
     /// geometry reason. P29-3 lists it for a ruling. It is never

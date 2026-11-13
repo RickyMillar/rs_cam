@@ -9,8 +9,10 @@
 //!
 //! - Claim 1: the planned rows hold exactly one row per declared cut and
 //!   planned limit (each limit with rows has one row per cut, and no pair
-//!   repeats), and the stated rows are `of_envelope` at the stated point,
-//!   one per check, in order.
+//!   repeats). P29-10 10i: with a stated point, part one holds one stated
+//!   cut row per declared cut and planned limit (the pairs of the planned
+//!   rows), and the stated rows are `of_envelope` at the stated point for
+//!   the limits that are not limits of each cut, one per check, in order.
 //! - Claim 2: `rows_of_verdict` gives exactly one row per gate and cut group
 //!   (`NotJudged` and `NoSamples` included), plus the gantry-push row, one
 //!   row per drill gate, and one row per own material and gate (S6). The
@@ -161,7 +163,10 @@ fn check_row(name: &str, row: &CheckRow) {
     // state follows its margin (below) but the margin is not the one of the
     // stated value.
     let stored = row.caveats().contains(&Caveat::StoredFeed);
-    let reads_stored_feed = matches!(row.cut(), Some(CutKind::Entry(_)))
+    // P29-10 10i: a chip row of a cut at the stated point reads the stored
+    // op feed too.
+    let reads_stored_feed = (matches!(row.cut(), Some(CutKind::Entry(_)))
+        || matches!(row.subject(), Subject::StatedCut { .. }))
         && matches!(
             c.limit,
             LimitId::ChipMax | LimitId::ChipMin | LimitId::RubbingFloor
@@ -176,7 +181,10 @@ fn check_row(name: &str, row: &CheckRow) {
             row.face()
         );
     }
-    let judged_here = matches!(row.subject(), Subject::Planned { .. } | Subject::Stated);
+    let judged_here = matches!(
+        row.subject(),
+        Subject::Planned { .. } | Subject::StatedCut { .. } | Subject::Stated
+    );
     if judged_here && let Some(m) = c.margin {
         assert_eq!(
             c.state == CheckState::Exceeds,
@@ -209,7 +217,7 @@ fn check_row(name: &str, row: &CheckRow) {
     assert_eq!(worst, ramp_own, "{name}: {}: worst case", row.face());
     if stored {
         assert!(
-            matches!(row.cut(), Some(CutKind::Entry(_)))
+            reads_stored_feed
                 && matches!(
                     c.limit,
                     LimitId::ChipMax | LimitId::ChipMin | LimitId::RubbingFloor
@@ -256,7 +264,10 @@ fn check_row(name: &str, row: &CheckRow) {
             row.face()
         ),
     }
-    if matches!(row.subject(), Subject::Planned { .. }) {
+    if matches!(
+        row.subject(),
+        Subject::Planned { .. } | Subject::StatedCut { .. }
+    ) {
         let depth_ceiling = matches!(
             c.limit,
             LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
@@ -301,22 +312,23 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
     let mut caveats = BTreeSet::new();
     for (name, op_type, env) in envelopes() {
         let planned: Vec<&CheckRow> = env.rows().iter().filter(|r| r.is_planned()).collect();
+        let stated_cut: Vec<&CheckRow> = env
+            .rows()
+            .iter()
+            .filter(|r| matches!(r.subject(), Subject::StatedCut { .. }))
+            .collect();
         let stated: Vec<&CheckRow> = env
             .rows()
             .iter()
             .filter(|r| matches!(r.subject(), Subject::Stated))
             .collect();
         assert_eq!(
-            planned.len() + stated.len(),
+            planned.len() + stated_cut.len() + stated.len(),
             env.rows().len(),
-            "{name}: only planned and stated rows"
+            "{name}: only planned, stated cut and stated rows"
         );
-        // The planned rows come first.
-        if let Some(first_stated) = env
-            .rows()
-            .iter()
-            .position(|r| matches!(r.subject(), Subject::Stated))
-        {
+        // The planned rows come first, then the rows of part one.
+        if let Some(first_stated) = env.rows().iter().position(CheckRow::is_stated) {
             assert!(
                 env.rows()
                     .iter()
@@ -341,21 +353,58 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
         for (limit, of_limit) in &per_limit {
             assert_eq!(of_limit, &cuts, "{name}: {limit:?} misses a declared cut");
         }
-        // Claim 3b: a stated row compares the axis of its edge.
-        for (i, r) in stated.iter().enumerate() {
-            let want = env
-                .boundary
-                .get(i)
-                .map_or(Compared::Load, |l| Compared::of_edge(&l.edge));
-            assert_eq!(r.compared(), want, "{name}: the stated row {i}");
+        // P29-10 10i (lead ruling L1): with a stated point, part one holds
+        // one row per declared cut and planned limit, the pairs of part two.
+        if env.stated.is_some() {
+            let pairs = |rows: &[&CheckRow]| {
+                rows.iter()
+                    .map(|r| (r.cut().expect("a cut").label(), r.check().limit))
+                    .collect::<BTreeSet<_>>()
+            };
+            assert_eq!(
+                pairs(&stated_cut),
+                pairs(&planned),
+                "{name}: the stated cuts are the planned cuts"
+            );
+            assert_eq!(
+                stated_cut.len(),
+                planned.len(),
+                "{name}: one stated row per pair"
+            );
+        } else {
+            assert!(
+                stated_cut.is_empty(),
+                "{name}: no stated point, no stated cut"
+            );
         }
         all_rows.extend(env.rows().iter().cloned());
-        // The stated rows are `of_envelope` at the stated point.
-        let want = env
+        // The stated rows are `of_envelope` at the stated point, for the
+        // limits that are not limits of each cut (10i), with the compared
+        // quantity of their edge (claim 3b).
+        let want: Vec<_> = env
             .stated
             .map(|p| limits::of_envelope(&env, p))
-            .unwrap_or_default();
-        let got: Vec<_> = stated.iter().map(|r| r.check().clone()).collect();
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                matches!(
+                    rs_cam_core::feeds::planned::planned_limit_of(c.limit),
+                    rs_cam_core::feeds::planned::PlaneRole::NotACutLimit(_)
+                )
+            })
+            .map(|(i, c)| {
+                let compared = env
+                    .boundary
+                    .get(i)
+                    .map_or(Compared::Load, |l| Compared::of_edge(&l.edge));
+                (c, compared)
+            })
+            .collect();
+        let got: Vec<_> = stated
+            .iter()
+            .map(|r| (r.check().clone(), r.compared()))
+            .collect();
         assert_eq!(got, want, "{name}: the stated rows");
         for r in env.rows() {
             check_row(&name, r);
@@ -370,7 +419,8 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
                     | Caveat::StoredFeed
                     | Caveat::Advisory
                     | Caveat::NoSamples
-                    | Caveat::AtEarlierLeave => format!("{c:?}"),
+                    | Caveat::AtEarlierLeave
+                    | Caveat::AtSuggestedChip => format!("{c:?}"),
                 });
             }
             if r.caveats().contains(&Caveat::LowerBound) {
@@ -752,7 +802,7 @@ fn worse_than_is_a_total_order(rows: &[CheckRow]) {
         let (ta, tb) = (tone_rank(a.tone()), tone_rank(b.tone()));
         assert!(ta <= tb, "the tone order: {} then {}", a.face(), b.face());
         if ta == tb && ta < 2 {
-            let stated = |r: &CheckRow| matches!(r.subject(), Subject::Stated);
+            let stated = |r: &CheckRow| r.is_stated();
             assert!(
                 stated(a) || !stated(b),
                 "a stated row first: {} then {}",
@@ -1052,7 +1102,8 @@ fn advisory_floor(row: &CheckRow) -> Option<rs_cam_core::tool_load::verdict::Adv
         | Caveat::Advisory
         | Caveat::NoSamples
         | Caveat::SampleDepth { .. }
-        | Caveat::AtEarlierLeave => None,
+        | Caveat::AtEarlierLeave
+        | Caveat::AtSuggestedChip => None,
     })
 }
 
