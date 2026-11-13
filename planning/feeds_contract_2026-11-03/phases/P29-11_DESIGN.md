@@ -448,3 +448,35 @@ For the lead (each with my choice):
   cusp radius.
 - 11-9: the FM1 cells that hold the rubbing warning were not counted.
 - The post-L-2 allow-list counts are not computed; L-3 writes them.
+
+## 10. Lead rulings (2026-11-14)
+
+The operator is away until about 2026-11-15 and gave the lead the calls of P29. The lead brings
+the operator in only where a change alters what they cut with.
+
+- **O1 (M4-A): NOT built without the operator.** It can lower an exported feed where the spindle
+  power binds. No commit 11-4 in this run. The row `M4` stays open, with its caveat. The lead
+  shows the operator section 3 and asks for the choice between M4-A (after a modulated run of the
+  6 mm working file, with and without) and M4-A1.
+- **O2 (11-8): yes.** A limit with a planned row and no sample gate is a limit that the samples
+  skip. Warnings only, no refusal, no feed moves. Predictions first: the new findings on the five
+  fixtures and each FM1 cell that moves. If a gate would refuse an export or move a feed: stop.
+- **O3 (11-3): yes**, with the predicted rows first and the face line of all 18 operator ops
+  before and after. A row with no value function gets a named reason, never a guess.
+- **O4 (11-7): yes**, display only. Predictions first: each card number that moves on the four
+  project files. If a Suggest PROPOSAL (a feed, an RPM, a depth) moves: stop.
+- **O5 (11-9): yes**, on one condition: Step 9b only warns today
+  (`rubbing_floor_warns_and_never_lifts`). If the change moves a proposed feed on any FM1 cell or
+  on any op of the four files: stop.
+- **L1 (F6-a): yes.** The depth gate and the force reading read one engagement door. The sentry
+  claim of section 4.2 holds it. The "exceeds" side has no fixture: build one (a fixture sample
+  over the budget) so that the claim tests both sides.
+- **L2, L3, L5, L6, L7: as chosen.**
+- **L4: yes, and commit L-4 goes with it.** The old records as projections and the one writer of
+  each message go to the clean-up pass. P29 ends with the guard.
+- **Order.** Round 1, byte-equal: 11-0, 11-1, L-1, L-2, L-3. Round 2, each alone with its
+  predictions before the code: 11-2, 11-3, 11-5, 11-6, 11-7, 11-8, 11-9. Then L-5. A moved FM1
+  cell or golden row that the predictions do not name stops the work.
+- **End state.** Pins 35 / 24 / 35 if 11-3 and 11-7 land (`M4` open for the operator). The table
+  "what P29 leaves open, and why" of section 7 goes into `phases/P27_BRIEF.md` with the last
+  commit.
