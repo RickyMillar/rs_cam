@@ -298,3 +298,23 @@ deflection) have a sample gate that judges the cut after a simulation.
   proposal row under a current modulation carries `until_modulated`
   (export `stated`), not `before_modulation`. The MCP tool description of
   `get_safe_envelope` states the F2, F3 and F5 (c) caveat rules.
+
+## R6 (F8): every fed move is in a class of `EmittedFeeds`
+
+### Predictions (measured with the code in place, before the patch)
+
+- No move, no row and no feed changes: the record and the header only.
+- `EmittedFeeds` gains the classes drill, air lead (`approach`), lead and
+  link; each class holds its move count (`EntryFeeds::moves`; wire change
+  of MCP and CLI `emitted_feeds`). `FeedClass::of` names every move intent.
+- The header of a drill phase gains one line, `(drill feeds run <F>
+  mm/min, the stated feed)`, or the largest drill feed against the stated
+  one. An air-lead line shows only where the largest air-lead feed is not
+  the stated plunge feed: no golden arm and no operator op has one.
+- Op golden: `gcode_hash` of the drill arms moves: `alignment_pin_drill/fresh`,
+  `drill/fit_mixed`, `drill/fresh`, `drill/simple_cycle` (new rows) and
+  `drill/rest` (its R4 value moves again). No other row.
+- Operator export (the reviewer's probe, idx 0, 3 to 13 and 17): two new
+  header lines, `(drill feeds run 1000 mm/min, the stated feed)`, under idx
+  3 and idx 4.
+- FM1: no cell moves (FM1 reads no export header).
