@@ -979,3 +979,26 @@ Decisions for the lead:
 
 The predictions of 11-8 (the new findings on the five fixtures, the FM1 cells and fields that
 move) depend on the choice and are not written.
+
+### 12.5 Commit 11-9: one rubbing rule (prediction)
+
+Written on the 11-6 tree, before the code. Today Step 9b (`calculator/close.rs`) warns
+`ChiploadBelowRubbingFloor` when the COMMANDED advance per tooth `feed / (rpm x Z)` is under the
+rubbing floor (`rubbing_floor_at`, `min(0.025, band min)`). The change (lead ruling O5): Step 9b
+reads the body `RubbingFloor` row: the one driver `planned::judge_declared_cuts::<RubbingFloorPlanned>`
+on the declared cuts at the shipped width, the commanded advance and the engaged diameter of
+Step 5; the warning fires when the PEAK chip of the body cut is under the floor. The warning gains
+the field `peak_chip` (the value it tests); `commanded` stays. A drill cycle has no body cut with a
+chip (the scope does not judge it, `P28-20`): no warning. Step 9b still only warns: no feed, RPM or
+depth reads it (`rubbing_floor_warns_and_never_lifts`).
+
+Predicted:
+
+- The peak chip is the commanded advance over the lift, and the lift is at least 1, so the warning
+  fires on the same cuts or fewer, never on more.
+- FM1: no cell holds `ChiploadBelowRubbingFloor` today (`feeds_warnings`, `suggest_warnings` and
+  `diagnostic_ids` of the main CSV; the sim CSV holds no Suggest warning), so no cell moves.
+- The four project files: no toolpath holds the warning today in either modulation pass (the row
+  dump holds the profile warnings), so none holds it after; no proposed feed, RPM or depth moves
+  (Step 9b writes no number).
+- The text of the warning (the diagnostic message and the Suggest card face) names the peak chip.
