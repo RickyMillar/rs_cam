@@ -244,7 +244,11 @@ pub enum Caveat {
         export: ExportFeed,
     },
     /// An entry at its own depth: the depth per pass of a ramp, the worst
-    /// case (lead ruling Q1b of P29-8).
+    /// case (lead ruling Q1b of P29-8). Review 2026-11-15 F2: only on a row
+    /// whose value reads the depth of the cut
+    /// (`feeds::planned::PlaneRole::reads_the_cut_depth`: the depth
+    /// ceilings and the power). A ramp chip or vertical-rate row is exact
+    /// and does not take it.
     WorstCase,
     /// The value is a lower bound of the cut (`BodyDepth::AtLeast`).
     LowerBound,
@@ -330,12 +334,15 @@ impl Caveat {
         }
     }
 
-    /// `true` for a caveat of the cut, not of the row: the own depth of a
-    /// ramp and the presence of the cut (P29-10 10f: a cut title names it).
+    /// `true` for a caveat of the cut, not of the row: the presence of the
+    /// cut (P29-10 10f: a cut title names it). Review 2026-11-15 F2: the
+    /// worst case of a ramp is a caveat of the row (only a row that reads
+    /// the depth takes it).
     const fn of_the_cut(self) -> bool {
         match self {
-            Self::WorstCase | Self::MayOccur { .. } => true,
-            Self::BeforeModulation
+            Self::MayOccur { .. } => true,
+            Self::WorstCase
+            | Self::BeforeModulation
             | Self::UntilModulated { .. }
             | Self::LowerBound
             | Self::StoredFeed
@@ -638,7 +645,8 @@ pub struct PlannedOwnDepth {
     pub mm: f64,
     /// The rule of the depth in words (`OwnDepthRule::clause`).
     pub rule: &'static str,
-    /// The depth is the worst case (a ramp's depth per pass).
+    /// The depth is the worst case (a ramp's depth per pass) and the value
+    /// of the row reads the depth (review 2026-11-15 F2).
     pub worst_case: bool,
 }
 
@@ -857,8 +865,7 @@ impl CheckRow {
     }
 
     /// The face words of the caveats that belong to the cut, not to the
-    /// row: "worst case" (the own depth of a ramp) and "may not occur" (the
-    /// presence of the cut). A title that groups the rows of one cut names
+    /// row: "may not occur" (the presence of the cut). A title that groups the rows of one cut names
     /// them once (P29-10 10f).
     #[must_use]
     pub fn cut_words(&self) -> Vec<&'static str> {

@@ -4081,7 +4081,8 @@ pub fn build_info() -> serde_json::Value {
             // whose entry rule gives no feed names why. Since P29-10 the row
             // is in `envelope.limit_rows` (since 10g the own depth is the
             // depth of `subject.at` with `own_depth` true; the caveat
-            // `worst_case`, the clauses in `detail`).
+            // `worst_case` only on a row whose value reads that depth, review
+            // 2026-11-15 F2; the clauses in `detail`).
             "envelope_entry_value_checks",
             // Feeds contract P29-10: every limit record is one row
             // (`limits::CheckRow`: subject, check, caveats, exemption, tone,

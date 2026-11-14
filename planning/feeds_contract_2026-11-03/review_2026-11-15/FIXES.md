@@ -192,3 +192,21 @@ row `S-NoSampleGate`). The planned rows of the same cuts read the same.
 
 The other rows that exceed under "may occur" (chip, power, force budget,
 deflection) have a sample gate that judges the cut after a simulation.
+
+### R2 results
+
+- Cause: `CheckRow::planned` pushed `WorstCase` on every ramp row with its
+  own depth, and the caveat softens.
+- Fix: `PlannedOwnDepth::worst_case` holds only where
+  `feeds::planned::PlaneRole::reads_the_cut_depth` is true (a depth ceiling
+  or the power; each value check reads no depth: the doc states the inputs
+  of each judge). `WorstCase` is a caveat of the row.
+- Proof: claim 5 of `one_record_on_every_surface_p29_10` asserts literal
+  tones: a ramp chip maximum at 1.5 x the band maximum is `Exceeds` with no
+  `WorstCase`; the far ramp chip minimum carries only
+  `AdvisoryFloor { OnePrintedValue }` and reads `ExceedsAdvisory`; each ramp
+  depth row with a number keeps `WorstCase`. Claim 1 names the four limits
+  that read the depth. Before the fix the chip maximum row read advisory.
+- Rows: as predicted (all four files: only `worst_case` drops, on 208
+  rows; 10 tones move to `exceeds`; no tone softens). Explainer data
+  regenerated; `assert_claims.py` 11 of 11 PASS.

@@ -425,14 +425,20 @@ def main():
     claim("5b", "Where the body cut sets the edge, the edge is the body 100 % contour within "
           "one cell.", ok5b, d5b, n5b)
 
-    # Claim 6: WorstCase and LowerBound hold on their rows only.
-    detail, ok, nw, nl = [], True, 0, 0
+    # Claim 6: WorstCase and LowerBound hold on their rows only. Review
+    # 2026-11-15 F2 (lead ruling): the worst case holds only on a ramp row
+    # whose value reads the ramp's own depth: the three depth ceilings and
+    # the power. A chip, rubbing-floor or vertical-rate row is exact.
+    depth_limits = {"force_budget", "tool_deflection", "vendor_depth_table", "spindle_power"}
+    detail, ok, nw, nl, nexact = [], True, 0, 0, 0
     op_types = {op["index"]: op["op_type"] for op in fields}
     for line in cli:
         env = line["profile"].get("envelope") or {}
         for r in planned(env.get("limit_rows", [])):
             at = r["subject"]["at"]
-            ramp_own = r["subject"]["cut"] == "ramp entry" and at is not None and at["own_depth"]
+            ramp_at_own = r["subject"]["cut"] == "ramp entry" and at is not None and at["own_depth"]
+            ramp_own = ramp_at_own and r["check"]["limit"] in depth_limits
+            nexact += ramp_at_own and not ramp_own
             if has_caveat(r, "worst_case") != ramp_own:
                 ok = False
                 detail.append(f"idx {line['index']}: {r['face']}: worst_case {has_caveat(r, 'worst_case')}")
@@ -442,10 +448,12 @@ def main():
                 if op_types.get(line["index"]) != "ProjectCurve" or (at and at["own_depth"]):
                     ok = False
                     detail.append(f"idx {line['index']}: lower_bound on {r['face']}")
-    detail.append(f"{nw} ramp rows at an own depth carry worst_case; {nl} lower_bound rows, all "
+    detail.append(f"{nw} ramp depth or power rows at an own depth carry worst_case; {nexact} ramp "
+                  f"chip, rubbing or vertical-rate rows carry none; {nl} lower_bound rows, all "
                   "on the body plane of a Project Curve")
-    claim("6", "WorstCase holds exactly on a ramp entry row at its own depth; LowerBound only on "
-          "the body plane of a Project Curve.", ok, detail, nw + nl if nw and nl else 0)
+    claim("6", "WorstCase holds exactly on a ramp entry row at its own depth whose value reads "
+          "that depth (a depth ceiling or the power); LowerBound only on the body plane of a "
+          "Project Curve.", ok, detail, nw + nl if nw and nl and nexact else 0)
 
     # Claim 7: the CLI rows equal the MCP rows for the same op.
     detail, ok = [], True

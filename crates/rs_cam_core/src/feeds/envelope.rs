@@ -1480,6 +1480,7 @@ impl PlannedRow {
             );
         let compared = compared_of_planned(self.check.limit);
         let modulation = modulation.caps(self.check.limit, self.cut);
+        let reads_depth = planned_limit_of(self.check.limit).reads_the_cut_depth();
         crate::limits::CheckRow::planned(
             self.cut,
             self.check,
@@ -1488,7 +1489,11 @@ impl PlannedRow {
                 own_depth: self.own_depth.map(|o| crate::limits::PlannedOwnDepth {
                     mm: o.mm,
                     rule: o.rule.clause(),
-                    worst_case: o.rule == crate::compute::catalog::OwnDepthRule::RampDepthPerPass,
+                    // Review 2026-11-15 F2: the worst case holds only on a
+                    // row whose value reads the depth of the cut; a ramp
+                    // chip or vertical-rate row is exact.
+                    worst_case: o.rule == crate::compute::catalog::OwnDepthRule::RampDepthPerPass
+                        && reads_depth,
                 }),
                 lower_bound: self.lower_bound,
                 stored_feed: self.stored_feed,

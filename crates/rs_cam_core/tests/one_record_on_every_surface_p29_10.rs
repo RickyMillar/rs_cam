@@ -227,10 +227,19 @@ fn check_row(name: &str, row: &CheckRow) {
         "{name}: {}: no exemption row",
         row.face()
     );
-    // Claim 5.
+    // Claim 5. Review 2026-11-15 F2: only a row whose value reads the
+    // ramp's own depth states the worst case: the three depth ceilings and
+    // the power. A chip, rubbing-floor or vertical-rate row is exact.
     let worst = row.caveats().contains(&Caveat::WorstCase);
-    let ramp_own =
-        row.cut() == Some(CutKind::Entry(EntryKind::Ramp)) && row.own_depth_mm().is_some();
+    let ramp_own = row.cut() == Some(CutKind::Entry(EntryKind::Ramp))
+        && row.own_depth_mm().is_some()
+        && matches!(
+            c.limit,
+            LimitId::ForceBudget
+                | LimitId::ToolDeflection
+                | LimitId::VendorDepthTable
+                | LimitId::SpindlePower
+        );
     assert_eq!(worst, ramp_own, "{name}: {}: worst case", row.face());
     if stored {
         assert!(
@@ -930,17 +939,25 @@ fn suggested_face() -> (OperationConfig, ToolConfig, DressupConfig) {
     (suggested.operation, t, dressups)
 }
 
-/// The ramp entry `ChipMin` row of `op`.
-fn ramp_chip_min(op: &OperationConfig, t: &ToolConfig, dressups: &DressupConfig) -> CheckRow {
+/// The ramp entry row of `limit` of `op` (the first one: the proposal).
+fn ramp_row(
+    op: &OperationConfig,
+    t: &ToolConfig,
+    dressups: &DressupConfig,
+    limit: LimitId,
+) -> CheckRow {
     envelope(op, t, Some(dressups))
         .expect("the Face is backed")
         .rows()
         .iter()
-        .find(|r| {
-            r.cut() == Some(CutKind::Entry(EntryKind::Ramp)) && r.check().limit == LimitId::ChipMin
-        })
+        .find(|r| r.cut() == Some(CutKind::Entry(EntryKind::Ramp)) && r.check().limit == limit)
         .cloned()
-        .expect("the ramp ChipMin row")
+        .expect("the ramp row")
+}
+
+/// The ramp entry `ChipMin` row of `op`.
+fn ramp_chip_min(op: &OperationConfig, t: &ToolConfig, dressups: &DressupConfig) -> CheckRow {
+    ramp_row(op, t, dressups, LimitId::ChipMin)
 }
 
 #[test]
@@ -974,20 +991,78 @@ fn claim_5_a_stored_feed_caveat_holds_only_where_the_rounding_decides() {
         "a row far from its bound: {}",
         far.face()
     );
-    // The plain tone: the tone of the row's other caveats (the ramp's own
-    // depth is a worst case, which softens on its own).
-    let others: Vec<Caveat> = far
-        .caveats()
-        .iter()
-        .copied()
-        .filter(|c| *c != Caveat::StoredFeed)
-        .collect();
-    assert_eq!(far.tone(), Tone::of(far.check(), &others), "{}", far.face());
+    // Review 2026-11-15 F2: the ramp chip does not read the depth of the
+    // ramp, so the row is exact: no worst case, and the tone is the tone of
+    // its state (literal values, not the product tone rule).
     assert!(
-        far.caveats().contains(&Caveat::WorstCase),
-        "the ramp row states its worst case"
+        !far.caveats().contains(&Caveat::WorstCase),
+        "a ramp chip row is exact: {}",
+        far.face()
     );
+    // Its one caveat is the floor of a one-value vendor row (PB), which
+    // softens; before F2 the worst case softened it too.
+    assert_eq!(
+        far.caveats(),
+        [Caveat::AdvisoryFloor {
+            why: rs_cam_core::tool_load::verdict::AdvisoryLowSide::OnePrintedValue
+        }],
+        "{}",
+        far.face()
+    );
+    assert_eq!(far.tone(), FAR_CHIP_MIN_TONE, "{}", far.face());
+    // An exceeding ramp chip maximum gates: a ramp feed at one and a half
+    // times the band maximum (the cut feed too: the entry feed is at most
+    // the cut feed, `OperationConfig::entry_feed_rate`).
+    let max_chip = ramp_row(&op, &t, &dressups, LimitId::ChipMax)
+        .check()
+        .bound
+        .expect("a band maximum");
+    let over_feed = (1.5 * max_chip * per_rev).ceil();
+    op.set_feed_rate(over_feed);
+    let _ = op.as_params_mut().set_ramp_feed_rate(Some(over_feed));
+    let over = ramp_row(&op, &t, &dressups, LimitId::ChipMax);
+    assert_eq!(
+        over.check().state,
+        CheckState::Exceeds,
+        "1.5 x the band maximum"
+    );
+    assert!(
+        !over.caveats().contains(&Caveat::WorstCase),
+        "a ramp chip row is exact: {}",
+        over.face()
+    );
+    assert_eq!(over.tone(), Tone::Exceeds, "{}", over.face());
+    // A ramp depth row reads the ramp's own depth: it keeps the worst case.
+    let depth_rows: Vec<CheckRow> = envelope(&op, &t, Some(&dressups))
+        .expect("the Face is backed")
+        .rows()
+        .iter()
+        .filter(|r| {
+            r.cut() == Some(CutKind::Entry(EntryKind::Ramp))
+                && matches!(
+                    r.check().limit,
+                    LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
+                )
+                && r.holds_a_number()
+        })
+        .cloned()
+        .collect();
+    assert!(
+        !depth_rows.is_empty(),
+        "non-vacuity: a ramp depth row with a number"
+    );
+    for row in &depth_rows {
+        assert!(
+            row.caveats().contains(&Caveat::WorstCase),
+            "a ramp depth row states its worst case: {}",
+            row.face()
+        );
+    }
 }
+
+/// The tone of the far ramp `ChipMin` row of claim 5 (half the band feed):
+/// advisory by its advisory floor alone.
+const FAR_CHIP_MIN_TONE: Tone = Tone::ExceedsAdvisory;
 
 #[test]
 fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {

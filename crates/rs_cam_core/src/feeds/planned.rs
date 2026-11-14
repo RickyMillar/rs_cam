@@ -1272,6 +1272,20 @@ impl ValueCheck {
         }
     }
 
+    /// Review 2026-11-15 F2: `false` for every value check: no check reads
+    /// the depth of the cut. The chip band reads the advance per tooth (the
+    /// stated feed over the speed and the flute count); the rubbing floor
+    /// reads that advance and the engagement angle of the width (`fz sin
+    /// psi`); the vertical rate reads the vertical feed of the entry rule
+    /// (the feed and the angle or the pitch). A ramp row of these checks is
+    /// exact at every depth per pass, so it states no worst case.
+    #[must_use]
+    pub const fn reads_the_cut_depth(self) -> bool {
+        match self {
+            Self::ChipMax | Self::ChipMin | Self::RubbingFloor | Self::VerticalRate => false,
+        }
+    }
+
     /// The unit of the value and the bound of the check.
     #[must_use]
     pub const fn unit(self) -> &'static str {
@@ -1430,6 +1444,30 @@ pub enum PlaneRole {
 }
 
 impl PlaneRole {
+    /// Review 2026-11-15 F2: `true` when the value that the role judges on
+    /// a cut depends on the depth of that cut, so an entry judged at its
+    /// worst depth (the depth per pass of a ramp) states a worst case. The
+    /// rule follows the inputs of each judge:
+    ///
+    /// - a depth ceiling (the force budget, the deflection, the vendor depth
+    ///   table) compares the depth itself with the depth where the limit
+    ///   binds, and the power reads the engaged section at the depth;
+    /// - a value check reads no depth ([`ValueCheck::reads_the_cut_depth`]);
+    /// - a limit that is not a limit of each cut judges no cut.
+    #[must_use]
+    pub const fn reads_the_cut_depth(self) -> bool {
+        match self {
+            Self::DepthCeiling(
+                CeilingEdge::VendorDepthTable
+                | CeilingEdge::Power
+                | CeilingEdge::Deflection
+                | CeilingEdge::ForceBudget,
+            ) => true,
+            Self::ValueCheck(check) => check.reads_the_cut_depth(),
+            Self::NotACutLimit(_) => false,
+        }
+    }
+
     /// The limit of a planned role, or `None` for a limit that is not a
     /// limit of each cut.
     #[must_use]
