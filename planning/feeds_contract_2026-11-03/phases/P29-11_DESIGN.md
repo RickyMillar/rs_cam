@@ -929,3 +929,53 @@ another sample at 5.50 mm (the prediction left the location open). No other narr
 dump line or FM1 cell moves; the op golden shows only its known 46 rows. Claim 8b holds the `⚠`
 side. `DEEP_DOC_MULTIPLIER` is deleted. Wire: the text of the MCP `narrate_toolpath` reply (the
 peak line); no key.
+
+### 12.4 Commit 11-8: sample gates for three limits (not built in round 2b)
+
+Lead ruling O2 asks for three sample gates (`VendorDepthTable`, `RubbingFloor`, `PlungeRate`)
+through `limits::scope` and `groups::judge_by_group`, each with the bound of the planned row of
+the same limit and cut. Round 2b did not build 11-8. No stop condition of the brief fired (no
+gate was built, so no gate refused and no readiness moved); the step stopped on its size and on
+two facts that the lead must rule on. 11-9, 11-7 and L-5 do not depend on it.
+
+What the build needs (read from the code at round 2b):
+
+1. **Three `CriterionKind` members** (`VendorDepthTable`, `RubbingFloor`, `PlungeRate`): a
+   gate row is a projection of a `CriterionStatus` (`limits::of_criterion`), so each gate needs
+   its kind; ten files match on `CriterionKind` (`tool_load/verdict.rs`, `distribution.rs`,
+   `metric_guide.rs`, `drill_gates.rs`, `limits/mod.rs`, `limits/row.rs` and four sentries).
+   `CriterionKind` is on the wire (`CriterionRow::kind`).
+2. **A bound source that does not gate an export.** `BoundSource::gates_export` is false only
+   for `MachineForceBudget`. A new member (for example `PlannedRow { limit }`) and its arms in
+   `basis_of_bound` and `clause`. Without it an `Exceeds` of a new gate refuses the export (a
+   stop condition).
+3. **The headline rows stay out of `milling_criteria()`**: an `Unmodeled` headline row there
+   adds an export warning on every op (`gcode::warning_unmodeled`) and breaks its drill case. A
+   new gate joins `criteria()` only on `Exceeds` (as `exceeding_rows` does).
+4. **The bound, one source.** `RubbingFloor` and `VendorDepthTable` need only the matched band:
+   `feeds::rubbing_floor_at(band, point)` and `planned::table_ceiling(ae, fz, TableEnv)`; the chip
+   gate already resolves the band inside the gate. `PlungeRate` needs
+   `VerticalRateLimit::limit_at(rpm)`, built from the G6 ramp basis of the Suggest result
+   (`FeedsResult::plunge`). The gate context (`ToolpathLoadContext`) holds no Suggest result, and
+   the session does not memoise the envelope (`ProjectSession::safe_envelope` runs Suggest on each
+   call). So `PlungeRate` needs a Suggest run in each load report, or a field of the context that
+   `of_operation` takes (every caller states it).
+5. **The vertical rate of a sample.** No sample field holds it. `plunge_descent_mm` holds the
+   descent of a pure plunge only; a ramp or a helix sample needs `feed x |dz| / ds` from the
+   positions of two samples of one move, a new derived statistic of the trace.
+
+Decisions for the lead:
+
+- **D-1.** Build `RubbingFloor` and `VendorDepthTable` from the band of the gate (one source
+  function each, a sentry claim that compares the gate bound and the planned row bound on a
+  fixture), and leave `gate_of(PlungeRate)` empty with a named row: section 7 then applies ("11-8
+  refused: +1 each" for that row). My choice.
+- **D-2.** As D-1, and `PlungeRate` from a Suggest product carried by the context (`of_operation`
+  takes the vertical-rate limit; the session fills it from the profile of the toolpath; a cost of
+  one Suggest run per toolpath per load report) and the vertical rate from the sample positions.
+- **D-3.** One record from the envelope: the session passes the stated-cut rows of the three
+  limits into the context, and each gate compares a sample with the row of its cut kind. The
+  bound is then the row bound itself; a cut kind with no declared cut (a link) has no bound.
+
+The predictions of 11-8 (the new findings on the five fixtures, the FM1 cells and fields that
+move) depend on the choice and are not written.
