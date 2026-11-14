@@ -335,3 +335,35 @@ deflection) have a sample gate that judges the cut after a simulation.
   against `intents_of`, a literal table).
 - Golden: the 5 predicted drill rows. Operator export: the two predicted
   drill lines; every other line equal (below).
+
+## R7 (F9): the guard sees four more ways round a token; narrower doors
+
+### Predictions (measured with the code in place, before the patch)
+
+- Byte-equal: no product behaviour changes. Golden, FM1, the rows and the
+  operator moves do not move.
+- The scan (`tests/common/op_type_scan.rs`, shared by the core, viz and
+  CLI guards) reads four more forms: an alias of a type of
+  `TYPE_TOKENS`, an import of its variants, a call of a helper that returns
+  an op type, a family or a role (`helper_names`; the viz and CLI guards
+  read the core helpers too), and `Self::Variant` in an `impl` of one.
+- Reads that the tree held and the old scan did not see:
+  - core: three variant imports, in `feeds/geometry_class.rs` `classify`
+    (class G) and `feeds/support.rs` `formula_backing` (class V, two
+    imports). Both functions have an entry: no new entry, X total 86.
+    The core helper outside the tokens is `family` (no call in a guarded
+    file).
+  - CLI: six callers of the parse helpers `operation_type`,
+    `parse_op_type` and `materialize_case_toolpath` (each returns the op
+    type): `job.rs` `execute_op_via_session`, `job_op_session`,
+    `parse_job_file`; `run.rs` `run_generic`; `smoke.rs`
+    `run_single_case_inner`; `sweep.rs` `patch_job_param`. Six new W
+    entries (op parsing, the class of the helpers themselves).
+  - viz: none.
+- Narrowed: `Reentering::none`, `Reentering::stay_plunges` and
+  `PlungesStay` are `pub(crate)`; `PlungesStay::NoOperation` exists only
+  under `test` or `test-support`; `EntryPlungeFeed::of_op_plunge_rate` is
+  `pub(crate)`. Test doors (`test-support`): `Reentering::none_for_tests`,
+  `Reentering::plunges_with_no_operation_for_tests`,
+  `EntryPlungeFeed::of_op_plunge_rate_for_tests`. Nine integration tests
+  move to the doors (no assertion changes).
