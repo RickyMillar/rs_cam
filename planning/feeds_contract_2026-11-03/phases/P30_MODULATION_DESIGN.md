@@ -274,3 +274,28 @@ The first three commits:
 - Edits of the tool or the stock material after a modulated run were not probed (the machine edit was).
 - The sizes in section 4 are estimates from the files named; no code was written.
 - The FM1 sim CSV was not checked for a `ModulationSummary` column (commit 1).
+
+## Lead rulings (2026-11-14)
+
+The operator decides the option (A to F) and the six questions. The lead builds now only what
+shows the truth and moves no feed:
+
+- **P30-1: print what runs.** After a simulation the exported feeds can be above the stated feed
+  (measured: 48 of 63 fed moves on the Pocket fixture, up to F3000 against a stated 1000), and no
+  surface prints the largest emitted feed. The Feeds card, the simulation inspector, MCP and the
+  G-code header state, for each op: the feed stage of the result (stated; feed optimisation;
+  modulated by simulation run n), the largest and the smallest emitted cutting feed, and the count
+  of fed moves above the stated feed. One core record, read by every surface. No feed changes.
+- **P30-2: a row does not soften for a stage that did not run.** The lead ruling of P29-10i
+  (`Caveat::BeforeModulation` turns a row to caution while the session option is on) was wrong in
+  one state: an export with no current simulation carries the stated feed, and the row showed
+  caution for a chip 27 % over the band (operator idx 7 and 8). The caveat softens a row only when
+  the op holds a current modulated result (the feed stage of the result says so). With no current
+  modulated result the row keeps its gating tone, and the caveat word says that the simulation
+  will cap it. The export of an op whose rows exceed and whose feed stage is not modulated carries
+  a warning in the header and on the export surface. A warning, never a refusal.
+- **Not built without the operator:** options A, C, E, F; any change of a feed; M4-A; feed
+  optimisation kept, folded or deleted.
+- **For the operator, first:** question 1 of section 6 (may a move run faster than the typed
+  feed?). On the operator file the stored report gives idx 8 a median feed 508.8 % over the stated
+  feed after modulation.
