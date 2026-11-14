@@ -88,9 +88,9 @@ use rs_cam_core::feeds::entry_rule::ConfiguredEntry;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::planned::{
     BodyColumn, CeilingEdge, ChipEnv, ChipFloor, ChipFloorEnv, ChipMaxPlanned, ChipMinPlanned,
-    DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned, ForceEnv, PlaneDepth, PlaneRole,
-    PlannedCell, PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned,
-    TableEnv, VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
+    DeclaredCuts, DeflectionPlanned, DeflectionRoot, ForceBudgetPlanned, ForceEnv, PlaneDepth,
+    PlaneRole, PlannedCell, PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned,
+    SpindlePowerPlanned, TableEnv, VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
 };
 use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
 use rs_cam_core::limits::{CheckRow, CutGroup, CutKind, LimitId, NoEngagementModel, Scope, scope};
@@ -569,7 +569,7 @@ fn claim_2_each_drawn_edge_is_the_lowest_over_the_declared_cuts() {
                     bound: rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM * 1000.0,
                 };
                 let cells = judge_declared_cuts::<DeflectionPlanned>(&cuts, column, &force);
-                let want = lowest(&cells, |a| a).unwrap_or(top);
+                let want = lowest(&cells, DeflectionRoot::root).unwrap_or(top);
                 assert!(
                     (drawn - want).abs() <= 1e-9 * want.max(1.0),
                     "{name} ae {ae}: the deflection edge {drawn}, the lowest cut {want}"
@@ -1127,6 +1127,63 @@ fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
         one(1.0, FromBelow, Some(true)).and_then(|r| r.check().value),
         Some(1.0),
         "a flipped setup judges depth"
+    );
+}
+
+/// Review 2026-11-15 F5 (a): a planned deflection cut with no chip or no
+/// width is no number with a named reason, never `Within`; F6: past the
+/// searched span a deflection row is not `Within` by default.
+#[test]
+fn claim_7c_a_deflection_with_no_chip_or_past_its_span_has_no_number_review_f5() {
+    use rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromAbove;
+    use rs_cam_core::feeds::planned::PlannedCut;
+    use rs_cam_core::limits::{CheckState, NoNumberReason};
+    let tool = fm1_tool(ToolType::EndMill, 6.0);
+    let tool_def = rs_cam_core::compute::cutter::build_cutter(&tool).expect("the tool builds");
+    let material = hardwood();
+    let env = ForceEnv {
+        tool: &tool_def,
+        material: &material,
+        bound: 50.0,
+    };
+    let cut = |width_mm, chip_mm| PlannedCut {
+        kind: CutKind::Body,
+        group: CutGroup::Body,
+        depth: PlaneDepth::Body,
+        width_mm,
+        chip_mm,
+        stored_chip: None,
+        presence: Presence::Always,
+    };
+    assert_eq!(
+        DeflectionPlanned::judge(&cut(Ok(2.0), Err(PlannedNoNumber::NoBodyChip)), &env),
+        DeflectionRoot::NoWidthOrChip,
+        "no chip"
+    );
+    assert_eq!(
+        DeflectionPlanned::judge(&cut(Err(NoEngagementModel::DrillCycle), Ok(0.05)), &env),
+        DeflectionRoot::NoWidthOrChip,
+        "no width"
+    );
+    // The 6 mm end mill in hardwood has no deflection root in its span
+    // (min(0.95 x 26, 18) = 18 mm: the stickout is the cutting length plus
+    // 8 mm, the flute the cutting length max(3 x 6, 12) = 18 mm).
+    let row = |depth: f64| {
+        let rows = project_curve_rows_of(depth, FromAbove, None, LimitId::ToolDeflection, &tool);
+        assert_eq!(rows.len(), 1, "one body deflection row: {rows:?}");
+        rows.into_iter().next().expect("the row")
+    };
+    assert_eq!(
+        row(1.0).check().state,
+        CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+        "inside the span at a lower bound: no proof"
+    );
+    let past = row(20.0);
+    assert_eq!(
+        past.check().state,
+        CheckState::NoNumber(NoNumberReason::PastTheSearchSpan),
+        "20 mm is past the 18 mm span: {}",
+        past.face()
     );
 }
 

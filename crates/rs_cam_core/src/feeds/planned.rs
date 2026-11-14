@@ -834,27 +834,56 @@ pub fn budget_rank(answer: &Option<BudgetDepth>) -> Option<f64> {
 
 /// The tool deflection before the simulation: the shallowest depth at which
 /// the tip deflection of the cut, at its width and chip, meets the target
-/// (`cutter_axial_constraints`, the one beam). `None`: no root below the
-/// flute, or no number.
+/// (the one beam, `cutter_constraints::deflection_depth_search`; the same
+/// search as `cutter_axial_constraints`). Review 2026-11-15 F5/F6: the
+/// answer keeps "no root in the span", "no chip or width" and "no signal"
+/// apart ([`DeflectionRoot`]), so no case reads `Within` by default.
 pub struct DeflectionPlanned;
+
+/// Review 2026-11-15 F5/F6: the answer of [`DeflectionPlanned`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeflectionRoot {
+    /// The shallowest depth (mm) where the deflection meets the target.
+    Root(f64),
+    /// The deflection is under the target at every depth of the searched
+    /// span, which ends at `span_mm`: a cut at or above that depth is
+    /// inside; a deeper cut is not judged.
+    NoRootIn {
+        /// The end of the searched span (mm): `min(0.95 x stickout,
+        /// flute)`.
+        span_mm: f64,
+    },
+    /// The cut has no width or no chip before the simulation.
+    NoWidthOrChip,
+    /// The beam has no signal (no stickout, no span, a refusal).
+    NoSignal,
+}
+
+impl DeflectionRoot {
+    /// The solved depth, or `None`: the value of the lowest edge.
+    #[must_use]
+    pub const fn root(self) -> Option<f64> {
+        match self {
+            Self::Root(mm) => Some(mm),
+            Self::NoRootIn { .. } | Self::NoWidthOrChip | Self::NoSignal => None,
+        }
+    }
+}
 
 impl PlannedLimit for DeflectionPlanned {
     const LIMIT: LimitId = LimitId::ToolDeflection;
     type Env<'e> = ForceEnv<'e>;
-    type Answer = Option<f64>;
-    fn judge(cut: &PlannedCut, env: &ForceEnv<'_>) -> Option<f64> {
-        let (w, fz) = width_and_chip(cut)?;
-        crate::feeds::cutter_constraints::cutter_axial_constraints(
-            env.tool,
-            env.material,
-            w.max(1.0e-3),
-            fz,
-            None,
-            None,
-            Some(env.bound),
-        )
-        .max_doc_deflection_mm
-        .filter(|v| v.is_finite() && *v >= 0.0)
+    type Answer = DeflectionRoot;
+    fn judge(cut: &PlannedCut, env: &ForceEnv<'_>) -> DeflectionRoot {
+        use crate::feeds::cutter_constraints::{DeflectionSearch, deflection_depth_search};
+        let Some((w, fz)) = width_and_chip(cut) else {
+            return DeflectionRoot::NoWidthOrChip;
+        };
+        match deflection_depth_search(env.tool, env.material, w.max(1.0e-3), fz, env.bound) {
+            DeflectionSearch::Root(mm) if mm.is_finite() && mm >= 0.0 => DeflectionRoot::Root(mm),
+            DeflectionSearch::Root(_) | DeflectionSearch::NoSignal => DeflectionRoot::NoSignal,
+            DeflectionSearch::NoRootIn { span_mm } => DeflectionRoot::NoRootIn { span_mm },
+        }
     }
 }
 

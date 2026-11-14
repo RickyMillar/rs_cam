@@ -256,3 +256,45 @@ deflection) have a sample gate that judges the cut after a simulation.
 - Departure from P30-2: a superseded modulated result has no current
   measured verdict, so it now gets this warning too (P30-2 gave it no
   second line beside the feeds caution).
+
+### R5 results
+
+- (a), (b) Cause: `DeflectionPlanned::judge` gave one `None` for "no root"
+  and "no chip or width", and the envelope read no root as `Within` at any
+  depth; the force budget read "no root below the flute" as `Within` at any
+  depth. Fix: `DeflectionRoot` (root, no root in the span with its end, no
+  width or chip, no signal) from the typed search
+  `cutter_constraints::deflection_depth_search` (the same evaluations; the
+  other readers keep `invert_deflection`); two reasons, `NoWidthOrChip` and
+  `PastTheSearchSpan` (wire change: two `NoNumberReason` values). A row
+  past the span end (deflection: `min(0.95 x stickout, flute)`; force
+  budget: the flute length) is `NoNumber(PastTheSearchSpan)`; at or above
+  it, `Within` stays (no root in the span proves it). Proof: claim 7c of
+  `every_limit_judges_every_declared_cut_p29_7` (no chip, no width: the
+  typed answer; a 6 mm Project Curve at 20 mm against an 18 mm span: past
+  the span). Not built: a force-budget fixture past the flute (the code
+  path is the same rule).
+- (c) Fix: `RunModulation::after_an_apply` (an apply drops the result, so a
+  current or an older modulation becomes `NotRun { export: Stated }`); the
+  proposal rows read it. Proof: `a_proposal_row_does_not_soften_under_the_current_modulation_review_f5`
+  in the P30-2 sentry (after a modulated run the proposal chip row carries
+  `UntilModulated { Stated }`, the stated row `BeforeModulation`).
+  Two sentries asserted the old rule and change with it:
+  claim 8b of `one_record_on_every_surface_p29_10` (after a modulated run
+  the stated rows read "before modulation" and the proposal rows keep
+  "until modulated") and claim 3 of
+  `every_declared_cut_is_judged_at_the_stated_point_p29_10` (a proposal row
+  under a current modulation keeps the capped set as `UntilModulated` and
+  the tone of `Off`; its non-vacuity of "softened" now comes from one case
+  at three times its stated feed, since no stated capped row of the cases
+  exceeds). Both failed on the first gate run with R5 and pass now.
+- (d) Fix: the depth gate counts each sample with no force model and the
+  detail names the count and the reason (`no_number_clause`). Proof: lib
+  test `a_sample_with_no_force_model_is_counted_and_named_review_f5`
+  (literal clauses). Not built: a trace with a refused sample beside a
+  capped one.
+- (e) The list is above; the tone rule does not change.
+- Rows: no change on the four files, as predicted. Wire change: a
+  proposal row under a current modulation carries `until_modulated`
+  (export `stated`), not `before_modulation`. The MCP tool description of
+  `get_safe_envelope` states the F2, F3 and F5 (c) caveat rules.

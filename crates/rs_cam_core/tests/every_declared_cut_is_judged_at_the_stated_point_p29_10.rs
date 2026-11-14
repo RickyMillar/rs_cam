@@ -318,6 +318,7 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
         export: ExportFeed::Stated,
     };
     let (mut carried, mut softened, mut plain, mut kept) = (0, 0, 0, 0);
+    let mut proposal_until = 0;
     for (name, op, t, dressups) in cases() {
         let (Some(off), Some(on), Some(before)) = (
             envelope_with(&op, &t, dressups.as_ref(), RunModulation::Off),
@@ -339,14 +340,38 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
             // P30-2: with no current modulated result the row keeps the
             // tone of `Off`, and the same rows carry `UntilModulated`.
             assert_eq!(c.tone(), a.tone(), "{name}: not softened: {}", c.face());
-            assert_eq!(
-                c.caveats().contains(&Caveat::UntilModulated {
-                    export: ExportFeed::Stated
-                }),
-                b.caveats().contains(&Caveat::BeforeModulation),
-                "{name}: one capped set: {}",
-                c.face()
-            );
+            let until = Caveat::UntilModulated {
+                export: ExportFeed::Stated,
+            };
+            // Review 2026-11-15 F5 (c): a proposal row reads the result
+            // after the apply that writes it (the apply drops the
+            // modulation), so under a current modulation it carries
+            // `UntilModulated { Stated }` and keeps the tone of `Off`.
+            let proposal = b.is_planned();
+            if proposal {
+                assert!(
+                    !b.caveats().contains(&Caveat::BeforeModulation),
+                    "{name}: a proposal row does not soften: {}",
+                    b.face()
+                );
+                assert_eq!(
+                    b.caveats().contains(&until),
+                    c.caveats().contains(&until),
+                    "{name}: the proposal keeps the capped set: {}",
+                    b.face()
+                );
+                assert_eq!(b.tone(), a.tone(), "{name}: not softened: {}", b.face());
+                if b.caveats().contains(&until) {
+                    proposal_until += 1;
+                }
+            } else {
+                assert_eq!(
+                    c.caveats().contains(&until),
+                    b.caveats().contains(&Caveat::BeforeModulation),
+                    "{name}: one capped set: {}",
+                    c.face()
+                );
+            }
             if c.check().state == CheckState::Exceeds
                 && c.caveats().contains(&Caveat::UntilModulated {
                     export: ExportFeed::Stated,
@@ -364,7 +389,7 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
             let declared = b.cut().is_some_and(|cut| {
                 runs.caps(b.check().limit, cut) == rs_cam_core::limits::RowModulation::CapsTheBound
             });
-            let want = declared && b.holds_a_number();
+            let want = declared && b.holds_a_number() && !proposal;
             assert_eq!(
                 b.caveats().contains(&Caveat::BeforeModulation),
                 want,
@@ -383,10 +408,36 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
             }
         }
     }
+    // Review 2026-11-15 F5 (c): the proposal rows no longer soften, and no
+    // stated capped row of the cases exceeds, so one more case states a
+    // cutting feed three times its own: its stated chip-maximum rows exceed
+    // and soften under the current modulation.
+    for (name, mut op, t, dressups) in cases() {
+        let Some(feed) = op.feed_rate() else {
+            continue;
+        };
+        op.set_feed_rate(3.0 * feed);
+        let Some(on) = envelope_with(&op, &t, dressups.as_ref(), runs) else {
+            continue;
+        };
+        for b in on.rows().iter().filter(|r| {
+            r.is_stated()
+                && r.check().limit == LimitId::ChipMax
+                && r.check().state == CheckState::Exceeds
+                && r.caveats().contains(&Caveat::BeforeModulation)
+        }) {
+            assert_eq!(b.tone(), Tone::ExceedsAdvisory, "{name}: {}", b.face());
+            softened += 1;
+        }
+        if softened > 0 {
+            break;
+        }
+    }
     assert!(
-        carried > 0 && softened > 0 && plain > 0 && kept > 0,
+        carried > 0 && softened > 0 && plain > 0 && kept > 0 && proposal_until > 0,
         "non-vacuity: {carried} carry the caveat, {softened} soften, {plain} plain, \
-         {kept} keep the danger tone with no current modulation"
+         {kept} keep the danger tone with no current modulation, {proposal_until} proposal \
+         rows keep \"until modulated\" under a current modulation"
     );
     assert_eq!(
         runs.capped_limits(),

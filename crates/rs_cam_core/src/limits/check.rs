@@ -90,6 +90,15 @@ pub enum NoNumberReason {
     /// `EXEMPTIONS`. P29-11 11-3: the stated point on a fixed axis no
     /// longer gives it (a value check, `SafeEnvelope::stated_value_check`).
     NotJudgedHere,
+    /// Review 2026-11-15 F5: the cut has no width or no chip before the
+    /// simulation, so the beam has no load to judge (a planned deflection
+    /// row).
+    NoWidthOrChip,
+    /// Review 2026-11-15 F6: the cut is deeper than the depth span that the
+    /// solver searched (the force budget up to the flute length, the
+    /// deflection up to `min(0.95 x stickout, flute)`), and no root lies in
+    /// the span: the check does not judge the depth past it.
+    PastTheSearchSpan,
     /// P29-11 11-3: a limit of each cut (the force budget, the deflection,
     /// the vendor depth table, the power, the chip band, the rubbing floor)
     /// against the stated point on a fixed axis or per point: its stated

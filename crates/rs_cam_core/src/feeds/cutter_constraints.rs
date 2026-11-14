@@ -303,12 +303,45 @@ fn invert_deflection(
     feed_per_tooth_mm: f64,
     limit_um: f64,
 ) -> Option<f64> {
+    match deflection_depth_search(tool, material, radial_woc_mm, feed_per_tooth_mm, limit_um) {
+        DeflectionSearch::Root(ap) => Some(ap),
+        DeflectionSearch::NoRootIn { .. } | DeflectionSearch::NoSignal => None,
+    }
+}
+
+/// Review 2026-11-15 F5/F6: the answer of the deflection depth search, with
+/// the two cases of "no depth" kept apart.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DeflectionSearch {
+    /// The solved depth (mm), as [`invert_deflection`] gives it.
+    Root(f64),
+    /// The deflection is under the limit at every depth of the searched
+    /// span, which ends at `span_mm` (`min(0.95 x stickout, flute)`). A
+    /// depth past the span end is not judged.
+    NoRootIn {
+        /// The end of the searched span (mm).
+        span_mm: f64,
+    },
+    /// The model has no signal: no chip, no width, no beam, no span, or a
+    /// refusal at the shallowest depth.
+    NoSignal,
+}
+
+/// The deflection depth search of [`invert_deflection`], typed
+/// ([`DeflectionSearch`]). The same evaluations give the same root.
+pub(crate) fn deflection_depth_search(
+    tool: &ToolDefinition,
+    material: &Material,
+    radial_woc_mm: f64,
+    feed_per_tooth_mm: f64,
+    limit_um: f64,
+) -> DeflectionSearch {
     let limit_mm = limit_um * 1.0e-3;
     if radial_woc_mm <= 0.0 || feed_per_tooth_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout() <= 0.0
     {
         // No chip, no width or no beam: the force model has nothing to
         // bound the axial DOC with.
-        return None;
+        return DeflectionSearch::NoSignal;
     }
     let deflection_at = |ap: f64| {
         let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
@@ -335,13 +368,20 @@ fn invert_deflection(
         upper = upper.min(flute);
     }
     if upper <= lower {
-        return None;
+        return DeflectionSearch::NoSignal;
     }
     // A refusal at the shallowest depth (material, stickout) is no signal;
     // over the limit, or refused (a degenerate beam), is past the target.
-    shallowest_crossing(lower, upper, DEFLECTION_SCAN_STEPS, |ap| {
-        deflection_at(ap).map(|d| d <= limit_mm)
-    })
+    let within = |ap: f64| deflection_at(ap).map(|d| d <= limit_mm);
+    match shallowest_crossing(lower, upper, DEFLECTION_SCAN_STEPS, within) {
+        Some(ap) => DeflectionSearch::Root(ap),
+        // `None`: a refusal at `lower`, or no depth of the span past the
+        // limit. Only the second is a span with no root.
+        None => match within(lower) {
+            Some(_) => DeflectionSearch::NoRootIn { span_mm: upper },
+            None => DeflectionSearch::NoSignal,
+        },
+    }
 }
 
 /// The shallowest depth in `[lower, upper]` where `within` stops holding:

@@ -1223,8 +1223,10 @@ fn door_rows(session: &ProjectSession, index: usize) -> Vec<CheckRow> {
 /// Claim 8b (P29-10z, lead ruling Q2; P29-11 commit 11-0; P30-2): the door
 /// reads the modulation of the stored result. A planned result carries
 /// `Caveat::UntilModulated`; a simulation with modulation turns it into
-/// `Caveat::BeforeModulation` on the same rows; a disabled toolpath is not
-/// in the run, so no row of it carries either.
+/// `Caveat::BeforeModulation` on the same stated rows (review 2026-11-15
+/// F5 (c): a proposal row keeps `UntilModulated`, since an apply drops the
+/// modulation); a disabled toolpath is not in the run, so no row of it
+/// carries either.
 #[test]
 fn claim_8b_a_disabled_toolpath_gets_no_modulation_caveat() {
     use rs_cam_core::limits::ExportFeed;
@@ -1233,6 +1235,11 @@ fn claim_8b_a_disabled_toolpath_gets_no_modulation_caveat() {
     };
     let count = |rows: &[CheckRow], want: &Caveat| {
         rows.iter().filter(|r| r.caveats().contains(want)).count()
+    };
+    let count_where = |rows: &[CheckRow], want: &Caveat, proposal: bool| {
+        rows.iter()
+            .filter(|r| r.is_planned() == proposal && r.caveats().contains(want))
+            .count()
     };
     let until = Caveat::UntilModulated {
         export: ExportFeed::Stated,
@@ -1256,10 +1263,19 @@ fn claim_8b_a_disabled_toolpath_gets_no_modulation_caveat() {
     let modulated = door_rows(&session, 0);
     assert_eq!(
         count(&modulated, &Caveat::BeforeModulation),
-        count(&planned, &until),
-        "the same rows read \"before modulation\" under a current modulated result"
+        count_where(&planned, &until, false),
+        "the same stated rows read \"before modulation\" under a current modulated result"
     );
-    assert_eq!(count(&modulated, &until), 0);
+    assert!(
+        count_where(&planned, &until, true) > 0,
+        "non-vacuity: a proposal row carries \"until modulated\""
+    );
+    assert_eq!(
+        count(&modulated, &until),
+        count_where(&planned, &until, true),
+        "the proposal rows keep \"until modulated\" (an apply drops the modulation)"
+    );
+    assert_eq!(count_where(&modulated, &Caveat::BeforeModulation, true), 0);
     let _ = session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: 0,

@@ -1120,7 +1120,9 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
             | NoNumberReason::NotModelled
             | NoNumberReason::OnlyALowerBound
             | NoNumberReason::NoEarlierLeave
-            | NoNumberReason::NoStatedFeed,
+            | NoNumberReason::NoStatedFeed
+            | NoNumberReason::NoWidthOrChip
+            | NoNumberReason::PastTheSearchSpan,
         )
         | CheckState::Within
         | CheckState::Exceeds
@@ -1796,6 +1798,8 @@ impl NoNumberReason {
             | Self::NoEarlierLeave
             | Self::NoStatedFeed => true,
             Self::NoMaterialRemoved
+            | Self::NoWidthOrChip
+            | Self::PastTheSearchSpan
             | Self::NotModelled
             | Self::OnlyALowerBound
             | Self::NoBound
@@ -1819,6 +1823,8 @@ impl NoNumberReason {
             Self::OnlyALowerBound => "inside at a lower bound",
             Self::NoEarlierLeave => "no earlier leave",
             Self::NoStatedFeed => "no stated feed",
+            Self::NoWidthOrChip => "no width or chip",
+            Self::PastTheSearchSpan => "past the search span",
             Self::NoBound => "no limit here",
             Self::NotJudgedHere => "not judged here",
             Self::JudgedPerCut => "judged per cut",
@@ -1842,6 +1848,10 @@ impl NoNumberReason {
             }
             Self::NoEarlierLeave => "no earlier op of the setup states a leave",
             Self::NoStatedFeed => "the op states no feed or no spindle speed",
+            Self::NoWidthOrChip => "the cut has no width or no chip before the simulation",
+            Self::PastTheSearchSpan => {
+                "the cut is deeper than the depth span that the solver searched, and no root lies in the span"
+            }
             Self::NoBound => "the limit gives this cut no bound",
             Self::NotJudgedHere => "this limit is not judged on this cut",
             Self::JudgedPerCut => "the rows of each declared cut judge this limit",

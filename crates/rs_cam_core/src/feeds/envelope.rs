@@ -26,9 +26,9 @@ use crate::compute::tool_config::ToolConfig;
 use crate::feeds::FeedsInput;
 use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::planned::{
-    BodyColumn, BodyDepth, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned,
-    ForceEnv, PlaneDepth, PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank,
-    judge_declared_cuts, lowest_ceiling, planned_limit_of,
+    BodyColumn, BodyDepth, CeilingEdge, DeclaredCuts, DeflectionPlanned, DeflectionRoot,
+    ForceBudgetPlanned, ForceEnv, PlaneDepth, PlaneRole, TableEnv, ValueCheck,
+    VendorDepthTablePlanned, budget_rank, judge_declared_cuts, lowest_ceiling, planned_limit_of,
 };
 use crate::feeds::sourced::{
     Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
@@ -1479,7 +1479,13 @@ impl PlannedRow {
                     | LimitId::SpindlePower
             );
         let compared = compared_of_planned(self.check.limit);
-        let modulation = modulation.caps(self.check.limit, self.cut);
+        // Review 2026-11-15 F5 (c): a proposal row reads the modulation of
+        // the result after the apply that writes the proposal.
+        let modulation = match self.judged_at {
+            crate::limits::JudgedAt::Proposal => modulation.after_an_apply(),
+            crate::limits::JudgedAt::Stated => modulation,
+        }
+        .caps(self.check.limit, self.cut);
         let reads_depth = planned_limit_of(self.check.limit).reads_the_cut_depth();
         crate::limits::CheckRow::planned(
             self.cut,
@@ -3656,6 +3662,9 @@ impl SafeEnvelope {
                     material: &self.inputs.material,
                     bound: model.budget_n,
                 };
+                // Review 2026-11-15 F6: the force-budget search ends at the
+                // flute length (`force_budget::depth_at_budget`).
+                let flute_mm = crate::tool::MillingCutter::length(env.tool);
                 let curve =
                     judge_declared_cuts::<ForceBudgetPlanned>(cuts, column(curve_chip), &env);
                 let pick = pick_chip
@@ -3670,11 +3679,19 @@ impl SafeEnvelope {
                             .map_or(a.value, |e| e.value);
                         let bound = match (a.value, b) {
                             (PlannedCell::Judged(Some(x)), PlannedCell::Judged(Some(y))) => {
-                                Ok(match (x.ceiling_mm(), y.ceiling_mm()) {
-                                    (Some(u), Some(v)) => Some(u.min(v)),
-                                    (Some(u), None) | (None, Some(u)) => Some(u),
-                                    (None, None) => None,
-                                })
+                                match (x.ceiling_mm(), y.ceiling_mm()) {
+                                    (Some(u), Some(v)) => Ok(Some(u.min(v))),
+                                    (Some(u), None) | (None, Some(u)) => Ok(Some(u)),
+                                    // Review 2026-11-15 F6: no root below the
+                                    // flute proves `Within` only for a cut at
+                                    // or above the flute length.
+                                    (None, None) => match value_of(a.depth) {
+                                        Some(v) if v > flute_mm => {
+                                            Err(NoNumberReason::PastTheSearchSpan)
+                                        }
+                                        Some(_) | None => Ok(None),
+                                    },
+                                }
                             }
                             (PlannedCell::Judged(_), PlannedCell::Judged(_)) => {
                                 Err(NoNumberReason::NotModelled)
@@ -3776,10 +3793,27 @@ impl SafeEnvelope {
                                     {
                                         Err(NoNumberReason::NotModelled)
                                     }
+                                    // Review 2026-11-15 F5/F6: a root is a bound;
+                                    // no root in the span proves `Within` only
+                                    // for a cut at or above the span end; no
+                                    // chip or width and no signal are no number.
                                     (
-                                        PlannedCell::Judged(root),
+                                        PlannedCell::Judged(answer),
                                         PlaneDepth::Body | PlaneDepth::Own(_),
-                                    ) => Ok(root),
+                                    ) => match answer {
+                                        DeflectionRoot::Root(mm) => Ok(Some(mm)),
+                                        DeflectionRoot::NoRootIn { span_mm } => match value {
+                                            Some(v) if v <= span_mm => Ok(None),
+                                            Some(_) => Err(NoNumberReason::PastTheSearchSpan),
+                                            None => Err(NoNumberReason::NotModelled),
+                                        },
+                                        DeflectionRoot::NoWidthOrChip => {
+                                            Err(NoNumberReason::NoWidthOrChip)
+                                        }
+                                        DeflectionRoot::NoSignal => {
+                                            Err(NoNumberReason::NotModelled)
+                                        }
+                                    },
                                     (
                                         PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_),
                                         _,
@@ -5401,8 +5435,8 @@ fn deflection_solve(
         chip_mm: Some(fz),
         stored: None,
     };
-    lowest_ceiling::<DeflectionPlanned>(&inputs.cuts, column, &env, |answer| *answer)
-        .and_then(|(kind, answer)| answer.map(|mm| (mm, kind)))
+    lowest_ceiling::<DeflectionPlanned>(&inputs.cuts, column, &env, |answer| answer.root())
+        .and_then(|(kind, answer)| answer.root().map(|mm| (mm, kind)))
 }
 
 /// P29-7 7c (ruling Q8): the vendor depth table ceiling at the body column
@@ -5848,9 +5882,11 @@ mod tests {
                         lowest_ceiling::<ForceBudgetPlanned>(cuts, column, &force, budget_rank);
                     assert_eq!(format!("{full:?}"), format!("{fast:?}"), "force {ae} {fz}");
                     let full = judge_declared_cuts::<DeflectionPlanned>(cuts, column, &deflection)
-                        .lowest_always(|a| *a);
+                        .lowest_always(|a| a.root());
                     let fast =
-                        lowest_ceiling::<DeflectionPlanned>(cuts, column, &deflection, |a| *a);
+                        lowest_ceiling::<DeflectionPlanned>(cuts, column, &deflection, |a| {
+                            a.root()
+                        });
                     assert_eq!(
                         format!("{full:?}"),
                         format!("{fast:?}"),

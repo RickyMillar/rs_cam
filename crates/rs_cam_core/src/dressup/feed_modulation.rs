@@ -226,6 +226,23 @@ impl RunModulation {
         held: HeldByResult(()),
     };
 
+    /// Review 2026-11-15 F5 (c): the modulation of the result after an
+    /// apply of the proposal. The apply changes the op, so the session
+    /// drops its result and the export carries the proposal feeds as stated
+    /// until a new simulation: a current or an older modulation becomes
+    /// `NotRun { export: Stated }`. A disabled toolpath stays `Off`. The
+    /// proposal rows read this value, so a proposal row never softens under
+    /// a modulation that it does not carry after the apply.
+    #[must_use]
+    pub const fn after_an_apply(self) -> Self {
+        match self {
+            Self::Off => Self::Off,
+            Self::Current { .. } | Self::NotRun { .. } => Self::NotRun {
+                export: crate::limits::ExportFeed::Stated,
+            },
+        }
+    }
+
     /// What the modulation does to a row of `limit` on `cut`: nothing when
     /// the limit is not in [`Self::capped_limits`] or the modulator does not
     /// re-time the cut ([`re_times`]); else it capped the cut (a current

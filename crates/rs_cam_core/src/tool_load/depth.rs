@@ -256,6 +256,9 @@ pub(super) fn judge(
     let mut no_width: usize = 0;
     let mut no_chip: usize = 0;
     let mut unmodelled: Option<&'static str> = None;
+    // Review 2026-11-15 F5 (d): every sample with no force model counts, so
+    // the row detail names them when another sample has a cap.
+    let mut unmodelled_count: usize = 0;
     let mut judged: Option<JudgedSample> = None;
     // P29-11 11-5 (F6-a): the deepest sample that the force budget holds
     // with no root below the flute; it is the judged sample when no sample
@@ -290,7 +293,10 @@ pub(super) fn judge(
                 match no_root_sample(no_root, tool, material, flute_mm, budget_n, &mut judged) {
                     Ok(Some(n)) => n.keep_deepest(&mut deepest_no_root),
                     Ok(None) => {}
-                    Err(reason) => unmodelled = Some(reason),
+                    Err(reason) => {
+                        unmodelled = Some(reason);
+                        unmodelled_count += 1;
+                    }
                 }
             }
             continue;
@@ -302,6 +308,7 @@ pub(super) fn judge(
                 let cap_mm = bound.cap_mm();
                 if !cap_mm.is_finite() || cap_mm <= 0.0 {
                     unmodelled = Some("the tool reports no usable diameter for the rigidity cap");
+                    unmodelled_count += 1;
                     continue;
                 }
                 contributing += 1;
@@ -320,26 +327,23 @@ pub(super) fn judge(
                 match no_root_sample(no_root, tool, material, flute_mm, budget_n, &mut judged) {
                     Ok(Some(n)) => n.keep_deepest(&mut deepest_no_root),
                     Ok(None) => {}
-                    Err(reason) => unmodelled = Some(reason),
+                    Err(reason) => {
+                        unmodelled = Some(reason);
+                        unmodelled_count += 1;
+                    }
                 }
             }
             Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
                 unmodelled = Some(reason);
+                unmodelled_count += 1;
             }
             // The rule above holds a budget, so the producer answers.
             None => {}
         }
     }
     // The samples that removed material at a depth and got no number.
-    let no_number_clause = match (no_width, no_chip) {
-        (0, 0) => String::new(),
-        (w, 0) => format!("; {w} samples with a depth have no measured width (no number)"),
-        (0, c) => format!("; {c} samples with a depth state no feed or speed (no number)"),
-        (w, c) => format!(
-            "; {w} samples with a depth have no measured width and {c} state no feed or \
-             speed (no number)"
-        ),
-    };
+    let no_number_clause =
+        no_number_clause(no_width, no_chip, unmodelled.map(|r| (unmodelled_count, r)));
 
     let Some(JudgedSample {
         idx,
@@ -520,6 +524,36 @@ impl NoRootSample {
 /// over the budget it becomes the judged sample against the flute length
 /// when it beats the worst ratio (`None`); at or under, it holds (`Some`).
 /// `Err`: the force model gives no number at its depth.
+/// The clause of the samples with a depth that got no number: no measured
+/// width, no feed or speed, and (review 2026-11-15 F5 (d)) no force model,
+/// with the count and the last reason.
+fn no_number_clause(
+    no_width: usize,
+    no_chip: usize,
+    unmodelled: Option<(usize, &'static str)>,
+) -> String {
+    let mut out = match (no_width, no_chip) {
+        (0, 0) => String::new(),
+        (w, 0) => format!("; {w} samples with a depth have no measured width (no number)"),
+        (0, c) => format!("; {c} samples with a depth state no feed or speed (no number)"),
+        (w, c) => format!(
+            "; {w} samples with a depth have no measured width and {c} state no feed or \
+             speed (no number)"
+        ),
+    };
+    if let Some((n, reason)) = unmodelled {
+        let (samples, have) = if n == 1 {
+            ("sample", "has")
+        } else {
+            ("samples", "have")
+        };
+        out.push_str(&format!(
+            "; {n} {samples} with a depth {have} no force model: {reason} (no number)"
+        ));
+    }
+    out
+}
+
 fn no_root_sample(
     no_root: NoRootSample,
     tool: &crate::tool::ToolDefinition,
@@ -1354,5 +1388,22 @@ mod tests {
             run_in(OperationType::Adaptive, Some(&t), &oak()),
             DepthVerdict::Exceeds { .. }
         ));
+    }
+
+    /// Review 2026-11-15 F5 (d): a sample with no force model is counted
+    /// and named in the row detail beside the samples with no width or no
+    /// chip (literal clauses).
+    #[test]
+    fn a_sample_with_no_force_model_is_counted_and_named_review_f5() {
+        assert_eq!(no_number_clause(0, 0, None), "");
+        assert_eq!(
+            no_number_clause(0, 0, Some((1, "no usable width"))),
+            "; 1 sample with a depth has no force model: no usable width (no number)"
+        );
+        assert_eq!(
+            no_number_clause(2, 0, Some((3, "no usable width"))),
+            "; 2 samples with a depth have no measured width (no number); 3 samples with a \
+             depth have no force model: no usable width (no number)"
+        );
     }
 }

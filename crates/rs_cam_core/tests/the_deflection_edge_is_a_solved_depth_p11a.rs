@@ -44,7 +44,8 @@ use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::planned::{
-    BodyColumn, DeclaredCuts, DeflectionPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
+    BodyColumn, DeclaredCuts, DeflectionPlanned, DeflectionRoot, ForceEnv, PlannedCell,
+    judge_declared_cuts,
 };
 use rs_cam_core::feeds::predict::{predict_peak_deflection_um, tip_deflection_from_engagement};
 use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
@@ -130,7 +131,7 @@ fn binding_cut_at(tool: &ToolConfig, ae: f64, target_um: f64) -> (CutKind, f64, 
         if e.presence != Presence::Always {
             continue;
         }
-        if let PlannedCell::Judged(Some(root)) = e.value
+        if let PlannedCell::Judged(DeflectionRoot::Root(root)) = e.value
             && best.is_none_or(|(b, _)| root < b)
         {
             best = Some((root, e.kind));

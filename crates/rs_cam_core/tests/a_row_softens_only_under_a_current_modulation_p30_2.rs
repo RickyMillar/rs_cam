@@ -182,6 +182,58 @@ fn a_current_modulated_result_softens_and_does_not_warn_p30_2() {
     );
 }
 
+/// Review 2026-11-15 F5 (c): a proposal row does not soften under the
+/// current modulation: an apply of the proposal changes the op, so the
+/// export carries the proposal feed with no modulation until a new run.
+#[test]
+fn a_proposal_row_does_not_soften_under_the_current_modulation_review_f5() {
+    let mut session = fast_pocket();
+    simulate(&mut session, true);
+    assert!(matches!(
+        session.run_modulation_of(0),
+        RunModulation::Current { .. }
+    ));
+    let rows = session
+        .limit_rows(0, None)
+        .expect("the op")
+        .envelope()
+        .expect("a tool")
+        .expect("the envelope builds");
+    let proposal = rows
+        .iter()
+        .find(|r| {
+            r.check().limit == LimitId::ChipMax
+                && matches!(
+                    r.subject(),
+                    Subject::Planned {
+                        cut: CutKind::Body,
+                        ..
+                    }
+                )
+        })
+        .expect("the proposal body chip row");
+    assert!(
+        proposal.holds_a_number(),
+        "non-vacuity: the row holds a number: {}",
+        proposal.face()
+    );
+    assert!(
+        !proposal.caveats().contains(&Caveat::BeforeModulation),
+        "{:?}",
+        proposal.caveats()
+    );
+    assert!(
+        proposal.caveats().contains(&Caveat::UntilModulated {
+            export: ExportFeed::Stated
+        }),
+        "{:?}",
+        proposal.caveats()
+    );
+    // The stated row of the same cut keeps the softening caveat.
+    let stated = body_chip_max(&session);
+    assert!(stated.caveats().contains(&Caveat::BeforeModulation));
+}
+
 #[test]
 fn a_simulation_with_modulation_off_warns_by_the_measured_row_p30_2() {
     let mut session = fast_pocket();
