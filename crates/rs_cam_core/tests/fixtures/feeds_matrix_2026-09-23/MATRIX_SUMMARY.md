@@ -138,9 +138,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `load.chipload.within` | 33 |
 | `load.deflection.unmodeled` | 8 |
 | `load.deflection.within` | 27 |
-| `load.depth.reported` | 13 |
+| `load.depth.reported` | 9 |
 | `load.depth.unmodeled` | 6 |
-| `load.depth.within` | 16 |
+| `load.depth.within` | 20 |
 | `load.power.unmodeled` | 8 |
 | `load.power.within` | 27 |
 | `project.sim_outside_envelope` | 2 |

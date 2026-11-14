@@ -31,6 +31,14 @@
 //! - Claim 7 (a simulated drill cycle): the headline group is the drill
 //!   group, every side headline is `NotApplicableForOp` (`limits::scope`),
 //!   and the diagnostics list holds no side-gate row.
+//! - Claim 8 (P29-11 11-5, F6-a, lead ruling L1): the depth gate and the
+//!   force reading read one engagement door. In every group of every
+//!   fixture where the reading has a force budget and a sample, the two
+//!   populations are equal, and the depth row `Exceeds` exactly when the
+//!   force peak is over the budget (else it is `Within`, never `Reported`).
+//!   Both sides: the five fixtures hold only `Within` groups; the Pocket
+//!   judged on a machine whose force budget is half its measured body
+//!   force peak holds an `Exceeds` group (`the_depth_row_is_the_force_record`).
 //!
 //! `cargo test -p rs_cam_core -q --test no_removing_sample_is_outside_the_gates_p29_6`
 
@@ -49,7 +57,9 @@ use rs_cam_core::limits::{ByGroup, CapTable, CutGroup, CutKind, EntryKind, Sampl
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::GroupCell;
 use rs_cam_core::tool_load::locality::judged_group;
-use rs_cam_core::tool_load::verdict::{GatePopulation, LoadState, ToolpathLoadVerdict};
+use rs_cam_core::tool_load::verdict::{
+    DepthVerdict, GatePopulation, LoadState, ToolpathLoadVerdict,
+};
 
 /// What one fixture gives.
 struct Readout {
@@ -147,7 +157,73 @@ fn population_of<V>(
     }
 }
 
+/// Claim 8: the depth row against the force reading, group by group.
+/// Returns the count of `Within` and `Exceeds` groups.
+fn depth_is_the_force_record(name: &str, v: &ToolpathLoadVerdict) -> (usize, usize) {
+    let (mut within, mut exceeds) = (0, 0);
+    for group in CutGroup::ALL {
+        let depth = match v.groups.depth.get(group) {
+            GroupCell::Headline => Some(&v.depth),
+            GroupCell::Judged { verdict, .. } => Some(verdict),
+            GroupCell::NoSamples | GroupCell::NotJudged { .. } => None,
+        };
+        let force = match v.groups.cut_force.get(group) {
+            GroupCell::Headline => v.cut_force.as_ref(),
+            GroupCell::Judged { verdict, .. } => verdict.as_ref(),
+            GroupCell::NoSamples | GroupCell::NotJudged { .. } => None,
+        };
+        let (Some(depth), Some(force)) = (depth, force) else {
+            continue;
+        };
+        let Some(budget) = force.budget_n else {
+            continue;
+        };
+        let depth_population = depth
+            .as_criterion_status()
+            .population
+            .expect("a depth population");
+        assert_eq!(
+            depth_population.contributing, force.population.contributing,
+            "{name}: {group:?}: the depth and the force populations"
+        );
+        if force.population.contributing == 0 {
+            continue;
+        }
+        let over = force.peak_n > budget;
+        match depth {
+            DepthVerdict::Within { .. } => {
+                assert!(
+                    !over,
+                    "{name}: {group:?}: depth Within, force {} over {budget}",
+                    force.peak_n
+                );
+                within += 1;
+            }
+            DepthVerdict::Exceeds { .. } => {
+                assert!(
+                    over,
+                    "{name}: {group:?}: depth Exceeds, force {} at or under {budget}",
+                    force.peak_n
+                );
+                exceeds += 1;
+            }
+            DepthVerdict::Reported { .. } | DepthVerdict::Unmodeled { .. } => panic!(
+                "{name}: {group:?}: a group with a force budget and a force has a depth \
+                 bound, got {depth:?}"
+            ),
+        }
+    }
+    (within, exceeds)
+}
+
 fn check(name: &str, r: &Readout) {
+    // Claim 8 (P29-11 11-5): on the five fixtures every judged group is
+    // inside its force budget.
+    let (within, exceeds) = depth_is_the_force_record(name, &r.verdict);
+    assert!(
+        within > 0 && exceeds == 0,
+        "{name}: {within} Within and {exceeds} Exceeds force-budget groups"
+    );
     // Claim 1: one group per removing sample; the groups sum to the count.
     let sum: usize = r.by_group.iter().map(|(_, n)| *n).sum();
     assert_eq!(
@@ -345,6 +421,46 @@ fn no_adaptive_helix_sample_is_outside_the_gates() {
         ),
         "adaptive: the power gate judges the helix"
     );
+}
+
+/// Claim 8, the `Exceeds` side: the Pocket fixture judged on its machine
+/// with the force budget set to half of its measured body force peak (a
+/// budget derived from the fixture, not a typed number). The body force is
+/// then over the budget, and the depth row of the body exceeds; the groups
+/// still agree with the force reading.
+#[test]
+fn the_depth_row_is_the_force_record() {
+    let session = pocket_session(false);
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.as_deref())
+        .expect("a cut trace");
+    let parts = session.load_context_parts(0).expect("the context parts");
+    let ctx = parts.ctx();
+    let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
+    let base = rs_cam_core::tool_load::evaluate_toolpath(
+        &ctx,
+        Some(trace),
+        Some(session.machine()),
+        &tolerance,
+    );
+    let body_peak = base
+        .cut_force
+        .as_ref()
+        .expect("a body force reading")
+        .peak_n;
+    assert!(body_peak > 0.0, "non-vacuity: a body force");
+    let mut machine = session.machine().clone();
+    machine.rigidity.force_budget_n = 0.5 * body_peak;
+    let low =
+        rs_cam_core::tool_load::evaluate_toolpath(&ctx, Some(trace), Some(&machine), &tolerance);
+    let (_, exceeds) = depth_is_the_force_record("pocket on half its force", &low);
+    assert!(
+        exceeds > 0,
+        "non-vacuity: a group over the force budget, depth {:?}",
+        low.depth
+    );
+    assert!(low.depth.is_exceeded(), "the body depth row exceeds");
 }
 
 /// Claim 6: a synthetic trace with one body sample and one waterline

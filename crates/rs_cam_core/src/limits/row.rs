@@ -1477,10 +1477,11 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
         feed_explanation: _,
         kinematic_utilization: _,
         material_split,
-        // P17: the force reading is report-only. The F6 merge (one force
-        // row per group, P29-10 section 13.3) stopped on a state that
-        // differs; until the lead rules, the depth gate gives the force
-        // budget row and the reading gives none.
+        // P17: the force reading is report-only. P29-11 11-5 (F6-a, lead
+        // ruling L1): the depth gate reads the reading's engagement door,
+        // so the depth row is the one force-budget record (same population,
+        // `Exceeds` exactly when the force is over the budget); the reading
+        // gives no row.
         cut_force: _,
         groups,
     } = verdict;

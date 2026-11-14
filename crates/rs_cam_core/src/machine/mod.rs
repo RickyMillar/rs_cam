@@ -229,6 +229,9 @@ pub enum RigidityDepthCap {
         /// The advance per tooth the depth is solved at (mm).
         fz_mm: f64,
         /// The solved depth (mm), or the minimum depth when `below_floor`.
+        /// P29-11 11-5: the depth gate puts the flute length here when the
+        /// force at the flute length is at or under the budget (no root
+        /// below the flute: no depth the tool can cut reaches it).
         depth_mm: f64,
         /// The peak at the minimum depth is already over the budget: the
         /// minimum depth ships with a warning (Q6).

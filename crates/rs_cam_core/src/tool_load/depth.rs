@@ -54,10 +54,24 @@
 //! the cap at its own width and chip. The verdict names the sample with
 //! the largest depth over its own cap (the judged sample), and the row
 //! prints that sample's depth and cap (ruling Q3); the text names the
-//! deepest depth too. A sample with a depth and no width (no arc, an arc of
-//! 0, and no width share) gets no number: the full-slot fallback is
-//! deleted. A screen on the force at `depth / r*` solves the cap only for
-//! a sample that can beat the worst ratio `r*` so far.
+//! deepest depth too. A sample with a depth and no width (no arc, or an arc
+//! of 0) gets no number: the full-slot fallback is deleted. A screen on the
+//! force at `depth / r*` solves the cap only for a sample that can beat the
+//! worst ratio `r*` so far.
+//!
+//! ## One engagement door with the force reading (P29-11 11-5, F6-a)
+//!
+//! The width and the chip of a sample come from the doors of the force
+//! reading (`super::cut_force`) and the deflection gate:
+//! [`super::deflection::sample_engagement`] (the arc at the engaged depth)
+//! and [`super::deflection::deflection_feed_per_tooth_mm`] (the one
+//! operating point of the sample). The width share `radial_woc_fraction`
+//! is not read. So the population of this gate is the population of the
+//! force reading, and the row `Exceeds` exactly when a sample's force at
+//! its depth is over the budget. When every judged sample has no
+//! force-budget root below the flute, the force at the flute length is at
+//! or under the budget: the gate gives `Within` with the flute length as
+//! the bound (before 11-5: `Reported`, a row with no number).
 //!
 //! **This gate adds no number.** The two helpers it calls are the ones
 //! the Suggest clamp calls, so the cap the recipe was lowered to and the
@@ -243,19 +257,26 @@ pub(super) fn judge(
     let mut no_chip: usize = 0;
     let mut unmodelled: Option<&'static str> = None;
     let mut judged: Option<JudgedSample> = None;
+    // P29-11 11-5 (F6-a): the deepest sample that the force budget holds
+    // with no root below the flute; it is the judged sample when no sample
+    // has a cap.
+    let mut deepest_no_root: Option<NoRootSample> = None;
     for &(i, s) in &population {
-        let Some(ae_mm) = sample_width_mm(s, tool) else {
+        let Some(SampleCut { ae_mm, fz_mm }) = sample_cut(s, tool, &trace.predicted_feeds) else {
             no_width += 1;
             continue;
         };
-        let Some(fz_mm) = sample_chip_mm(
-            s,
-            super::effective_feed_for_sample(s, &trace.predicted_feeds),
-        ) else {
+        if !(fz_mm.is_finite() && fz_mm > 0.0) {
             no_chip += 1;
             continue;
-        };
+        }
         let depth_mm = s.axial_engagement_mm;
+        let no_root = NoRootSample {
+            idx: i,
+            depth_mm,
+            ae_mm,
+            fz_mm,
+        };
         let screen_ap = judged
             .as_ref()
             .map_or(flute_mm, |j| (depth_mm / j.ratio).min(flute_mm));
@@ -264,6 +285,14 @@ pub(super) fn judge(
                 .is_some_and(|f| f <= budget_n);
         if cannot_beat {
             contributing += 1;
+            if screen_ap >= flute_mm {
+                // The screen read the force at the flute: no root below it.
+                match no_root_sample(no_root, tool, material, flute_mm, budget_n, &mut judged) {
+                    Ok(Some(n)) => n.keep_deepest(&mut deepest_no_root),
+                    Ok(None) => {}
+                    Err(reason) => unmodelled = Some(reason),
+                }
+            }
             continue;
         }
         match crate::feeds::force_budget::rigidity_depth_cap(
@@ -288,6 +317,11 @@ pub(super) fn judge(
             }
             Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute) => {
                 contributing += 1;
+                match no_root_sample(no_root, tool, material, flute_mm, budget_n, &mut judged) {
+                    Ok(Some(n)) => n.keep_deepest(&mut deepest_no_root),
+                    Ok(None) => {}
+                    Err(reason) => unmodelled = Some(reason),
+                }
             }
             Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
                 unmodelled = Some(reason);
@@ -323,20 +357,20 @@ pub(super) fn judge(
                 reason: UnmodeledReason::NotImplemented(reason.to_owned()),
             };
         }
-        if contributing > 0 {
-            // Every judged sample has no force-budget root below the flute.
-            return DepthVerdict::Reported {
-                peak_mm: deepest_mm,
-                evidence: evidence_at(
-                    deepest.map(|(i, _)| i),
-                    contributing,
-                    ChiploadStatistic::PeakInRange,
-                ),
-                confidence: Confidence::Approximate(format!(
-                    "peak engaged depth {deepest_mm:.3} mm; {}{no_number_clause}",
-                    crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
-                )),
-            };
+        if let Some(no_root) = deepest_no_root {
+            // P29-11 11-5 (F6-a): every judged sample has no force-budget
+            // root below the flute. The force at the flute length is at or
+            // under the budget, so no depth the tool can cut reaches it:
+            // that is a proof of `Within`, with the flute length as the
+            // bound (the force reading shows the same force).
+            return no_root_verdict(
+                no_root,
+                flute_mm,
+                budget_n,
+                deepest_mm,
+                &no_number_clause,
+                |idx, statistic| evidence_at(Some(idx), contributing, statistic),
+            );
         }
         if !population.is_empty() {
             // Every sample with a depth has no number: no cut to judge.
@@ -355,13 +389,8 @@ pub(super) fn judge(
             if s.toolpath_id != toolpath_id {
                 return None;
             }
-            Some((
-                sample_width_mm(s, tool)?,
-                sample_chip_mm(
-                    s,
-                    super::effective_feed_for_sample(s, &trace.predicted_feeds),
-                )?,
-            ))
+            let SampleCut { ae_mm, fz_mm } = sample_cut(s, tool, &trace.predicted_feeds)?;
+            (fz_mm.is_finite() && fz_mm > 0.0).then_some((ae_mm, fz_mm))
         });
         return vacuous_verdict(ctx, machine, facts, first_cut, || {
             evidence_at(None, 0, ChiploadStatistic::PeakInRange)
@@ -452,9 +481,8 @@ pub(super) fn depth_number(
     if !has_rule {
         return Some(s.axial_engagement_mm);
     }
-    sample_width_mm(s, ctx.tool())?;
-    sample_chip_mm(s, super::effective_feed_for_sample(s, predicted_feeds))?;
-    Some(s.axial_engagement_mm)
+    let SampleCut { fz_mm, .. } = sample_cut(s, ctx.tool(), predicted_feeds)?;
+    (fz_mm.is_finite() && fz_mm > 0.0).then_some(s.axial_engagement_mm)
 }
 
 /// The sample with the largest depth over its own cap so far.
@@ -466,32 +494,139 @@ struct JudgedSample {
     bound: crate::machine::RigidityDepthCap,
 }
 
-/// The engaged width of a sample (mm): the measured arc
-/// (`Engagement::from_sample`, `r (1 - cos psi)`), else the width share
-/// (`Engagement::radial_woc_fraction`) at the engaged diameter of its
-/// depth. `None` when the sample has neither: no number (P29-6 6c, the
-/// full-slot fallback is deleted; ruling Q7, an arc of 0 is no arc).
-fn sample_width_mm(s: &SimulationCutSample, tool: &crate::tool::ToolDefinition) -> Option<f64> {
-    crate::feeds::engagement::Engagement::from_sample(s, tool)
-        .map(|e| e.ae_mm())
-        .or_else(|| {
-            let w = s.engagement.radial_woc_fraction;
-            (w.is_finite() && w > 0.0)
-                .then(|| w * 2.0 * tool.engagement_radius(s.axial_engagement_mm.max(0.0)))
-        })
-        .filter(|ae| ae.is_finite() && *ae > 0.0)
+/// The deepest sample so far that the force budget holds with no root
+/// below the flute (P29-11 11-5).
+#[derive(Clone, Copy)]
+struct NoRootSample {
+    idx: usize,
+    depth_mm: f64,
+    ae_mm: f64,
+    fz_mm: f64,
 }
 
-/// The advance per tooth of a sample (mm) at `gate_feed`. P16 item 7
-/// (D3): the caller passes the one gate feed, the feed that the chip,
-/// power and deflection gates read (`effective_feed_for_sample`): the
-/// modulated feed when the trace holds one. `None` with no speed or no
-/// feed.
-fn sample_chip_mm(s: &SimulationCutSample, gate_feed: f64) -> Option<f64> {
-    let z = f64::from(s.flute_count.max(1));
-    let rpm = f64::from(s.spindle_rpm);
-    let fz = gate_feed / (rpm * z);
-    (rpm > 0.0 && fz.is_finite() && fz > 0.0).then_some(fz)
+impl NoRootSample {
+    fn keep_deepest(self, deepest: &mut Option<Self>) {
+        if deepest.is_none_or(|d| self.depth_mm > d.depth_mm) {
+            *deepest = Some(self);
+        }
+    }
+}
+
+/// P29-11 11-5 (F6-a): a sample with no force-budget root below the flute.
+/// At or under the flute length it holds (`Some`, a candidate of
+/// [`no_root_verdict`]). The producer solves the root only up to the flute,
+/// so a sample DEEPER than the flute is judged by its own force at its own
+/// depth (`force_budget::peak_force_n`, the number of the force reading):
+/// over the budget it becomes the judged sample against the flute length
+/// when it beats the worst ratio (`None`); at or under, it holds (`Some`).
+/// `Err`: the force model gives no number at its depth.
+fn no_root_sample(
+    no_root: NoRootSample,
+    tool: &crate::tool::ToolDefinition,
+    material: &crate::material::Material,
+    flute_mm: f64,
+    budget_n: f64,
+    judged: &mut Option<JudgedSample>,
+) -> Result<Option<NoRootSample>, &'static str> {
+    if no_root.depth_mm <= flute_mm {
+        return Ok(Some(no_root));
+    }
+    let force_n = crate::feeds::force_budget::peak_force_n(
+        tool,
+        material,
+        no_root.depth_mm,
+        no_root.ae_mm,
+        no_root.fz_mm,
+    )
+    .ok_or(crate::feeds::force_budget::NO_BUDGET_INPUT)?;
+    if force_n <= budget_n {
+        return Ok(Some(no_root));
+    }
+    let ratio = no_root.depth_mm / flute_mm;
+    if judged.as_ref().is_none_or(|j| ratio > j.ratio) {
+        *judged = Some(JudgedSample {
+            idx: no_root.idx,
+            depth_mm: no_root.depth_mm,
+            ratio,
+            bound: crate::machine::RigidityDepthCap::ForceBudget {
+                budget_n,
+                ae_mm: no_root.ae_mm,
+                fz_mm: no_root.fz_mm,
+                depth_mm: flute_mm,
+                below_floor: false,
+            },
+        });
+    }
+    Ok(None)
+}
+
+/// P29-11 11-5 (F6-a): the verdict when every judged sample has no
+/// force-budget root below the flute: `Within`, at the deepest such sample,
+/// against the flute length. Every such sample has its force at its own
+/// depth at or under the budget (a sample deeper than the flute is judged
+/// by that force in the loop), so the force reading agrees.
+fn no_root_verdict(
+    no_root: NoRootSample,
+    flute_mm: f64,
+    budget_n: f64,
+    deepest_mm: f64,
+    no_number_clause: &str,
+    evidence_at: impl Fn(usize, ChiploadStatistic) -> SampleEvidence,
+) -> DepthVerdict {
+    let NoRootSample {
+        idx,
+        depth_mm: peak_mm,
+        ae_mm,
+        fz_mm,
+    } = no_root;
+    let bound = crate::machine::RigidityDepthCap::ForceBudget {
+        budget_n,
+        ae_mm,
+        fz_mm,
+        depth_mm: flute_mm,
+        below_floor: false,
+    };
+    let evidence = evidence_at(idx, ChiploadStatistic::PeakInRange);
+    let confidence = Confidence::Approximate(format!(
+        "judged sample: engaged depth {peak_mm:.3} mm; {}: the peak cutting force at the \
+         flute length {flute_mm:.3} mm, width {ae_mm:.2} mm and {fz_mm:.4} mm/tooth is at or \
+         under the machine force budget {budget_n:.1} N, so the flute length is the bound; \
+         deepest engaged depth {deepest_mm:.3} mm{no_number_clause}",
+        crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
+    ));
+    DepthVerdict::Within {
+        peak_mm,
+        bound,
+        evidence,
+        confidence,
+    }
+}
+
+/// The width and the chip of one sample: the cut the force reading reads.
+#[derive(Clone, Copy)]
+struct SampleCut {
+    ae_mm: f64,
+    fz_mm: f64,
+}
+
+/// P29-11 11-5 (F6-a): the cut of a sample, from the one engagement door of
+/// the force reading and the deflection gate,
+/// [`super::deflection::sample_engagement`] (the arc at the engaged depth,
+/// the depth this gate judges), and the one operating point,
+/// [`super::deflection::deflection_feed_per_tooth_mm`]. `None` when the
+/// sample has no arc (or an arc of 0, ruling Q7): no measured width, no
+/// number. The width share `radial_woc_fraction` is not read (P29-6 6c
+/// deleted the full-slot fallback; 11-5 the width-share fallback).
+fn sample_cut(
+    s: &SimulationCutSample,
+    tool: &crate::tool::ToolDefinition,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+) -> Option<SampleCut> {
+    let ae_mm = super::deflection::sample_engagement(tool, s)?.ae_mm();
+    (ae_mm.is_finite() && ae_mm > 0.0).then(|| SampleCut {
+        ae_mm,
+        fz_mm: super::deflection::deflection_feed_per_tooth_mm(s, tool, predicted_feeds),
+    })
 }
 
 /// X-VAC: with no sample that has a depth, the gate reads its bound off
@@ -623,11 +758,26 @@ mod tests {
             axial_doc_mm: 0.0,
             axial_engagement_mm: depth,
             engagement: Engagement::with_radial_woc(0.4),
+            // P29-11 11-5: the gate reads the width of the arc, not the
+            // share: this arc gives the width 0.4 D of the flat tool.
+            arc_engagement_radians: Some(arc_of_share(0.4)),
             // P29-6 6c: the gate reads the samples that remove material.
             removed_volume_est_mm3: if cutting { 0.1 } else { 0.0 },
             in_transit_span: false,
             ..SimulationCutSample::test_fixture()
         }
+    }
+
+    /// The arc (rad) whose width `r (1 - cos psi)` is the share `share` of
+    /// the diameter `2 r` of a flat tool: `cos psi = 1 - 2 share`.
+    fn arc_of_share(share: f64) -> f64 {
+        (1.0 - 2.0 * share).acos()
+    }
+
+    /// The width (mm) of the arc of [`arc_of_share`] on the 6 mm flat tool,
+    /// by the gate's own door (`deflection::sample_engagement`).
+    fn width_of_share(share: f64) -> f64 {
+        3.0 * (1.0 - arc_of_share(share).cos())
     }
 
     fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
@@ -644,7 +794,8 @@ mod tests {
     /// The mechanics material. P29-4 (ruling R1): the Adaptive family reads
     /// the force budget. In generic softwood (`Material::default()`) the
     /// budget has no root below the flute at the fixture cut, so the gate
-    /// reports with no cap; white oak has a root there.
+    /// gives `Within` at the flute length (P29-11 11-5); white oak has a
+    /// root there.
     fn oak() -> Material {
         Material::SolidWood {
             species: crate::material::WoodSpecies::WhiteOak,
@@ -652,15 +803,15 @@ mod tests {
     }
 
     /// The force-budget cap (mm) of the mechanics arms, from the one
-    /// producer at the fixture cut: the width share 0.4 of the 6 mm tool
-    /// (`sample`, no arc) and the chip feed / (rpm x Z).
+    /// producer at the fixture cut: the width of the arc of the share 0.4
+    /// of the 6 mm tool (`sample`) and the chip feed / (rpm x Z).
     fn oak_cap_mm() -> f64 {
         let cut = crate::feeds::force_budget::rigidity_depth_cap(
             &MachineProfile::shapeoko_makita(),
             body_facts(OperationType::Adaptive),
             &tool(),
             &oak(),
-            0.4 * 6.0,
+            width_of_share(0.4),
             1500.0 / (18_000.0 * 2.0),
         );
         match cut {
@@ -725,10 +876,17 @@ mod tests {
                     "{bound:?} {c:?}"
                 );
             }
+            // P29-11 11-5 (F6-a): no root below the flute is `Within` at
+            // the flute length.
             (
-                DepthVerdict::Reported { .. },
+                DepthVerdict::Within { bound, .. },
                 Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute),
-            ) => {}
+            ) => {
+                assert!(
+                    (bound.cap_mm() - tool().length()).abs() < 1e-12,
+                    "{bound:?}"
+                );
+            }
             other => panic!("the Pocket gate and the producer disagree: {other:?}"),
         }
     }
@@ -764,15 +922,15 @@ mod tests {
         }
     }
 
-    /// The oak force-budget cap (mm) at the width share `share` of the
-    /// 6 mm tool and the fixture chip.
+    /// The oak force-budget cap (mm) at the width of the arc of the share
+    /// `share` of the 6 mm tool and the fixture chip.
     fn oak_cap_at_share_mm(share: f64) -> f64 {
         let cut = crate::feeds::force_budget::rigidity_depth_cap(
             &MachineProfile::shapeoko_makita(),
             body_facts(OperationType::Adaptive),
             &tool(),
             &oak(),
-            share * 6.0,
+            width_of_share(share),
             1500.0 / (18_000.0 * 2.0),
         );
         match cut {
@@ -801,6 +959,7 @@ mod tests {
         );
         let wide = SimulationCutSample {
             engagement: Engagement::with_radial_woc(1.0),
+            arc_engagement_radians: Some(arc_of_share(1.0)),
             ..sample(1, wide_depth, true)
         };
         let t = trace(vec![sample(0, deep, true), wide]);
@@ -820,9 +979,11 @@ mod tests {
         }
     }
 
-    /// P29-6 6c: a sample with a depth and no width (no arc, a width share
-    /// of 0) gets no number. Before 6c it took a full-slot cap. Here it is
-    /// five caps deep, and it neither sets the bound nor counts.
+    /// P29-6 6c: a sample with a depth and no width gets no number. Before
+    /// 6c it took a full-slot cap. P29-11 11-5 (F6-a): the gate reads the
+    /// arc only, so a sample with a width share (0.4) and no arc has no
+    /// width either (before 11-5 the share gave it one). Here it is five
+    /// caps deep, and it neither sets the bound nor counts.
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -831,7 +992,6 @@ mod tests {
     fn a_sample_with_no_width_gets_no_number() {
         let c = oak_cap_mm();
         let no_width = SimulationCutSample {
-            engagement: Engagement::with_radial_woc(0.0),
             arc_engagement_radians: None,
             ..sample(1, 5.0 * c, true)
         };
@@ -854,7 +1014,8 @@ mod tests {
 
     /// P29-6 6c: when every sample with a depth has no width, no sample
     /// has a number. The gate reports the deepest depth with no bound, and
-    /// the population is vacuous.
+    /// the population is vacuous. P29-11 11-5: a width share with no arc is
+    /// no width (the share 0.4 of `sample`, the arc removed).
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -862,7 +1023,6 @@ mod tests {
     )]
     fn only_samples_with_no_width_report_with_no_bound() {
         let no_width = |idx: usize, depth: f64| SimulationCutSample {
-            engagement: Engagement::with_radial_woc(0.0),
             arc_engagement_radians: None,
             ..sample(idx, depth, true)
         };
@@ -907,6 +1067,12 @@ mod tests {
         ));
     }
 
+    /// X-VAC: a trace with no cutting sample gives a vacuous population.
+    /// P29-11 11-5 (F6-a): the X-VAC cut reads the gate's one door
+    /// (`deflection::sample_engagement`), and a sample that does not cut
+    /// has no engagement, so no sample states a width: the gate reports
+    /// with no cap (before 11-5 the width share of the rapid gave a vacuous
+    /// `Within` with a cap).
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -915,7 +1081,7 @@ mod tests {
     fn a_trace_with_no_cutting_samples_is_vacuous() {
         let t = trace(vec![sample(0, 0.0, false)]);
         match run_in(OperationType::Adaptive, Some(&t), &oak()) {
-            DepthVerdict::Within {
+            DepthVerdict::Reported {
                 peak_mm, evidence, ..
             } => {
                 assert_eq!(peak_mm, 0.0);
@@ -923,7 +1089,40 @@ mod tests {
                 assert!(p.is_vacuous());
                 assert_eq!(p.offered, 1);
             }
-            other => panic!("expected a vacuous Within, got {other:?}"),
+            other => panic!("expected a vacuous Reported, got {other:?}"),
+        }
+    }
+
+    /// X-VAC: a group with no sample at a depth reads its cap at the first
+    /// cutting sample of the toolpath with an arc (the gate's door): here a
+    /// link sample with a depth in the Link group, so the Body group is
+    /// vacuous and still prints a cap.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn a_vacuous_group_reads_its_cap_at_the_first_cutting_sample() {
+        let t = trace(vec![
+            sample(0, 0.0, false),
+            SimulationCutSample {
+                in_transit_span: true,
+                source_intent: Some(crate::toolpath::MoveIntent::Linking),
+                ..sample(1, 0.5, true)
+            },
+        ]);
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
+            DepthVerdict::Within {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => {
+                assert_eq!(peak_mm, 0.0);
+                assert!((bound.cap_mm() - oak_cap_mm()).abs() < 1e-12, "{bound:?}");
+                assert!(evidence.population.unwrap().is_vacuous());
+            }
+            other => panic!("expected a vacuous Within with a cap, got {other:?}"),
         }
     }
 
@@ -1037,6 +1236,97 @@ mod tests {
         assert_eq!(status.bound, None);
         assert_eq!(status.bound_source, None);
         assert_eq!(status.display_peak, Some(1.2));
+    }
+
+    /// P29-11 11-5 (F6-a): in generic softwood the fixture cut has no
+    /// force-budget root below the flute, on every sample. The force at the
+    /// flute length is at or under the budget, so the gate gives `Within`
+    /// with the flute length as the bound (before 11-5: `Reported`), at the
+    /// deepest judged sample, with every judged sample counted.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn no_root_below_the_flute_is_within_at_the_flute_length() {
+        let fz = 1500.0 / (18_000.0 * 2.0);
+        assert!(
+            matches!(
+                crate::feeds::force_budget::rigidity_depth_cap(
+                    &MachineProfile::shapeoko_makita(),
+                    body_facts(OperationType::Adaptive),
+                    &tool(),
+                    &Material::default(),
+                    width_of_share(0.4),
+                    fz,
+                ),
+                Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute)
+            ),
+            "non-vacuity: the fixture cut has no root below the flute"
+        );
+        let t = trace(vec![sample(0, 0.4, true), sample(1, 1.2, true)]);
+        match run(OperationType::Adaptive, Some(&t)) {
+            DepthVerdict::Within {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => {
+                assert!((peak_mm - 1.2).abs() < 1e-12, "{peak_mm}");
+                assert!(
+                    (bound.cap_mm() - tool().length()).abs() < 1e-12,
+                    "{bound:?}"
+                );
+                assert_eq!(evidence.sample_range.start, 1);
+                assert_eq!(evidence.population.unwrap().contributing, 2);
+            }
+            other => panic!("expected Within at the flute length, got {other:?}"),
+        }
+    }
+
+    /// P29-11 11-5 (F6-a): a sample deeper than the flute length is judged
+    /// by its own force at its own depth (the producer solves only up to
+    /// the flute). In softwood the fixture cut has no root below the flute;
+    /// at 1.5 flute lengths at the fixture feed the force reading is over
+    /// the budget and the row exceeds against the flute length; at a fifth
+    /// of that feed it is under the budget and the row holds. Both sides
+    /// agree with the force of the reading (`cut_force::sample_peak_force_n`).
+    #[test]
+    fn a_sample_past_the_flute_is_judged_by_its_own_force() {
+        let flute = tool().length();
+        let budget = MachineProfile::shapeoko_makita().rigidity.force_budget_n;
+        let mut fast_over = 0;
+        for feed in [1500.0, 300.0] {
+            let s = SimulationCutSample {
+                feed_rate_mm_min: feed,
+                ..sample(0, 1.5 * flute, true)
+            };
+            let fz = feed / (18_000.0 * 2.0);
+            let force =
+                super::super::cut_force::sample_peak_force_n(&tool(), &Material::default(), &s, fz)
+                    .unwrap();
+            let v = run(OperationType::Adaptive, Some(&trace(vec![s])));
+            assert_eq!(
+                v.is_exceeded(),
+                force > budget,
+                "feed {feed}: force {force} N, budget {budget} N, {v:?}"
+            );
+            if force > budget {
+                fast_over += 1;
+            }
+            match v {
+                DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. } => {
+                    assert!((bound.cap_mm() - flute).abs() < 1e-12, "{bound:?}");
+                }
+                other @ (DepthVerdict::Reported { .. } | DepthVerdict::Unmodeled { .. }) => {
+                    panic!("feed {feed}: a bound at the flute length, got {other:?}")
+                }
+            }
+        }
+        assert_eq!(
+            fast_over, 1,
+            "non-vacuity: one side over the budget, one under"
+        );
     }
 
     /// EVIDENCE 5.1-6: a Profile cut at exactly the cap read 7.6e-7 mm

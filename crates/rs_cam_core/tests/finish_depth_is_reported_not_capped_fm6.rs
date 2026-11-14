@@ -379,8 +379,11 @@ fn producer_cap(cutter: &ToolDefinition, depth_mm: f64) -> Option<RigidityCapOut
 /// deleted that rule. In
 /// softwood the budget has no root below the flute on this tool (the FM1
 /// tapered-ball softwood rows print an empty cap), so the envelope draws
-/// no rigidity ceiling at the stated width, and the gate reports the peak
-/// with no cap, as the producer says.
+/// no rigidity ceiling at the stated width. P29-11 11-5 (F6-a): the gate
+/// reads the arc of each sample (here the arc of the width share 0.4 of the
+/// engaged diameter, the producer's width), and with no root below the
+/// flute it gives `Within` with the flute length as the bound (before
+/// 11-5: `Reported` with no cap).
 #[test]
 #[expect(
     clippy::wildcard_enum_match_arm,
@@ -406,15 +409,25 @@ fn suggest_and_the_gate_read_one_cap_rule_on_a_tapered_ball_fm6() {
 
     let cutter = build_cutter(&tool).unwrap();
     let shipped = s.operation.depth_per_pass().expect("an adaptive has a DPP");
-    let t = trace(&[0.5 * shipped, shipped]);
+    let mut t = trace(&[0.5 * shipped, shipped]);
+    for s in &mut t.samples {
+        // `r (1 - cos psi)` = 0.4 x 2 r: `cos psi` = 1 - 2 x 0.4.
+        s.arc_engagement_radians = Some((1.0_f64 - 2.0 * 0.4).acos());
+    }
     let producer = producer_cap(&cutter, shipped);
     assert!(
         matches!(producer, Some(RigidityCapOutcome::NoLimitBelowFlute)),
         "the producer: {producer:?}"
     );
     match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
-        DepthVerdict::Reported { peak_mm, .. } => assert_eq!(peak_mm, shipped),
-        other => panic!("no budget root: the gate reports with no cap, got {other:?}"),
+        DepthVerdict::Within { peak_mm, bound, .. } => {
+            assert_eq!(peak_mm, shipped);
+            assert!(
+                (bound.cap_mm() - rs_cam_core::tool::MillingCutter::length(&cutter)).abs() < 1e-12,
+                "no budget root: the flute length is the bound, got {bound:?}"
+            );
+        }
+        other => panic!("no budget root: Within at the flute length, got {other:?}"),
     }
 }
 
@@ -425,7 +438,9 @@ fn suggest_and_the_gate_read_one_cap_rule_on_a_tapered_ball_fm6() {
 /// read the cone diameter off the Factor cap). At the fixture width share
 /// 0.4 the budget has no root below the flute on this small tool, so this
 /// arm cuts a full slot (share 1) in jarrah, where a cap forms: the gate's
-/// cap is the producer's, and its width is the cone diameter.
+/// cap is the producer's, and its width is the cone diameter. P29-11 11-5:
+/// the gate reads the width of the arc (a full slot is the arc pi), not the
+/// width share.
 #[test]
 fn the_gate_reads_the_cone_diameter_fm6() {
     const DEPTH_MM: f64 = 6.0;
@@ -445,6 +460,7 @@ fn the_gate_reads_the_cone_diameter_fm6() {
     let t = SimulationCutTrace {
         samples: vec![SimulationCutSample {
             engagement: Engagement::with_radial_woc(1.0),
+            arc_engagement_radians: Some(std::f64::consts::PI),
             ..sample(0, DEPTH_MM)
         }],
         ..SimulationCutTrace::test_fixture()

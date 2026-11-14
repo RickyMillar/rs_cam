@@ -796,3 +796,86 @@ their rows of the probe dump, after a check that the old row equals the HEAD row
 but the state, the tone, the face and the detail (`p29_11c/tools/regen_112b.py`); the page does not
 change; `assert_claims.py`: 11 of 11. Wire: the `state`, `tone`, `face` and `detail` of those gate
 rows; no key is added or removed.
+
+### 12.2 Commit 11-5: F6-a, the depth row is the one force-budget record
+
+The prediction is section 11.4, with its correction (the exact FM1 list), written before this
+code. The change, all in `tool_load/depth.rs`:
+
+1. The width and the chip of a sample come from the doors of the force reading:
+   `deflection::sample_engagement` (the arc at the engaged depth) and
+   `deflection::deflection_feed_per_tooth_mm` (the one operating point of the sample, 11-1). The
+   width-share fallback (`radial_woc_fraction x 2 r`) is deleted with `sample_width_mm` and
+   `sample_chip_mm`. A sample with a depth and no arc counts as "no measured width (no number)".
+   The X-VAC first cut and the depth histogram read the same door.
+2. When every judged sample has no force-budget root below the flute (the screen or the solve
+   says that the force at the flute length is at or under the budget), the gate gives `Within`
+   at the deepest such sample, with the bound `ForceBudget { depth_mm: flute length, budget_n,
+   ae_mm, fz_mm }` of that sample. Before: `Reported`, a row `NoNumber(NoBound)` with the
+   exemption `S-NoBound`.
+2b. A departure from the text of 11.4: a sample DEEPER than the flute length with no root below
+   the flute is judged by its own force at its own depth (`force_budget::peak_force_n`, the law
+   of the force reading; `no_root_sample`), because the producer solves the root only up to the
+   flute. Over the budget it exceeds against the flute length; at or under, it holds. A sample
+   past the flute whose root lies below the flute keeps its solved cap (the FM6 test
+   `a_depth_exceedance_reaches_the_diagnostics_list_fm6` holds that). Measured with a lib test: the 6 mm fixture tool (flute 20
+   mm) in softwood at 30 mm depth gives 42.0 N at 1500 mm/min (over the 35.3 N budget) and a
+   force under the budget at 300 mm/min; before this rule, the first sample screened at the flute
+   (33.3 N) and a depth past the flute "exceeded" whatever its force, so the depth row and the
+   force reading could disagree. No fixture sample is deeper than its flute (the dump does not
+   move).
+3. The sentry claim 8 of `no_removing_sample_is_outside_the_gates_p29_6`: in every group of the
+   five fixtures where the force reading has a budget and a sample, the depth population equals
+   the force population, and the depth row `Exceeds` exactly when the force peak is over the
+   budget, else `Within` (never `Reported`). The `Exceeds` side: the Pocket fixture judged on its
+   machine with the force budget at half of its measured body force peak
+   (`the_depth_row_is_the_force_record`): the body depth row exceeds, and the groups agree.
+4. The tests that read the width share with no arc, and what each claim says now:
+   - `depth.rs` lib tests: the fixture sample holds the arc `acos(1 - 2 x 0.4)` (the width 0.4 D
+     of the flat tool) beside its share; `a_sample_with_no_width_gets_no_number` and
+     `only_samples_with_no_width_report_with_no_bound`: a sample with the share 0.4 and NO arc
+     has no width (before: a share of 0 and no arc); `the_pocket_reads_the_force_budget_p13c`:
+     no root gives `Within` at the flute length (before: `Reported`);
+     `a_trace_with_no_cutting_samples_is_vacuous`: a vacuous `Reported` with no cap (before: a
+     vacuous `Within` with a cap read off the width share of a rapid); new
+     `a_vacuous_group_reads_its_cap_at_the_first_cutting_sample`,
+     `no_root_below_the_flute_is_within_at_the_flute_length` and
+     `a_sample_past_the_flute_is_judged_by_its_own_force` (both sides of 2b).
+   - `finish_depth_is_reported_not_capped_fm6`: `suggest_and_the_gate_read_one_cap_rule_on_a_tapered_ball_fm6`
+     gives its samples the arc of the share 0.4 and claims `Within` at the flute length (before:
+     `Reported`; after the width change alone the test still passed, for the wrong reason: no
+     sample had a width); `the_gate_reads_the_cone_diameter_fm6`: the full slot is the arc pi
+     (the claim, the cap at the cone diameter, is the same).
+   - `the_depth_that_cut_is_a_measured_load_g_s3depth`, `gate_population_vacuity_xvac`,
+     `a_criterion_carries_its_own_bound_g_s4bound`, `an_absent_limit_is_visibly_absent_g_gantry`:
+     their samples hold an arc; no change.
+
+Measured, against 11.4:
+
+- The fixture dump: the 2D Adaptive Link depth row goes from `NoNumber(NoBound)` (value 0.5625
+  mm, population 69) to `Within`, value 0.5625 mm, bound 25 mm (the flute length of the fixture
+  tool), population 3; its exemption `S-NoBound` goes. The populations move exactly as 11.4 says:
+  2D Adaptive Body 2007 to 1998, Entry 366 (no change), Link 69 to 3; Pocket Entry 66 to 60, and
+  the same in the Pocket with dogbones; Profile no change; Shelf Body 4870 to 4425, Cleanup 990
+  to 912, Entry 333 to 329, Link 14 to 12. No other value, bound or state moves. The depth card
+  of the 2D Adaptive and the shelf bins the new population of the headline group (the histogram
+  sentry holds the card population equal to the gate population). The narration, the force
+  reading and the force card do not move.
+- The four project dumps (no simulation): byte-equal.
+- FM1: the sim CSV after the re-bless is byte-equal to the CSV of the throwaway build: exactly
+  cells 8, 12, 14, 16 and exactly the four fields of 11.4 move; the main CSV does not move; no
+  column that holds a feed, a depth per pass or a proposal moves. `MATRIX_SUMMARY.md`: the id
+  counts `load.depth.reported` 13 to 9, `load.depth.within` 16 to 20 (the wall-clock line is
+  kept at its HEAD value).
+- Wire: on those depth rows the `state`, `bound`, `margin`, `exemption` (`S-NoBound` to `null`),
+  `tone`, `face`, `detail` and the population; the depth verdict of such a group is `within`
+  with a `bound` (was `reported`). No key is added or removed.
+- Nothing gates an export: the bound source stays `MachineForceBudget` (`gates_export` false).
+- Gates (run again in full after 2b): the eleven named core sentries, plus
+  `histogram_population_is_the_gate_population_g_cuthist`, `a_weak_bound_cannot_refuse_an_export_g_s4weak`,
+  `the_cut_force_is_the_deflection_force_p17`, `a_rough_pass_deflects_up_to_its_stock_to_leave_p17`,
+  `gate_population_vacuity_xvac`, `a_criterion_carries_its_own_bound_g_s4bound` and
+  `an_absent_limit_is_visibly_absent_g_gantry`: all pass. Core `--lib`: only the known timing red
+  in the parallel run (alone three times: pass). `rs_cam_mcp`, `rs_cam_cli`, viz `--lib` and the ten
+  viz binaries: pass. FM1: pass on the re-blessed CSV. Op golden: only the known 46 rows. Full
+  clippy: clean. The fixture dump after 2b is byte-equal to the dump before 2b.
