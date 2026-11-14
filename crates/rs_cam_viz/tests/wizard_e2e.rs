@@ -407,16 +407,10 @@ fn default_wizard_state_does_not_mutate_export() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
-                // W2.5 (66a81d77): every session door writes the feed-stage
-                // line, so the baseline writes it from the same session
-                // read the export door makes (the viz-store copy is
-                // `Planned`: no modulation pass writes it).
-                feeds: Some(
-                    session
-                        .feed_stage(*idx)
-                        .unwrap_or(rs_cam_core::session::FeedStage::Planned)
-                        .statement(),
-                ),
+                // W2.5 (66a81d77), P30-1: every session door writes the
+                // header lines of the feed record, so the baseline writes
+                // them from the same session read the export door makes.
+                feeds: session.emitted_feeds(*idx),
             })
         })
         .collect();

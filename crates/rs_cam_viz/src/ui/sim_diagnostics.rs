@@ -1505,6 +1505,12 @@ fn draw_cut_metrics_section(
              in the list at the left to move the playhead to it.",
         ))
         .show(ui);
+    // P30-1: the feeds that an export of this operation emits now, the line
+    // of the Passes tab (core `EmittedFeeds::line`).
+    let emitted_feeds = session
+        .find_toolpath_config_by_id(toolpath_id)
+        .and_then(|(index, _)| session.emitted_feeds(index));
+    crate::ui::properties::draw_emitted_feeds_line(ui, emitted_feeds.as_ref());
     let measurability = measurability_rows(sim, session, toolpath_id);
 
     // The playhead, as a move of this toolpath, for the line face.

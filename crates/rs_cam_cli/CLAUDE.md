@@ -60,7 +60,7 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   each outside-envelope warning. `suggest` prints `envelope` (the `get_safe_envelope` JSON)
   and `profile.vendor_band` (P16 item 8; `basis.tied_rows` deleted). P29-10: `suggest` prints
   `limit_rows` (the RPM rows) and `project` writes `summary.json` `per_toolpath[].limit_rows` (the
-  verdict rows), both from `ProjectSession::limit_rows`, the door MCP reads. P29-10z: `suggest` runs no simulation, so its rows state the default run (`SimulationOptions::default().run_modulation()`, printed as `run_modulation`); `project` states the run of its flags.
+  verdict rows), both from `ProjectSession::limit_rows`, the door MCP reads. P30-2: the rows read the modulation of each stored result (`ProjectSession::run_modulation_of`); `suggest` runs no simulation, so an enabled op prints `run_modulation` `{"kind": "not_run", "export": "stated"}`. P30-1: `project` prints each op's core feeds line (`--summary`) and writes `per_toolpath[].emitted_feeds` and `gcode_export.emitted_feeds` (`ProjectSession::emitted_feeds`); the job file prints the record header under its own post (`emitted_feeds_under`).
 - `suggest` prints `peck_depth` for a Drill and a Pin Drill. `shipped_power`
   reads the calculator point where the operation has no stepover, depth or
   rpm, as the GUI does; `point_source` names the source of each value. That

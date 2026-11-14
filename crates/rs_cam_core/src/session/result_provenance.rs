@@ -48,11 +48,21 @@ pub enum ResultProvenance {
         /// The stock the simulation carved before this toolpath. The
         /// feeds are current while this record is current.
         source: SourceStock,
+        /// P30-2: the strategy the run modulated with. The limit rows read
+        /// it (`ProjectSession::run_modulation_of`): the declared list of
+        /// capped limits depends on it.
+        strategy: crate::dressup::feed_modulation::ModulationStrategy,
+        /// P30-2: the feed scale the run modulated with (a scale above 1
+        /// empties the declared list).
+        feed_scale: f64,
     },
 }
 
 /// A [`ResultProvenance`] read against the session's current simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// P30-1: MCP serialises it inside `EmittedFeeds` (`{"kind": "planned"}`,
+/// `{"kind": "modulated_current", "simulation_run": n}`, ..).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FeedStage {
     /// The planned feeds. No modulation wrote this result.
     Planned,
@@ -154,6 +164,8 @@ impl ProjectSession {
             ResultProvenance::Modulated {
                 simulation_run,
                 source,
+                strategy: _,
+                feed_scale: _,
             } => {
                 let simulation_run = *simulation_run;
                 let current = self
@@ -178,5 +190,77 @@ impl ProjectSession {
         self.results
             .get(&index)
             .map(|result| self.feed_stage_of(index, &result.provenance))
+    }
+
+    /// **P30-2 (lead ruling 2026-11-14): THE constructor of the feed
+    /// modulation of the toolpath at `index`** (`RunModulation`), from its
+    /// stored result. Every session door of the limit rows reads it
+    /// (`limit_rows`, `safe_envelope`, `cutter_op_profile`), and the GUI
+    /// feeds memo reads it through the panel inputs, so GUI, MCP and the CLI
+    /// give the same rows for the same session state.
+    ///
+    /// - A disabled toolpath (the run does not simulate it), or no toolpath
+    ///   at `index`: `Off`.
+    /// - A current modulated result: `Current` with the strategy and scale
+    ///   that the run recorded.
+    /// - Any other state: `NotRun`; the export carries the stated feed, or
+    ///   the feeds of an older simulation for a superseded result.
+    #[must_use]
+    pub fn run_modulation_of(
+        &self,
+        index: usize,
+    ) -> crate::dressup::feed_modulation::RunModulation {
+        use crate::dressup::feed_modulation::RunModulation;
+        use crate::limits::ExportFeed;
+        let Some(tc) = self.toolpath_configs.get(index) else {
+            return RunModulation::Off;
+        };
+        if !tc.enabled {
+            return RunModulation::Off;
+        }
+        let Some(result) = self.results.get(&index) else {
+            return RunModulation::NotRun {
+                export: ExportFeed::Stated,
+            };
+        };
+        match (
+            &result.provenance,
+            self.feed_stage_of(index, &result.provenance),
+        ) {
+            (
+                ResultProvenance::Modulated {
+                    strategy,
+                    feed_scale,
+                    ..
+                },
+                FeedStage::ModulatedCurrent { .. },
+            ) => RunModulation::Current {
+                strategy: *strategy,
+                feed_scale: *feed_scale,
+                held: crate::dressup::feed_modulation::HeldByResult::read_from_result(),
+            },
+            (_, FeedStage::ModulatedSuperseded { .. }) => RunModulation::NotRun {
+                export: ExportFeed::OlderModulation,
+            },
+            (_, FeedStage::Planned | FeedStage::ModulatedCurrent { .. }) => RunModulation::NotRun {
+                export: ExportFeed::Stated,
+            },
+        }
+    }
+
+    /// [`Self::run_modulation_of`] for `tc`, by its id. A config that is not
+    /// in the session (a what-if copy) reads as a toolpath with no result.
+    #[must_use]
+    pub fn run_modulation_for(
+        &self,
+        tc: &super::ToolpathConfig,
+    ) -> crate::dressup::feed_modulation::RunModulation {
+        match self.find_toolpath_config_by_id(tc.id) {
+            Some((index, _)) => self.run_modulation_of(index),
+            None if tc.enabled => crate::dressup::feed_modulation::RunModulation::NotRun {
+                export: crate::limits::ExportFeed::Stated,
+            },
+            None => crate::dressup::feed_modulation::RunModulation::Off,
+        }
     }
 }

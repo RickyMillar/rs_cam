@@ -248,6 +248,10 @@ pub struct ExportedGcode {
     /// W2.5 (D10): one line per emitted toolpath whose feeds came from a
     /// simulation the session no longer holds. A caution, not a refusal.
     pub feeds_cautions: Vec<String>,
+    /// P30-1: the record of the feeds of each emitted toolpath, in emit
+    /// order (`ProjectSession::emitted_feeds`, the record that wrote the
+    /// header lines of its phase).
+    pub emitted_feeds: Vec<crate::session::NamedEmittedFeeds>,
 }
 
 /// F067: what the session door emits — the phases, which toolpaths they
@@ -362,11 +366,14 @@ pub struct GcodePhase<'a> {
     /// operation. The builder writes the G82 dwell from it, and the native
     /// G81/G82/G83 cycles when the export asks for them.
     pub drill: Option<PhaseDrill>,
-    /// W2.5 (D10): the feed-stage line the builder writes as a comment
-    /// after the label, from
-    /// [`FeedStage::statement`](crate::session::FeedStage::statement).
-    /// Every session door fills it; `None` writes no line.
-    pub feeds: Option<String>,
+    /// W2.5 (D10), P30-1: the record of the feeds this phase emits
+    /// ([`crate::session::EmittedFeeds`]). The builder writes its header
+    /// lines as comments after the label: the feed stage, the emitted
+    /// cutting feeds against the stated feed, and an entry line where the
+    /// largest entry feed is not the stated one. Every session door fills
+    /// it from the slot it emits (`ProjectSession::emitted_feeds`); `None`
+    /// writes no line.
+    pub feeds: Option<crate::session::EmittedFeeds>,
 }
 
 /// G7: what the emitter needs to know about a drill phase.

@@ -101,10 +101,7 @@ fn suggest_text(session: &ProjectSession) -> String {
     let tool = session.toolpath_tool(tc).expect("the tool");
     let feeds = session.feeds_result_for_toolpath(tc, tool);
     let envelope = session
-        .safe_envelope(
-            tc,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
+        .safe_envelope(tc)
         .expect("a tool")
         .expect("a runnable pairing");
     format!(

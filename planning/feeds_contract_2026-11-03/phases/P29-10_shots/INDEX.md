@@ -55,6 +55,13 @@ The "before" files were shot on a GUI built from `ef25930d6` (commit
 | S11 | 10i or 10h shots (deleted) | `after/S11_idx17_passes.png`, `after/S11_idx17_limits_open.png` | operator idx 17, 10z (rulings Q2, R, T) | face line: plunge entry · plunge rate 17 % over limit · may not occur (caution where there is one); no change from 10i; the face line elides at the rail width ("may not occur ...") | release build 2026-11-14 06:48 of the 10z tree (`gui_status`: binary not newer than the process) |
 | S11 | 10i or 10h shots (deleted) | `after/S11_idx0_passes.png`, `after/S11_idx0_limits_open.png` | operator idx 0, 10z (rulings Q2, R, T) | face line: none (caution where there is one); no change from 10i; the stated-point title over three rows | release build 2026-11-14 06:48 of the 10z tree (`gui_status`: binary not newer than the process) |
 | S11 | 10i or 10h shots (deleted) | `after/S11_idx3_passes.png`, `after/S11_idx3_limits_open.png` | operator idx 3, 10z (rulings Q2, R, T) | face line: none (caution where there is one); no change from 10i; the body and the drill cycle fold as before | release build 2026-11-14 06:48 of the 10z tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_idx7_passes.png`, `after/S12_idx7_limits_open.png` | operator idx 7, P30-1 and P30-2, no simulation | face line: danger "body · chip max 27 % over limit · until modulated" (was caution "before modulation"); drawer: the body and slot ring chip max rows read "exceeds"; the feeds line "runs 1258 mm/min · 0 of 144 above 1258 · as stated" in the muted colour | release build 2026-11-14 23:54 of the P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_idx8_passes.png`, `after/S12_idx8_limits_open.png` | operator idx 8, P30-1 and P30-2, no simulation | face line: danger "body · chip max 27 % over limit · until modulated"; drawer: body and slot ring "exceeds", the ramp and helix chip max rows stay "advisory" (worst case, may not occur); feeds line "runs 1258 mm/min · 0 of 200 above 1258 · as stated" | release build 2026-11-14 23:54 of the P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_idx1_passes.png`, `after/S12_idx1_limits_open.png` | operator idx 1, P30-2, no result | face line: danger "planner cap · chip max 24 % over limit · until modulated" (was caution "planner cap · depth 387 % over force cap"); drawer: body 21 % and planner cap 24 % chip max "exceeds", first slot 31 % stays "advisory" (may not occur); no feeds line (no result) | release build 2026-11-14 23:54 of the P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_idx0_passes.png`, `after/S12_idx0_limits_open.png` | operator idx 0, P30-1, no simulation | face line: none; feeds line "runs 6488 mm/min · 0 of 60 above 6488 · as stated" (muted) | release build 2026-11-14 23:54 of the P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_readiness.png` | operator file, Readiness | no check state changes; the new export warning is not a readiness row | release build 2026-11-14 23:54 of the P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_rivmap100_idx0_simulated_passes.png` | rivmap100 Face 5 after one simulation with modulation (the other three ops disabled, cell 0.5 mm) | two quiet lines under the Limits row: "runs 2333 to 3000 mm/min · 77 of 77 above 2200" in the caution colour, then "feeds: modulated, run 1" muted | release build 2026-11-15 00:11 of the final P30-2 tree (`gui_status`: binary not newer than the process) |
+| S12 | none (new) | `after/S12_rivmap100_idx0_sim_inspector.png`, `after/S12_rivmap100_idx0_sim_inspector_superseded.png` | rivmap100 Face 5, Simulation inspector: current (run 1), then after a second simulation at 0.4 mm | the same two lines under the Operation row; after the second run the stage line reads "feeds: modulated, run 1, not current" in the caution colour | release build 2026-11-15 00:11 of the final P30-2 tree (`gui_status`: binary not newer than the process) |
 
 ## Not shot
 
@@ -97,3 +104,12 @@ The "before" files were shot on a GUI built from `ef25930d6` (commit
   floor that holds by a wide margin reads as noise. 10z does not change them.
 - S11 (10z) idx 17: the face line "plunge entry · plunge rate 17 % over limit
   · may not occur" (58 characters) elides at the 340-point rail.
+- S12 (P30): a first build printed the feeds line as one line, and after a
+  simulation it elided its stage ("... above 2200 · modul..."). The final build
+  prints the stage on its own line after a feed stage; with the stated feeds
+  the one line fits ("... · as stated").
+- S12 (P30): on rivmap100, a second simulation with modulation at another
+  cell size (0.2 to 0.5 mm, and again 0.5 to 0.4 mm) left Face 5 "modulated,
+  run 1, not current". The reason was not traced; a likely cause is that the
+  second pass changed no feed, so the slot kept the tag of run 1 with its old
+  stock record. The export names it in the feeds caution.

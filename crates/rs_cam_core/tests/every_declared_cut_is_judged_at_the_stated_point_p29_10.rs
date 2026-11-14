@@ -27,14 +27,18 @@
 //!   the curve chip and the pick chip (`judged_ceiling`, P29-7 trap 1), the
 //!   stated cut at the stated chip only, so the stated ceiling is at or
 //!   above the planned ceiling (a smaller or equal chip).
-//! - Claim 3 (P29-10z, lead ruling Q2): when the run modulates
-//!   (`RunModulation::Runs`), a planned or stated cut row of a limit that
-//!   the modulator declares (`RunModulation::capped_limits`), on a cut that
-//!   it re-times (`feed_modulation::re_times`), that holds a number, carries
-//!   `Caveat::BeforeModulation`; no other row carries it. Such a row keeps
-//!   its value, bound and state; an `Exceeds` row of it is a caution. With
-//!   `RunModulation::Off` no row carries it. Every stated row ranks for the
-//!   face (the 10i predicate is gone).
+//! - Claim 3 (P29-10z, lead ruling Q2; P30-2): under a current modulated
+//!   result (`RunModulation::Current`), a planned or stated cut row of a
+//!   limit that the modulator declares (`RunModulation::capped_limits`), on
+//!   a cut that it re-times (`feed_modulation::re_times`), that holds a
+//!   number, carries `Caveat::BeforeModulation`; no other row carries it.
+//!   Such a row keeps its value, bound and state; an `Exceeds` row of it is
+//!   a caution. With no current modulated result (`RunModulation::NotRun`)
+//!   the same rows carry `Caveat::UntilModulated` and keep the tone of
+//!   `RunModulation::Off` (a row a simulation would cap is not softened by
+//!   a stage that did not run). With `RunModulation::Off` no row carries
+//!   either. Every stated row ranks for the face (the 10i predicate is
+//!   gone).
 //! - Claim 4 (P29-11 11-3, lead ruling L2): the stated point against a
 //!   limit that is not a limit of each cut is a value check: no row is
 //!   `NotJudgedHere`; a row that holds a state has its value and bound and
@@ -62,6 +66,7 @@ use rs_cam_core::dressup::feed_modulation::{ModulationStrategy, RunModulation, r
 use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
+use rs_cam_core::limits::ExportFeed;
 use rs_cam_core::limits::{
     Caveat, CheckRow, CheckState, EXEMPTIONS, LimitId, NoNumberReason, Subject, Tone,
     physical_geometry_of,
@@ -308,32 +313,57 @@ fn claim_2_one_judge_at_the_proposal_and_at_the_stated_point() {
 
 #[test]
 fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
-    let runs = RunModulation::Runs {
-        strategy: ModulationStrategy::ConstrainedMax,
-        feed_scale: 1.0,
+    let runs = RunModulation::current_for_tests(ModulationStrategy::ConstrainedMax, 1.0);
+    let not_run = RunModulation::NotRun {
+        export: ExportFeed::Stated,
     };
-    let (mut carried, mut softened, mut plain) = (0, 0, 0);
+    let (mut carried, mut softened, mut plain, mut kept) = (0, 0, 0, 0);
     for (name, op, t, dressups) in cases() {
-        let (Some(off), Some(on)) = (
+        let (Some(off), Some(on), Some(before)) = (
             envelope_with(&op, &t, dressups.as_ref(), RunModulation::Off),
             envelope_with(&op, &t, dressups.as_ref(), runs),
+            envelope_with(&op, &t, dressups.as_ref(), not_run),
         ) else {
             continue;
         };
         assert_eq!(off.rows().len(), on.rows().len(), "{name}: one row set");
-        for (a, b) in off.rows().iter().zip(on.rows()) {
+        assert_eq!(off.rows().len(), before.rows().len(), "{name}: one row set");
+        for ((a, b), c) in off.rows().iter().zip(on.rows()).zip(before.rows()) {
             assert!(
-                !a.caveats().contains(&Caveat::BeforeModulation),
-                "{name}: no run, no caveat: {}",
+                !a.caveats()
+                    .iter()
+                    .any(|v| matches!(v, Caveat::BeforeModulation | Caveat::UntilModulated { .. })),
+                "{name}: no modulation, no caveat: {}",
                 a.face()
             );
+            // P30-2: with no current modulated result the row keeps the
+            // tone of `Off`, and the same rows carry `UntilModulated`.
+            assert_eq!(c.tone(), a.tone(), "{name}: not softened: {}", c.face());
+            assert_eq!(
+                c.caveats().contains(&Caveat::UntilModulated {
+                    export: ExportFeed::Stated
+                }),
+                b.caveats().contains(&Caveat::BeforeModulation),
+                "{name}: one capped set: {}",
+                c.face()
+            );
+            if c.check().state == CheckState::Exceeds
+                && c.caveats().contains(&Caveat::UntilModulated {
+                    export: ExportFeed::Stated,
+                })
+                && a.tone() == Tone::Exceeds
+            {
+                kept += 1;
+            }
             assert_eq!(
                 (a.check().value, a.check().bound, a.check().state),
                 (b.check().value, b.check().bound, b.check().state),
                 "{name}: the caveat moves no number: {}",
                 b.face()
             );
-            let declared = b.cut().is_some_and(|cut| runs.caps(b.check().limit, cut));
+            let declared = b.cut().is_some_and(|cut| {
+                runs.caps(b.check().limit, cut) == rs_cam_core::limits::RowModulation::CapsTheBound
+            });
             let want = declared && b.holds_a_number();
             assert_eq!(
                 b.caveats().contains(&Caveat::BeforeModulation),
@@ -354,8 +384,9 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
         }
     }
     assert!(
-        carried > 0 && softened > 0 && plain > 0,
-        "non-vacuity: {carried} carry the caveat, {softened} soften, {plain} plain"
+        carried > 0 && softened > 0 && plain > 0 && kept > 0,
+        "non-vacuity: {carried} carry the caveat, {softened} soften, {plain} plain, \
+         {kept} keep the danger tone with no current modulation"
     );
     assert_eq!(
         runs.capped_limits(),

@@ -109,6 +109,15 @@ impl ProjectSession {
             load_outcome,
             warnings,
             feeds_cautions: self.feeds_cautions(emitted.iter().copied()),
+            emitted_feeds: emitted
+                .iter()
+                .filter_map(|&idx| {
+                    Some(crate::session::NamedEmittedFeeds {
+                        toolpath: self.toolpath_configs.get(idx)?.name.clone(),
+                        feeds: self.emitted_feeds(idx)?,
+                    })
+                })
+                .collect(),
         })
     }
 
@@ -361,6 +370,26 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::UnmodulatedOverLimit => {
+                    // P30-2: a superseded result gets no second line; the
+                    // feeds caution of W2.5 names it.
+                    for &idx in emitted {
+                        if self.feed_stage(idx) != Some(crate::session::FeedStage::Planned) {
+                            continue;
+                        }
+                        if let Some(face) = self.stated_row_over_until_modulated(idx) {
+                            push(
+                                ids::EXPORT_STATED_FEED_OVER_LIMIT,
+                                name_at(idx),
+                                format!(
+                                    "Toolpath '{}': {face}; the export carries the stated feed, \
+                                     a simulation with feed modulation caps this cut",
+                                    name_at(idx)
+                                ),
+                            );
+                        }
+                    }
+                }
                 Gate::FluteOverreach => {
                     for &idx in emitted {
                         if let Some(crate::compute::simulate::FluteReach::Over(text)) =
@@ -531,11 +560,9 @@ impl ProjectSession {
                     post_gcode: tc.post_gcode.as_deref(),
                     controller_compensation: crate::gcode::controller_compensation_for(tc),
                     drill: crate::gcode::phase_drill_for(tc),
-                    // W2.5 (D10): this door emits the session slot, so the
-                    // slot's tag names the feeds.
-                    feeds: self
-                        .feed_stage(*idx)
-                        .map(|provenance| provenance.statement()),
+                    // W2.5 (D10), P30-1: this door emits the session slot,
+                    // so the record of that slot names the feeds.
+                    feeds: self.emitted_feeds(*idx),
                 };
                 Some((*idx, phase))
             })

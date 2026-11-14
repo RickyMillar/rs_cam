@@ -24,6 +24,7 @@ mod tab_badges;
 pub mod tool;
 mod toolpath_panel;
 
+pub(crate) use feeds_speeds::draw_emitted_feeds_line;
 pub use operations::{
     DepthBeyondStock, DiagramFloor, FaceFloor, FloorInputs, FloorRun, ThroughCut,
     ToolpathValidationContext, admit_heights_edit, bottom_z_pin_note, collect_diagnostics,
@@ -546,6 +547,14 @@ pub(crate) struct ToolpathPanelInputs {
     /// W2.5 (D10): the feed stage of the stored result, the one export
     /// emits. `None` when the toolpath has no stored result.
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+    /// P30-1: the record of the feeds that an export of this toolpath emits
+    /// now (`ProjectSession::emitted_feeds`, memoised in core). The Passes
+    /// tab prints its line. `None` when the toolpath has no stored result.
+    pub emitted_feeds: Option<rs_cam_core::session::EmittedFeeds>,
+    /// P30-2: the feed modulation of this toolpath's stored result
+    /// (`ProjectSession::run_modulation_of`), the value every session door
+    /// of the limit rows reads. The feeds memo builds the card rows with it.
+    pub run_modulation: rs_cam_core::dressup::feed_modulation::RunModulation,
     /// G-B: the feed caps of the stored result, counted once per result
     /// (`ToolpathRuntime::caps`). `None` when no move has a cap.
     pub caps: Option<crate::state::runtime::CapFigures>,
@@ -907,6 +916,13 @@ pub(crate) fn toolpath_panel_inputs(
     let feed_stage = session
         .find_toolpath_config_by_id(id)
         .and_then(|(index, _)| session.feed_stage(index));
+    let emitted_feeds = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(index, _)| session.emitted_feeds(index));
+    let run_modulation = session.find_toolpath_config_by_id(id).map_or(
+        rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        |(index, _)| session.run_modulation_of(index),
+    );
     let rest_fresh = session.current_rest_fresh_comparisons().get(&id).copied();
     // R2 / 6.F4: THE acceptance door of the add, per tool, for this op.
     let (tool_refusals, no_tool_state) = match session.find_toolpath_config_by_id(id) {
@@ -965,6 +981,8 @@ pub(crate) fn toolpath_panel_inputs(
         reach: reach_summary,
         freshness: freshness_for_tp,
         feed_stage,
+        emitted_feeds,
+        run_modulation,
         caps: gui
             .toolpath_rt
             .get(&id)

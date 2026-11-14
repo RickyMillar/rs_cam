@@ -39,23 +39,15 @@ pub enum ToolpathTraceAvailability {
 
 /// **P29-10z (lead ruling Q2): THE feed modulation of the GUI and MCP
 /// simulation run.** The adopt step modulates with it
-/// (`controller/events/compute.rs`), and every limit-row reader of the GUI
-/// and MCP states it ([`run_modulation`]): one value, so a row that says
-/// "before modulation" says what the run does. MCP runs its simulation
-/// through the GUI, so MCP states the same value.
+/// (`controller/events/compute.rs`); MCP runs its simulation through the
+/// GUI. P30-2: the limit rows no longer read this constant: each toolpath
+/// reads the modulation that its stored result records
+/// (`ProjectSession::run_modulation_of`).
 pub const FEED_MODULATION: rs_cam_core::session::FeedModulation =
     rs_cam_core::session::FeedModulation {
         strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
     };
-
-/// The modulation of the GUI run ([`FEED_MODULATION`]) for a limit-row
-/// door (`ProjectSession::limit_rows`, `safe_envelope`,
-/// `cutter_op_profile`).
-#[must_use]
-pub const fn run_modulation() -> rs_cam_core::dressup::feed_modulation::RunModulation {
-    rs_cam_core::session::FeedModulation::run(Some(FEED_MODULATION))
-}
 
 #[derive(Debug, Clone)]
 pub struct ActiveSemanticItem {
@@ -340,9 +332,7 @@ impl SimulationState {
             .iter()
             .filter_map(|verdict| {
                 let (index, tc) = session.find_toolpath_config_by_id(verdict.toolpath_id)?;
-                let rows = session
-                    .limit_rows(index, trace, crate::state::simulation::run_modulation())?
-                    .verdict();
+                let rows = session.limit_rows(index, trace)?.verdict();
                 Some(ToolpathLimitRows {
                     toolpath_id: verdict.toolpath_id,
                     name: tc.name.clone(),
@@ -499,10 +489,7 @@ fn build_cut_metric_set(
     // workspace draws that op. The samples read the S6 stock view the
     // force card bins (`metric_distribution`), so the chart and the card
     // hold one population.
-    set.envelope = session
-        .safe_envelope(tc, crate::state::simulation::run_modulation())
-        .and_then(Result::ok)
-        .map(Arc::new);
+    set.envelope = session.safe_envelope(tc).and_then(Result::ok).map(Arc::new);
     set.diameter_mm = set
         .envelope
         .as_deref()

@@ -1098,9 +1098,7 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
             .enumerate()
             .find(|(_, tc)| serde_json::json!(tc.id) == id)
             .expect("the entry names a toolpath");
-        let door = session
-            .limit_rows(index, None, crate::state::simulation::run_modulation())
-            .expect("the toolpath");
+        let door = session.limit_rows(index, None).expect("the toolpath");
         assert_eq!(
             entry["rows"],
             serde_json::to_value(door.verdict()).expect("the rows serialise"),
@@ -1111,9 +1109,7 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
     assert!(verdict_rows > 0, "non-vacuity: verdict rows");
     let mut envelope_rows = 0;
     for index in 0..count {
-        let door = session
-            .limit_rows(index, None, crate::state::simulation::run_modulation())
-            .expect("the toolpath");
+        let door = session.limit_rows(index, None).expect("the toolpath");
         // The RPM rows.
         let rpm = super::generation::rpm_limit_rows_json(&session, index);
         assert_eq!(
@@ -1123,9 +1119,7 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
         );
         // The envelope rows: the serialised envelope holds the door rows.
         let tc = session.toolpath_config_at(index).expect("the toolpath");
-        if let Some(Ok(envelope)) =
-            session.safe_envelope(tc, crate::state::simulation::run_modulation())
-        {
+        if let Some(Ok(envelope)) = session.safe_envelope(tc) {
             let value = serde_json::to_value(&envelope).expect("the envelope serialises");
             let rows = door
                 .envelope()
@@ -1191,11 +1185,7 @@ fn the_mcp_rows_read_a_real_trace_p29_10() {
     let mut judged = 0;
     for (index, entry) in entries.iter().enumerate() {
         let door = session
-            .limit_rows(
-                index,
-                trace.as_ref(),
-                crate::state::simulation::run_modulation(),
-            )
+            .limit_rows(index, trace.as_ref())
             .expect("the toolpath");
         let rows = door.verdict();
         assert_eq!(
@@ -1209,4 +1199,102 @@ fn the_mcp_rows_read_a_real_trace_p29_10() {
             .count();
     }
     assert!(judged > 0, "non-vacuity: rows over measured samples");
+}
+
+// ── P30-1: one feed record on every surface ───────────────────────
+
+/// P30-1 ("print what runs"): the GUI panel input (the Passes tab and the
+/// simulation inspector line), MCP `get_tool_load_report` `emitted_feeds`
+/// and the export reply give the record of the one door
+/// (`ProjectSession::emitted_feeds`), before and after a simulation with
+/// feed modulation. The CLI twin is
+/// `rs_cam_cli/tests/the_summary_prints_the_emitted_feeds_p30_1.rs`.
+#[test]
+fn one_feed_record_on_every_surface_p30_1() {
+    use rs_cam_core::session::{SimulationOptions, SimulationResolution};
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/stock_change_cut_as_s6/project.toml");
+    let mut session =
+        rs_cam_core::session::ProjectSession::load(&fixture).expect("the fixture loads");
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetToolpathEnabled(
+            rs_cam_core::session::SetToolpathEnabledArgs {
+                index: 1,
+                enabled: false,
+            },
+        ))
+        .expect("disable the rest op");
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let _ = session
+        .generate_toolpath(0, &cancel)
+        .expect("the op generates");
+    let gui = crate::state::runtime::GuiState::new();
+    let id = session.toolpath_configs()[0].id;
+    let check = |session: &rs_cam_core::session::ProjectSession, state: &str| {
+        let door = session.emitted_feeds(0).expect("a record");
+        let trace = session
+            .simulation_result()
+            .and_then(|s| s.cut_trace.clone());
+        let panel = crate::ui::properties::toolpath_panel_inputs(
+            id,
+            session,
+            &gui,
+            trace.as_ref(),
+            None,
+            false,
+        );
+        assert_eq!(panel.emitted_feeds.as_ref(), Some(&door), "{state}: GUI");
+        // P30-2: the GUI feeds memo builds its rows with the modulation of
+        // the session constructor, the value every session door reads.
+        assert_eq!(
+            panel.run_modulation,
+            session.run_modulation_of(0),
+            "{state}: GUI modulation"
+        );
+        let mcp = super::generation::emitted_feeds_json(session);
+        let entry = mcp
+            .as_array()
+            .and_then(|rows| {
+                rows.iter()
+                    .find(|r| r["toolpath_id"] == serde_json::json!(id))
+            })
+            .expect("the MCP entry");
+        assert_eq!(
+            entry["feeds"],
+            serde_json::to_value(&door).expect("the record serialises"),
+            "{state}: MCP"
+        );
+        assert_eq!(entry["line"], door.line(), "{state}: MCP line");
+        let exported = session
+            .export_gcode_checked(trace.as_deref())
+            .expect("exports");
+        let row = exported
+            .emitted_feeds
+            .iter()
+            .find(|r| r.toolpath == session.toolpath_configs()[0].name)
+            .expect("the export record");
+        assert_eq!(row.feeds, door, "{state}: export");
+        let reply = crate::io::export::export_reply_text("G-code exported".to_owned(), &exported);
+        assert!(reply.contains(&door.line()), "{state}: the reply: {reply}");
+        door
+    };
+    let before = check(&session, "before");
+    session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: SimulationResolution::Fixed(0.5),
+                ..SimulationOptions::default()
+            },
+            &cancel,
+        )
+        .expect("the session simulates");
+    let after = check(&session, "after");
+    assert_eq!(before.stage, rs_cam_core::session::FeedStage::Planned);
+    assert!(
+        matches!(
+            after.stage,
+            rs_cam_core::session::FeedStage::ModulatedCurrent { .. }
+        ),
+        "non-vacuity: the run modulates: {after:?}"
+    );
 }

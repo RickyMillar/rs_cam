@@ -95,7 +95,7 @@ fn rivmap_env() -> (OperationConfig, SafeEnvelope) {
         .expect("rivmap100 has the 3D Rough")
         .clone();
     let env = session
-        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
+        .safe_envelope(&tc)
         .expect("a tool")
         .expect("a backed envelope");
     (tc.operation, env)

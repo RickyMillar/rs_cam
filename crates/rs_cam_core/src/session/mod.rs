@@ -20,6 +20,7 @@ mod compute;
 mod cycle_time;
 pub mod dependencies;
 mod diagnostics_types;
+mod emitted_feeds;
 mod eval_context;
 pub mod generation_plan;
 mod heights;
@@ -107,6 +108,9 @@ pub use diagnostics_types::{
     CutMetricsNotMeasured, MeasuredAirCut, PROJECT_AIR_CUT_BAR_PCT, ProjectDiagnostics,
     ProjectEvidence, ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
     VerdictSeverity,
+};
+pub use emitted_feeds::{
+    CuttingFeeds, EmittedFeeds, EntryFeeds, NamedEmittedFeeds, StatedFeeds, emitted_feeds_report,
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};
@@ -1748,22 +1752,6 @@ pub struct SimulationOptions {
     pub modulation_feed_scale: f64,
 }
 
-impl SimulationOptions {
-    /// P29-10z (lead ruling Q2): the feed modulation of a run with these
-    /// options, for the limit rows before the simulation.
-    #[must_use]
-    pub const fn run_modulation(&self) -> crate::dressup::feed_modulation::RunModulation {
-        if self.adaptive_feed_modulation {
-            crate::dressup::feed_modulation::RunModulation::Runs {
-                strategy: self.modulation_strategy,
-                feed_scale: self.modulation_feed_scale,
-            }
-        } else {
-            crate::dressup::feed_modulation::RunModulation::Off
-        }
-    }
-}
-
 impl Default for SimulationOptions {
     fn default() -> Self {
         Self {
@@ -1985,6 +1973,12 @@ pub struct ProjectSession {
     /// P2.4). Derived data: a clone starts empty, and the key reads the
     /// inputs, not a counter.
     pub(crate) selection_status_memo: selection_status::SelectionStatusMemo,
+    /// The memo behind [`Self::emitted_feeds`] (P30-1). Derived data: a
+    /// clone starts empty, and the key reads the moves and the post.
+    pub(crate) emitted_feeds_memo: emitted_feeds::EmittedFeedsMemo,
+    /// The memo behind [`Self::stated_row_over_until_modulated`] (P30-2).
+    /// Derived data: a clone starts empty, and the key reads the inputs.
+    pub(crate) unmodulated_row_memo: limit_rows::UnmodulatedRowMemo,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -2031,6 +2025,8 @@ impl ProjectSession {
             simulation_resolution: SimulationResolution::Auto,
             load_report_memo: load_report::LoadReportMemo::default(),
             selection_status_memo: selection_status::SelectionStatusMemo::default(),
+            emitted_feeds_memo: emitted_feeds::EmittedFeedsMemo::default(),
+            unmodulated_row_memo: limit_rows::UnmodulatedRowMemo::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
@@ -2414,10 +2410,12 @@ impl ProjectSession {
     /// [`CutterOpProfile`]: crate::feeds::profile::CutterOpProfile
     /// [`CutterOpProfile::for_combo`]: crate::feeds::profile::CutterOpProfile::for_combo
     /// [`SuggestContext`]: crate::feeds::suggest::SuggestContext
+    ///
+    /// P30-2: the envelope rows read the feed modulation of the toolpath's
+    /// stored result ([`Self::run_modulation_for`]); no caller states it.
     pub fn cutter_op_profile<'a>(
         &'a self,
         tc: &'a ToolpathConfig,
-        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
         use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
 
@@ -2437,7 +2435,7 @@ impl ProjectSession {
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post_config().spindle_policy(),
             context,
-            modulation: modulation.for_toolpath(tc.enabled),
+            modulation: self.run_modulation_for(tc),
         })
         .ok()
     }
@@ -2449,8 +2447,29 @@ impl ProjectSession {
     ///
     /// `None` when the toolpath has no tool; `Some(Err)` for a refused
     /// pairing.
+    ///
+    /// P30-2: the rows read the feed modulation of the toolpath's stored
+    /// result ([`Self::run_modulation_for`]); no caller states it.
     #[must_use]
     pub fn safe_envelope(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<Result<crate::feeds::envelope::SafeEnvelope, crate::feeds::FeedsError>> {
+        self.safe_envelope_with(tc, self.run_modulation_for(tc))
+    }
+
+    /// [`Self::safe_envelope`] with no modulation caveat
+    /// (`RunModulation::Off`): the core readers that read the placement of
+    /// the stated point, never a row tone (the measured lineage, the
+    /// `project.outside_envelope` diagnostic).
+    pub(crate) fn safe_envelope_unmodulated(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<Result<crate::feeds::envelope::SafeEnvelope, crate::feeds::FeedsError>> {
+        self.safe_envelope_with(tc, crate::dressup::feed_modulation::RunModulation::Off)
+    }
+
+    fn safe_envelope_with(
         &self,
         tc: &ToolpathConfig,
         modulation: crate::dressup::feed_modulation::RunModulation,
@@ -2466,7 +2485,7 @@ impl ProjectSession {
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: self.post_config().spindle_policy(),
                 context: slots.context(&tc.dressups),
-                modulation: modulation.for_toolpath(tc.enabled),
+                modulation,
             },
         ))
     }

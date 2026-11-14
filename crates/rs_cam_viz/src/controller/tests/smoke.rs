@@ -248,6 +248,7 @@ fn controller_save_open_and_export_smoke() {
         load_outcome: _,
         warnings,
         feeds_cautions,
+        emitted_feeds: _,
     } = controller.export_gcode_reporting().expect("export gcode");
     assert!(gcode.contains("G"));
     assert!(

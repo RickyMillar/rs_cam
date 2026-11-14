@@ -400,7 +400,7 @@ fn the_mcp_basis_carries_the_shipped_power_m9() {
     let tc = &state.session().toolpath_configs()[0];
     let profile = state
         .session()
-        .cutter_op_profile(tc, rs_cam_viz::state::simulation::run_modulation())
+        .cutter_op_profile(tc)
         .expect("the fixture's tool resolves");
     let basis = rs_cam_viz::app::suggest_basis_json(&profile);
     let figure = profile.shipped_power().expect("Suggest serves the fixture");
@@ -429,7 +429,7 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
     let tc = &state.session().toolpath_configs()[0];
     let profile = state
         .session()
-        .cutter_op_profile(tc, rs_cam_viz::state::simulation::run_modulation())
+        .cutter_op_profile(tc)
         .expect("the fixture's tool resolves");
     let feeds = profile.feeds.as_ref().expect("Suggest serves the fixture");
     let basis = rs_cam_viz::app::suggest_basis_json(&profile);

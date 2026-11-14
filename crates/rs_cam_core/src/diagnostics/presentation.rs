@@ -762,6 +762,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         OP,
         "Left out of the export: no current result",
     ),
+    (
+        ids::EXPORT_STATED_FEED_OVER_LIMIT,
+        OP,
+        "Stated feed over a limit: no current modulation",
+    ),
 ];
 
 fn row(id: &str) -> Option<&'static (&'static str, Anchor, &'static str)> {

@@ -67,10 +67,13 @@ fn push_rapid(
     *prev_pos = Some((x, y, z));
 }
 
-/// W2.5 (D10): write the phase's feed-stage line after its label.
+/// W2.5 (D10), P30-1: write the header lines of the phase's feed record
+/// after its label (`EmittedFeeds::header_lines`).
 fn push_feeds_comment(program: &mut Program, phase: &GcodePhase<'_>) {
     if let Some(feeds) = &phase.feeds {
-        program.push(Statement::Comment(feeds.clone()));
+        for line in feeds.header_lines() {
+            program.push(Statement::Comment(line));
+        }
     }
 }
 

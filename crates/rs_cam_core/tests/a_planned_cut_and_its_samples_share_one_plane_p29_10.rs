@@ -190,10 +190,7 @@ fn a_slot_ring_and_its_samples_share_one_plane_p29_10() {
     let session = pocket_session(false);
     let tc = session.toolpath_config_at(0).expect("the op");
     let env = session
-        .safe_envelope(
-            tc,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
+        .safe_envelope(tc)
         .expect("a tool")
         .expect("the Pocket envelope");
     let d = diameter(&env).expect("a diameter");

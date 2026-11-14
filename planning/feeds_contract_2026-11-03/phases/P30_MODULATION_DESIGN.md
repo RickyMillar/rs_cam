@@ -465,3 +465,86 @@ line of the three files stays (the rivmap tone changes are proposal rows, not on
   byte-equal when the comment lines are filtered. A test that counts or orders header lines
   (`export_states_the_feed_stage_w2_5` reads the line after the label: no change) is read before the
   code changes.
+
+### Measured (P30-1 and P30-2, on the code)
+
+Instruments: the row probe on the code (`p30b/dumps/after`), `p30b/measure.py` (every row against
+the prediction), the op golden with `RS_CAM_OPGOLDEN_DUMP_GCODE` and `p30b/headeronly.py` (the
+header-only proof), FM1.
+
+| Quantity | Predicted | Measured |
+|---|---|---|
+| Envelope rows of the four files equal to the prediction (value, bound, state, caveat, tone, face; the detail of the unchanged rows) | all | 3465 of 3465 |
+| Rows with the caveat (operator, `nz_wanaka_21`, rivmap100, live) | 112, 64, 24, 16 | 112, 64, 24, 16 (`until_modulated`, `export: stated`) |
+| Tone changes, caution to danger | 14 | 14, the same rows |
+| Face lines of the four files | 44 as predicted | 44 of 44 |
+| RPM rows, verdict rows | no change | equal to HEAD |
+| FM1 (both CSVs) | byte-equal | byte-equal (2 of 2 pass) |
+| Op golden: rows other than `gcode_hash` | the known 46 | the known 46 (diff empty) |
+| Op golden: `gcode_hash` | moves on every arm with a cutting move, header only | 85 of 89 arms move; with the new comment lines removed, each program hashes to its stored value (85 of 85; 141 lines removed). No arm gets an `export.stated_feed_over_limit` line |
+
+The 18 operator face lines are the predicted table above, measured equal.
+
+P30-1: `the_record_states_what_the_gcode_runs_p30_1` parses the program of the export door and
+holds the record equal to the F words in three states: a Pocket with feed optimisation off and no
+simulation (no cutting move above the stated 1000; the generator writes some moves under it, so
+the smallest feed is below the stated feed), the 2D Adaptive with feed optimisation on (moves
+above the stated feed, the header line ends ", set by feed optimisation"), and the Pocket before
+and after a simulation with modulation (more moves above the stated feed and a larger maximum
+after it). The header of the op holds the lines of the record, in order, after the label. The
+numbers of the fixture table are the probe numbers of the same rule (same moves, same classes,
+same post); the test does not print them again.
+
+Surfaces measured equal for one session state, before and after a simulation with modulation: the
+GUI panel input (the Passes line and the simulation inspector line), MCP `get_tool_load_report`
+`emitted_feeds` and the export reply (viz lib `one_feed_record_on_every_surface_p30_1`), and the
+CLI `summary.json` and the `--summary` report (`the_summary_prints_the_emitted_feeds_p30_1`).
+
+P30-2: `a_row_softens_only_under_a_current_modulation_p30_2` holds the three states on a Pocket
+with a stated feed of 9000 mm/min: a planned result keeps the danger tone, carries `until
+modulated` and the export warns (the list and the header); after a simulation with modulation the
+row is a caution with "before modulation" and no warning; after a simulation with modulation off
+the warning stays. The test went red when `UntilModulated` was made to soften (2 of 3 failed),
+then green with the code restored.
+
+The explainer data of P29-10 (`P29-10_explainer/data/`): the two `cli_suggest_*.jsonl` files are
+the CLI `suggest --json` of this tree; the six `mcp_safe_envelope_operator_*.json` files take the
+core serialisation of the envelope of this tree (a throwaway probe, `p30b/zz_probe_explainer_p30.rs`)
+with the capped speeds grid of the old files spliced in byte for byte (P30-2 moves no number, and
+the CLI speeds of these six ops are equal before and after). `build_page.py` rebuilt `index.html`;
+`assert_claims.py`: 11 of 11 PASS. The old data was older than HEAD: besides the P30-2 rows
+(`run_modulation`, the caveat, face, detail and tone of the capped rows), the regenerated CLI
+files also move `check.basis` on 10 + 18 rows, `speeds.points[].rubbing` and one `boundary`
+(changes of P29-11, not of P30).
+
+Departure from the prediction (judged on the screenshot): the GUI line as predicted ("runs 1258
+mm/min · 0 of 144 moves above the stated 1258 · as stated") elided its stage at the 340-point rail
+on operator idx 7. The core line is now shorter: "runs 943 to 3000 mm/min · 32 of 40 above 1000 ·
+modulated, run 2" (stage words "as stated", "feed optimisation", "modulated, run n", "modulated,
+run n, not current"). The hover says what the counts mean ("32 of 40 cutting moves run above the
+stated feed of 1000 mm/min") and holds the stage statement and the entry lines. The G-code header
+lines do not change.
+
+On the GUI (release build of this tree, shots `P29-10_shots/after/S12_*`): the face lines of
+operator idx 7, 8 and 1 read as predicted, in the danger tone; idx 0 has none. An MCP export of the
+operator file with no simulation (11 of 18 ops hold a result) carries
+`export.stated_feed_over_limit` for idx 7 and idx 8 only: of the predicted ops (1, 2, 7, 8, 14,
+15) only these two hold a planned result. Readiness shows no new row and no check state changes.
+On rivmap100 Face 5 after a simulation with modulation, the header reads "(feeds run 2333 to 3000
+mm/min, 77 of 77 cutting moves above the stated 2200 mm/min)" and "(ramp entries run up to 3000
+mm/min, the stated ramp feed is 500 mm/min)", and the GUI line takes the caution colour.
+
+Two changes after the review of the shots and the code:
+
+- **The softening value is sealed.** `RunModulation::Current` holds a `HeldByResult` that has no
+  public constructor (`ProjectSession::run_modulation_of` builds it from a stored modulated result;
+  a test build states `RunModulation::current_for_tests`). A surface can state `Off` or `NotRun`
+  (neither softens) but not `Current`, so the compiler holds "a surface cannot pass a constant that
+  softens a row".
+- **The stage of the GUI line does not elide.** After a feed stage the GUI prints the numbers on
+  one line ("runs 2333 to 3000 mm/min · 77 of 77 above 2200") and the stage on the next ("feeds:
+  modulated, run 1, not current", in the caution colour when the stage is not current). With the
+  stated feeds it stays one line. CLI and MCP print the one line `EmittedFeeds::line`.
+- Not changed: the simulation inspector prints the line only with its cut-metric cards, so a stale
+  trace (the cards say "the cut trace is from an earlier version") shows no line there; the
+  Passes tab still shows it.

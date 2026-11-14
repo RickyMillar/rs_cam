@@ -281,12 +281,7 @@ fn a_refused_op_still_generates_and_exports_p21() {
 
     // The card door reports the same refusal.
     let tc = session.toolpath_configs()[0].clone();
-    let profile = session
-        .cutter_op_profile(
-            &tc,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
-        .expect("the op has a tool");
+    let profile = session.cutter_op_profile(&tc).expect("the op has a tool");
     assert!(
         matches!(
             profile.feasibility,
@@ -347,10 +342,7 @@ fn the_add_door_reads_the_project_policy_p21() {
     assert_eq!(draft.feeds_refusal, None);
     let drafted_rpm = draft.config.operation.spindle_rpm().expect("a seeded RPM");
     let card = session
-        .cutter_op_profile(
-            &draft.config,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
+        .cutter_op_profile(&draft.config)
         .expect("the draft has a tool");
     let choice = card
         .feeds

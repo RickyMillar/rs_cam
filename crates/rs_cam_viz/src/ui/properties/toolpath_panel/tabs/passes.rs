@@ -75,6 +75,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
         spindle_rpm_ceiling: inputs.spindle_rpm_ceiling,
         load_verdict: inputs.load_verdict(),
         suggest_slots,
+        emitted_feeds: inputs.emitted_feeds.as_ref(),
     });
 
     if let Some(block) = &block {

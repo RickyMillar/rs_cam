@@ -447,6 +447,22 @@ impl PostDefinition {
         Ok(toml::from_str(s)?)
     }
 
+    /// Feeds contract P30-1: the value that the F word of a feed of
+    /// `mm_min` states under this post. The emitter clamps the feed at
+    /// `limits.max_feed` (`emitter::clamp_feed`) and writes it with
+    /// `decimals.feed` decimals; this function does the same two steps, so
+    /// the record of the emitted feeds (`session::EmittedFeeds`) equals the
+    /// F words.
+    #[must_use]
+    pub fn emitted_feed(&self, mm_min: f64) -> f64 {
+        let clamped = match self.limits.max_feed {
+            Some(max) if mm_min > max.get() => max.get(),
+            Some(_) | None => mm_min,
+        };
+        let dp = self.decimals.feed;
+        format!("{clamped:.dp$}").parse().unwrap_or(clamped)
+    }
+
     /// Render the preamble. Substitutes the following template tokens:
     ///
     /// - `{spindle_rpm}` → numeric RPM passed in

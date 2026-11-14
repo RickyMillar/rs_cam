@@ -933,9 +933,12 @@ impl super::RsCamApp {
                 // warnings of every file.
                 let mut load_outcome = rs_cam_core::gcode::LoadPolicyOutcome::default();
                 let mut warnings: Vec<rs_cam_core::gcode::ExportWarning> = Vec::new();
+                // P30-1: the feed records of every file.
+                let mut emitted_feeds: Vec<rs_cam_core::session::NamedEmittedFeeds> = Vec::new();
                 for (i, file) in files.into_iter().enumerate() {
                     machine_safety.extend(file.machine_safety);
                     feeds_cautions.extend(file.feeds_cautions);
+                    emitted_feeds.extend(file.emitted_feeds);
                     load_outcome.merge(file.load_outcome);
                     warnings.extend(file.warnings);
                     let safe_name: String = file
@@ -962,6 +965,7 @@ impl super::RsCamApp {
                     &load_outcome,
                     &warnings,
                     &feeds_cautions,
+                    &emitted_feeds,
                 ));
             }
         }

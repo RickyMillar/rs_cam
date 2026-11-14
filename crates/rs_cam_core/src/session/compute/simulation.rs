@@ -857,6 +857,8 @@ impl ProjectSession {
                 slot.provenance = crate::session::ResultProvenance::Modulated {
                     simulation_run,
                     source,
+                    strategy: opts.modulation_strategy,
+                    feed_scale: opts.modulation_feed_scale,
                 };
                 let _ = rewritten.insert(idx);
             }

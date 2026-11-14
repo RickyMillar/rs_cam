@@ -234,7 +234,7 @@ fn rivmap_rough(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
         c.stepover = Some(ae);
     }
     let env = session
-        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
+        .safe_envelope(&tc)
         .expect("a tool")
         .expect("a backed envelope");
     (tc.operation, env)

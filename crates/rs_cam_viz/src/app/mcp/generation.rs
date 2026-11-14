@@ -255,10 +255,7 @@ impl RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        let Some(profile) = state
-            .session()
-            .cutter_op_profile(tc, crate::state::simulation::run_modulation())
-        else {
+        let Some(profile) = state.session().cutter_op_profile(tc) else {
             return json_str(serde_json::json!({
                 "error": match tc.tool_id {
                     Some(tool_id) => format!("Tool {tool_id} for toolpath {} not found", tc.id),
@@ -407,6 +404,10 @@ impl RsCamApp {
                 state.session(),
                 state.simulation.cut_trace_arc(),
             ),
+            // P30-1: the record of the feeds that an export emits now, one
+            // per toolpath with a result (`ProjectSession::emitted_feeds`,
+            // the record of the G-code header).
+            "emitted_feeds": emitted_feeds_json(state.session()),
         }))
     }
 
@@ -1078,10 +1079,7 @@ impl RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        match state
-            .session()
-            .safe_envelope(tc, crate::state::simulation::run_modulation())
-        {
+        match state.session().safe_envelope(tc) {
             None => json_str(serde_json::json!({
                 "error": format!(
                     "Toolpath {} has no tool. Set one with `set_toolpath_tool`.",
@@ -1217,6 +1215,30 @@ impl RsCamApp {
     }
 }
 
+/// P30-1: `emitted_feeds` of `get_tool_load_report`: the record of each
+/// toolpath with a result, from the one door
+/// (`ProjectSession::emitted_feeds`), with its id, its name and the line
+/// that the GUI and the CLI print.
+pub(super) fn emitted_feeds_json(
+    session: &rs_cam_core::session::ProjectSession,
+) -> serde_json::Value {
+    let rows: Vec<serde_json::Value> = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, tc)| {
+            let feeds = session.emitted_feeds(index)?;
+            Some(serde_json::json!({
+                "toolpath_id": tc.id,
+                "name": tc.name,
+                "line": feeds.line(),
+                "feeds": feeds,
+            }))
+        })
+        .collect();
+    serde_json::Value::Array(rows)
+}
+
 /// P29-10: the verdict rows of every toolpath from the one door
 /// (`ProjectSession::limit_rows`): `[{ toolpath_id, toolpath_name, rows }]`,
 /// one entry per toolpath (lead ruling 6: a toolpath with no verdict gets
@@ -1232,9 +1254,7 @@ pub(super) fn load_report_limit_rows_json(
             .iter()
             .enumerate()
             .filter_map(|(index, tc)| {
-                let rows = session
-                    .limit_rows(index, trace, crate::state::simulation::run_modulation())?
-                    .verdict();
+                let rows = session.limit_rows(index, trace)?.verdict();
                 Some(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,
@@ -1254,7 +1274,7 @@ pub(super) fn rpm_limit_rows_json(
     index: usize,
 ) -> serde_json::Value {
     session
-        .limit_rows(index, None, crate::state::simulation::run_modulation())
+        .limit_rows(index, None)
         .map_or(serde_json::Value::Array(Vec::new()), |rows| {
             serde_json::to_value(rows.rpm()).unwrap_or_default()
         })

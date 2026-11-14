@@ -1248,24 +1248,6 @@ pub struct FeedModulation {
     pub feed_scale: f64,
 }
 
-impl FeedModulation {
-    /// P29-10z (lead ruling Q2): the modulation of a run that adopts with
-    /// `modulation` (`None`: the adopt does not modulate).
-    #[must_use]
-    pub const fn run(modulation: Option<Self>) -> crate::dressup::feed_modulation::RunModulation {
-        match modulation {
-            Some(Self {
-                strategy,
-                feed_scale,
-            }) => crate::dressup::feed_modulation::RunModulation::Runs {
-                strategy,
-                feed_scale,
-            },
-            None => crate::dressup::feed_modulation::RunModulation::Off,
-        }
-    }
-}
-
 /// The arguments of the `preview_tier_map` job.
 ///
 /// The spec is BOXED. Every other payload in this registry is a handful

@@ -1013,11 +1013,13 @@ pub struct EnvelopeInput<'a> {
     pub spindle_strategy: SpindleStrategy,
     /// The Suggest context (the model box).
     pub context: SuggestContext<'a>,
-    /// P29-10z (lead ruling Q2): the feed modulation of the simulation run
-    /// (`RunModulation`). A planned or stated row of a limit that the
-    /// modulator caps, on a cut it re-times, carries
-    /// `Caveat::BeforeModulation`. No default: a surface states the value
-    /// of its run, a reader with no run states `Off`.
+    /// P29-10z (lead ruling Q2), P30-2: the feed modulation of the
+    /// toolpath (`RunModulation`). A planned or stated row of a limit that
+    /// the modulator caps, on a cut it re-times, carries
+    /// `Caveat::BeforeModulation` under a current modulated result and
+    /// `Caveat::UntilModulated` with none. No default: the session doors
+    /// state `ProjectSession::run_modulation_of`, a reader with no session
+    /// states `Off`.
     pub modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
@@ -1477,11 +1479,7 @@ impl PlannedRow {
                     | LimitId::SpindlePower
             );
         let compared = compared_of_planned(self.check.limit);
-        let modulation = if modulation.caps(self.check.limit, self.cut) {
-            crate::limits::RowModulation::CapsTheBound
-        } else {
-            crate::limits::RowModulation::NotCapped
-        };
+        let modulation = modulation.caps(self.check.limit, self.cut);
         crate::limits::CheckRow::planned(
             self.cut,
             self.check,

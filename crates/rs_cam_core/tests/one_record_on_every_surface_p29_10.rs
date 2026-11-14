@@ -52,9 +52,12 @@
 //!   A disabled toolpath (the report leaves it out) gets its rows with no
 //!   trace; a drill cycle gives its three drill rows and the side gates as
 //!   not applicable.
-//! - Claim 8b (P29-11 commit 11-0): a disabled toolpath is not in the run,
-//!   so no row of it carries `Caveat::BeforeModulation`, and its rows under
-//!   a run equal its rows with no run.
+//! - Claim 8b (P29-11 commit 11-0; P30-2): the door reads the modulation of
+//!   the stored result (`ProjectSession::run_modulation_of`). An enabled
+//!   toolpath with a planned result carries `Caveat::UntilModulated` (the
+//!   tone is not softened); after a simulation with modulation it carries
+//!   `Caveat::BeforeModulation`; a disabled toolpath is not in the run, so
+//!   no row of it carries either.
 //! - Claim 6: every face is at most `ROW_FACE_MAX_CHARS` characters and no
 //!   face prints "0 %" for a margin that is not zero.
 //! - Claim 9 (lead ruling after 10e): a face follows its state. No row with
@@ -75,7 +78,9 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::kind_fixtures::{adaptive_session, pocket_session, profile_session, shelf_session};
+use common::kind_fixtures::{
+    FLAT_CELL, adaptive_session, pocket_session, profile_session, shelf_session,
+};
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
@@ -426,6 +431,7 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
                     Caveat::MayOccur { .. } => "MayOccur".to_owned(),
                     Caveat::SampleDepth { .. } => "SampleDepth".to_owned(),
                     Caveat::AdvisoryFloor { .. } => "AdvisoryFloor".to_owned(),
+                    Caveat::UntilModulated { .. } => "UntilModulated".to_owned(),
                     Caveat::BeforeModulation
                     | Caveat::WorstCase
                     | Caveat::LowerBound
@@ -640,13 +646,7 @@ fn verdict_rows(name: &str, session: &ProjectSession) {
     let trace = session
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref());
-    let door = session
-        .limit_rows(
-            0,
-            trace,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
-        .expect("the toolpath");
+    let door = session.limit_rows(0, trace).expect("the toolpath");
     assert_eq!(door.verdict(), rows, "{name}: the door verdict rows");
     let env_rows = door
         .envelope()
@@ -654,10 +654,7 @@ fn verdict_rows(name: &str, session: &ProjectSession) {
         .expect("the envelope builds");
     let tc = session.toolpath_config_at(0).expect("the op");
     let direct = session
-        .safe_envelope(
-            tc,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
+        .safe_envelope(tc)
         .expect("a tool")
         .expect("the envelope builds");
     assert_eq!(env_rows, direct.rows(), "{name}: the door envelope rows");
@@ -1010,14 +1007,7 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
         session.tool_load_report().per_toolpath.is_empty(),
         "non-vacuity: the report leaves the disabled op out"
     );
-    let rows = session
-        .limit_rows(
-            0,
-            None,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
-        .expect("the op")
-        .verdict();
+    let rows = session.limit_rows(0, None).expect("the op").verdict();
     assert_eq!(
         rows.len(),
         4 * CutGroup::ALL.len() + 1,
@@ -1052,11 +1042,7 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref());
     let rows = session
-        .limit_rows(
-            index,
-            trace,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
+        .limit_rows(index, trace)
         .expect("the drill")
         .verdict();
     assert_eq!(
@@ -1147,13 +1133,10 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
 }
 
 /// The envelope rows and the RPM rows of the toolpath at `index`, read
-/// through the door with the run modulation `modulation`.
-fn door_rows(
-    session: &ProjectSession,
-    index: usize,
-    modulation: rs_cam_core::dressup::feed_modulation::RunModulation,
-) -> Vec<CheckRow> {
-    let rows = session.limit_rows(index, None, modulation).expect("the op");
+/// through the door (P30-2: the door reads the modulation of the stored
+/// result).
+fn door_rows(session: &ProjectSession, index: usize) -> Vec<CheckRow> {
+    let rows = session.limit_rows(index, None).expect("the op");
     let mut out = rows
         .envelope()
         .expect("the op has a tool")
@@ -1162,48 +1145,59 @@ fn door_rows(
     out
 }
 
-/// Claim 8b (P29-10z, lead ruling Q2; P29-11 commit 11-0): the run
-/// modulates only the enabled toolpaths, so a disabled toolpath gets no
-/// `Caveat::BeforeModulation` on any row, and its rows under a run equal its
-/// rows with no run (`RunModulation::for_toolpath`). The enabled toolpath of
-/// the same session carries the caveat (non-vacuity).
+/// Claim 8b (P29-10z, lead ruling Q2; P29-11 commit 11-0; P30-2): the door
+/// reads the modulation of the stored result. A planned result carries
+/// `Caveat::UntilModulated`; a simulation with modulation turns it into
+/// `Caveat::BeforeModulation` on the same rows; a disabled toolpath is not
+/// in the run, so no row of it carries either.
 #[test]
 fn claim_8b_a_disabled_toolpath_gets_no_modulation_caveat() {
-    use rs_cam_core::dressup::feed_modulation::{ModulationStrategy, RunModulation};
-    use rs_cam_core::session::{Command, SetToolpathEnabledArgs};
-    let runs = RunModulation::Runs {
-        strategy: ModulationStrategy::ConstrainedMax,
-        feed_scale: 1.0,
+    use rs_cam_core::limits::ExportFeed;
+    use rs_cam_core::session::{
+        Command, SetToolpathEnabledArgs, SimulationOptions, SimulationResolution,
     };
-    let carried = |rows: &[CheckRow]| {
-        rows.iter()
-            .filter(|r| r.caveats().contains(&Caveat::BeforeModulation))
-            .count()
+    let count = |rows: &[CheckRow], want: &Caveat| {
+        rows.iter().filter(|r| r.caveats().contains(want)).count()
+    };
+    let until = Caveat::UntilModulated {
+        export: ExportFeed::Stated,
     };
     let mut session = pocket_session(false);
-    let enabled = door_rows(&session, 0, runs);
+    let planned = door_rows(&session, 0);
     assert!(
-        carried(&enabled) > 0,
-        "non-vacuity: an enabled toolpath under a run carries the caveat"
+        count(&planned, &until) > 0,
+        "non-vacuity: a planned result carries \"until modulated\""
     );
+    assert_eq!(count(&planned, &Caveat::BeforeModulation), 0);
+    session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: SimulationResolution::Fixed(FLAT_CELL),
+                ..SimulationOptions::default()
+            },
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .expect("the session simulates");
+    let modulated = door_rows(&session, 0);
+    assert_eq!(
+        count(&modulated, &Caveat::BeforeModulation),
+        count(&planned, &until),
+        "the same rows read \"before modulation\" under a current modulated result"
+    );
+    assert_eq!(count(&modulated, &until), 0);
     let _ = session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: 0,
             enabled: false,
         }))
         .expect("disable the op");
-    let disabled = door_rows(&session, 0, runs);
+    let disabled = door_rows(&session, 0);
     assert_eq!(
-        carried(&disabled),
+        count(&disabled, &Caveat::BeforeModulation) + count(&disabled, &until),
         0,
-        "a disabled toolpath is not in the run: no row reads \"before modulation\""
+        "a disabled toolpath is not in the run: no modulation caveat"
     );
-    assert_eq!(
-        disabled,
-        door_rows(&session, 0, RunModulation::Off),
-        "a disabled toolpath under a run gives the rows of no run"
-    );
-    assert_eq!(enabled.len(), disabled.len(), "one row set");
+    assert_eq!(planned.len(), disabled.len(), "one row set");
 }
 
 /// The face and the numbers of one row hold no NaN and no infinity.
@@ -1278,6 +1272,7 @@ fn advisory_floor(row: &CheckRow) -> Option<rs_cam_core::tool_load::verdict::Adv
     row.caveats().iter().find_map(|c| match c {
         Caveat::AdvisoryFloor { why } => Some(*why),
         Caveat::BeforeModulation
+        | Caveat::UntilModulated { .. }
         | Caveat::WorstCase
         | Caveat::LowerBound
         | Caveat::StoredFeed
@@ -1322,10 +1317,7 @@ fn claim_11_the_gate_and_the_planned_floor_share_one_classification() {
         };
         let tc = session.toolpath_config_at(0).expect("the op");
         let env = session
-            .safe_envelope(
-                tc,
-                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-            )
+            .safe_envelope(tc)
             .expect("a tool")
             .expect("the envelope builds");
         let floors: Vec<&CheckRow> = env

@@ -52,9 +52,9 @@ pub(super) fn refresh_feeds_memo(
             spindle_strategy: inputs.spindle_strategy,
             suggest_slots,
             dressups: &entry.dressups,
-            // P29-10z (lead ruling Q2): the modulation of the GUI run for
-            // this toolpath, as the session doors read it.
-            modulation: crate::state::simulation::run_modulation().for_toolpath(entry.enabled),
+            // P30-2: the modulation of the toolpath's stored result, the
+            // value the session doors read (`run_modulation_of`).
+            modulation: inputs.run_modulation,
         },
         super::pills::pill_previews,
     );
@@ -77,6 +77,9 @@ pub(super) struct FeedsBlock<'a> {
     /// `ToolpathPanelSnapshot`. The card builds its context from them and
     /// the entry's dressups; the memo key reads them.
     pub suggest_slots: &'a rs_cam_core::feeds::suggest::SuggestSlots,
+    /// P30-1: the record of the feeds that an export of the toolpath emits
+    /// now (`ToolpathPanelInputs::emitted_feeds`). `None` with no result.
+    pub emitted_feeds: Option<&'a rs_cam_core::session::EmittedFeeds>,
 }
 
 /// The card's funnel answers, once per input change (W3i), and the
@@ -228,7 +231,57 @@ pub(super) fn draw_feeds_recommendation(
         }
         None => draw_vendor_button(ui, id, events),
     }
+    draw_emitted_feeds_line(ui, block.emitted_feeds);
     draw_feeds_card(ui, block.load_verdict);
+}
+
+/// P30-1: the feeds that an export emits now, the core text of the record
+/// (the hover says what the counts mean and holds the stage statement and
+/// the entry lines). ONE quiet line while the feeds are the stated feeds
+/// ("runs 1258 mm/min · 0 of 144 above 1258 · as stated"); after a feed
+/// stage the numbers and the stage take one line each, because the rail
+/// shows about 55 characters and the stage must not elide. The numbers take
+/// the caution colour only when a cutting move runs above the stated feed;
+/// a stage that is not current takes it too. The Passes tab and the
+/// simulation inspector draw it.
+pub(crate) fn draw_emitted_feeds_line(
+    ui: &mut egui::Ui,
+    feeds: Option<&rs_cam_core::session::EmittedFeeds>,
+) {
+    use crate::ui::components::OneLine;
+    use crate::ui::tokens::{CAUTION, SPACE_2, TEXT_MUTED};
+    let Some(feeds) = feeds else {
+        return;
+    };
+    let numbers_colour = if feeds.runs_above_stated() {
+        CAUTION
+    } else {
+        TEXT_MUTED
+    };
+    ui.add_space(SPACE_2);
+    if feeds.is_as_stated() {
+        let _ = ui.add(
+            OneLine::new(feeds.line())
+                .color(numbers_colour)
+                .detail(feeds.detail()),
+        );
+        return;
+    }
+    let _ = ui.add(
+        OneLine::new(feeds.numbers_line())
+            .color(numbers_colour)
+            .detail(feeds.detail()),
+    );
+    let stage_colour = if feeds.stage.is_superseded() {
+        CAUTION
+    } else {
+        TEXT_MUTED
+    };
+    let _ = ui.add(
+        OneLine::new(format!("feeds: {}", feeds.stage_words()))
+            .color(stage_colour)
+            .detail(feeds.detail()),
+    );
 }
 
 /// The vendor cutting data of the bound tool's family, in its own window

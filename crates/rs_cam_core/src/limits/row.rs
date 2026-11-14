@@ -226,12 +226,23 @@ pub enum Occurs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Caveat {
-    /// P29-10z (lead ruling Q2): the row reads the stated feed, before the
-    /// simulation's feed modulation re-times the moves of the cut and caps
-    /// them at the bound of this limit (`dressup::feed_modulation::
-    /// RunModulation::caps`, the modulator's declared list). The row keeps
-    /// its true value and state; the caveat softens the tone.
+    /// P29-10z (lead ruling Q2), P30-2: the row reads the stated feed, and
+    /// the op holds a CURRENT modulated result: the simulation's feed
+    /// modulation re-timed the moves of the cut and capped them at the
+    /// bound of this limit (`dressup::feed_modulation::RunModulation::caps`,
+    /// the modulator's declared list), so the export carries the capped
+    /// feeds. The row keeps its true value and state; the caveat softens
+    /// the tone.
     BeforeModulation,
+    /// P30-2 (lead ruling 2026-11-14): the row reads the stated feed, and
+    /// the op holds NO current modulated result (no simulation, a planned
+    /// result, a superseded result). A simulation with feed modulation
+    /// would re-time the moves of the cut and cap them at this bound, but
+    /// an export now carries `export`. The caveat does not soften the tone.
+    UntilModulated {
+        /// What an export of the op carries now.
+        export: ExportFeed,
+    },
     /// An entry at its own depth: the depth per pass of a ramp, the worst
     /// case (lead ruling Q1b of P29-8).
     WorstCase,
@@ -277,7 +288,7 @@ impl Caveat {
     /// The order of the caveats on a row.
     const fn rank(self) -> u8 {
         match self {
-            Self::BeforeModulation => 0,
+            Self::BeforeModulation | Self::UntilModulated { .. } => 0,
             Self::WorstCase => 1,
             Self::LowerBound => 2,
             Self::StoredFeed => 3,
@@ -297,6 +308,9 @@ impl Caveat {
             // P29-10z: the face holds it; the longest face with the word on
             // the four project files is 59 characters.
             Self::BeforeModulation => Some("before modulation"),
+            // P30-2: 15 characters, so every face that fits with "before
+            // modulation" (17) fits with it.
+            Self::UntilModulated { .. } => Some("until modulated"),
             Self::WorstCase => Some("worst case"),
             Self::LowerBound => Some("lower bound"),
             Self::StoredFeed => Some("stored feed"),
@@ -322,6 +336,7 @@ impl Caveat {
         match self {
             Self::WorstCase | Self::MayOccur { .. } => true,
             Self::BeforeModulation
+            | Self::UntilModulated { .. }
             | Self::LowerBound
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
@@ -343,7 +358,10 @@ impl Caveat {
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
             | Self::MayOccur { .. } => true,
-            Self::Advisory
+            // P30-2: the export carries the stated feed, so the row keeps
+            // its gating tone.
+            Self::UntilModulated { .. }
+            | Self::Advisory
             | Self::NoSamples
             | Self::SampleDepth { .. }
             | Self::AtEarlierLeave
@@ -358,7 +376,7 @@ impl Caveat {
     /// hover carry it.
     const fn group_word(self) -> Option<&'static str> {
         match self {
-            Self::BeforeModulation => None,
+            Self::BeforeModulation | Self::UntilModulated { .. } => None,
             Self::WorstCase
             | Self::LowerBound
             | Self::StoredFeed
@@ -381,6 +399,17 @@ impl Caveat {
                  at this bound; the row reads the stated feed"
                     .to_owned()
             }
+            Self::UntilModulated {
+                export: ExportFeed::Stated,
+            } => "until modulated: a simulation with feed modulation re-times the moves of this \
+                  cut and caps them at this bound; an export now carries the stated feed"
+                .to_owned(),
+            Self::UntilModulated {
+                export: ExportFeed::OlderModulation,
+            } => "until modulated: a current simulation with feed modulation re-times the moves \
+                  of this cut and caps them at this bound; an export now carries the feeds of an \
+                  older simulation"
+                .to_owned(),
             Self::WorstCase => {
                 "worst case: the ramp is judged at its full depth per pass".to_owned()
             }
@@ -426,17 +455,36 @@ const fn advisory_floor_clause(why: AdvisoryLowSide) -> &'static str {
     }
 }
 
-/// P29-10z (lead ruling Q2): whether the run's feed modulation caps the
+/// P30-2: what an export of an op carries now, for a row that a
+/// simulation with feed modulation would cap (`Caveat::UntilModulated`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFeed {
+    /// The stated feed (the planned result, or no result yet).
+    Stated,
+    /// The feeds of an older simulation: the stock before the op changed
+    /// since the modulation (a superseded result).
+    OlderModulation,
+}
+
+/// P29-10z (lead ruling Q2), P30-2: whether the feed modulation caps the
 /// bound of a planned row on its cut (`RunModulation::caps`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowModulation {
-    /// No run re-times the cut at this bound: the row reads the feed that
-    /// the machine runs.
+    /// No modulation re-times the cut at this bound: the row reads the feed
+    /// that the machine runs.
     NotCapped,
-    /// The run re-times the moves of the cut and caps them at this bound:
-    /// the row reads the stated feed, before modulation
-    /// (`Caveat::BeforeModulation`).
+    /// The current modulated result re-timed the moves of the cut and
+    /// capped them at this bound: the row reads the stated feed, before
+    /// modulation (`Caveat::BeforeModulation`, it softens).
     CapsTheBound,
+    /// No current modulated result: a simulation with feed modulation would
+    /// cap the cut at this bound, and the export carries `export` now
+    /// (`Caveat::UntilModulated`, it does not soften).
+    WouldCapTheBound {
+        /// What an export carries now.
+        export: ExportFeed,
+    },
 }
 
 /// P29-10 10i (lead ruling 5): the chip a depth ceiling row reads.
@@ -681,13 +729,17 @@ impl CheckRow {
             at,
         } = facts;
         let mut caveats = Vec::new();
+        let holds_a_number = matches!(check.state, CheckState::Within | CheckState::Exceeds);
         match modulation {
-            RowModulation::CapsTheBound
-                if matches!(check.state, CheckState::Within | CheckState::Exceeds) =>
-            {
+            RowModulation::CapsTheBound if holds_a_number => {
                 caveats.push(Caveat::BeforeModulation);
             }
-            RowModulation::CapsTheBound | RowModulation::NotCapped => {}
+            RowModulation::WouldCapTheBound { export } if holds_a_number => {
+                caveats.push(Caveat::UntilModulated { export });
+            }
+            RowModulation::CapsTheBound
+            | RowModulation::WouldCapTheBound { .. }
+            | RowModulation::NotCapped => {}
         }
         if own_depth.is_some_and(|o| o.worst_case) {
             caveats.push(Caveat::WorstCase);
@@ -887,6 +939,7 @@ impl CheckRow {
         self.caveats.iter().find_map(|c| match c {
             Caveat::MayOccur { row } => Some(*row),
             Caveat::BeforeModulation
+            | Caveat::UntilModulated { .. }
             | Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed
@@ -1066,6 +1119,7 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
         caveats.iter().find_map(|c| match c {
             Caveat::MayOccur { row } => Some(*row),
             Caveat::BeforeModulation
+            | Caveat::UntilModulated { .. }
             | Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed

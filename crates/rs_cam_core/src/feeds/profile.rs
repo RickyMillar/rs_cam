@@ -62,8 +62,8 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
     /// Project-level context (model bbox, stock, policy). Consumed
     /// during construction only — the profile does not retain it.
     pub context: SuggestContext<'ctx>,
-    /// P29-10z (lead ruling Q2): the feed modulation of the simulation run,
-    /// for the envelope rows (`EnvelopeInput::modulation`).
+    /// P29-10z (lead ruling Q2), P30-2: the feed modulation of the
+    /// toolpath, for the envelope rows (`EnvelopeInput::modulation`).
     pub modulation: crate::dressup::feed_modulation::RunModulation,
 }
 

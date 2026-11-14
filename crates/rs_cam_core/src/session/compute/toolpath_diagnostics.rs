@@ -501,7 +501,7 @@ impl ProjectSession {
         // P29-10z: the placement reads no limit row, so the run's
         // modulation does not change it.
         let outside = self
-            .safe_envelope(tc, crate::dressup::feed_modulation::RunModulation::Off)
+            .safe_envelope_unmodulated(tc)
             .and_then(Result::ok)
             .and_then(|envelope| match (envelope.stated, envelope.operator) {
                 (Some(point), Some(crate::feeds::envelope::Placement::Outside { binding, .. })) => {

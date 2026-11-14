@@ -353,7 +353,9 @@ fn every_feeds_input_moves_the_memo_key_f216() {
         spindle_strategy: SpindleStrategy::MatchChart,
         suggest_slots: &slots,
         dressups: &dressups,
-        modulation: rs_cam_viz::state::simulation::run_modulation(),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::NotRun {
+            export: rs_cam_core::limits::ExportFeed::Stated,
+        },
     };
 
     let mut memo = FeedsMemo::default();

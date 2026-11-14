@@ -3,7 +3,7 @@ use rs_cam_core::gcode::{
     ExportPhases, ExportRequest, ExportWarning, GcodePhase, LoadPolicyOutcome, PhaseTool,
     WizardOverlay, arrange_phases_by_setup,
 };
-use rs_cam_core::session::{FeedStage, ProjectSession};
+use rs_cam_core::session::{EmittedFeeds, ProjectSession};
 
 /// F067: the export result is core's, from the one session door
 /// (`ProjectSession::export_program`): the program, the machine-safety
@@ -11,11 +11,12 @@ use rs_cam_core::session::{FeedStage, ProjectSession};
 pub use rs_cam_core::gcode::ExportedGcode;
 
 /// One toolpath an export emits: its index, its motion in the export
-/// datum, and the feed stage of that motion (W2.5, D10).
+/// datum, and the record of the feeds of that motion (W2.5, D10; P30-1:
+/// `ProjectSession::emitted_feeds` of the same slot).
 struct EmittedToolpath<'a> {
     index: usize,
     toolpath: std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>,
-    feeds: FeedStage,
+    feeds: Option<EmittedFeeds>,
 }
 
 /// The text an export reply appends for the feeds cautions
@@ -100,8 +101,8 @@ pub fn export_success_text(header: String, findings: &[Finding]) -> String {
 
 /// The reply an export surface gives an agent: [`export_success_text`],
 /// then the load advisories (F051), the warnings (K6: each finding the
-/// export names) and the [`feeds_caution_report`] when there is one
-/// (W2.5, D10).
+/// export names), the [`feeds_caution_report`] when there is one (W2.5,
+/// D10) and the feeds that run (P30-1, core `emitted_feeds_report`).
 pub fn export_reply_text(header: String, exported: &ExportedGcode) -> String {
     export_reply_text_parts(
         header,
@@ -109,6 +110,7 @@ pub fn export_reply_text(header: String, exported: &ExportedGcode) -> String {
         &exported.load_outcome,
         &exported.warnings,
         &exported.feeds_cautions,
+        &exported.emitted_feeds,
     )
 }
 
@@ -120,12 +122,14 @@ pub fn export_reply_text_parts(
     load_outcome: &LoadPolicyOutcome,
     warnings: &[ExportWarning],
     feeds_cautions: &[String],
+    emitted_feeds: &[rs_cam_core::session::NamedEmittedFeeds],
 ) -> String {
     let mut text = export_success_text(header, findings);
     for report in [
         load_outcome.report(),
         rs_cam_core::gcode::warnings_report(warnings),
         feeds_caution_report(feeds_cautions),
+        rs_cam_core::session::emitted_feeds_report(emitted_feeds),
     ]
     .into_iter()
     .flatten()
@@ -255,7 +259,7 @@ fn emitted_toolpaths<'a>(
         .into_iter()
         .filter_map(|idx| {
             let result = session.result_at(idx)?;
-            let feeds = session.feed_stage_of(idx, &result.provenance);
+            let feeds = session.emitted_feeds(idx);
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
             Some(EmittedToolpath {
                 index: idx,
@@ -366,7 +370,7 @@ fn gcode_phase_for_session_toolpath<'a>(
     session: &'a ProjectSession,
     tc: &'a rs_cam_core::session::ToolpathConfig,
     toolpath: &'a rs_cam_core::toolpath::Toolpath,
-    feeds: FeedStage,
+    feeds: Option<EmittedFeeds>,
 ) -> GcodePhase<'a> {
     let tool = session.tools().iter().find(|t| Some(t.id) == tc.tool_id);
 
@@ -386,7 +390,7 @@ fn gcode_phase_for_session_toolpath<'a>(
         coolant: tc.coolant,
         controller_compensation: rs_cam_core::gcode::controller_compensation_for(tc),
         drill: rs_cam_core::gcode::phase_drill_for(tc),
-        feeds: Some(feeds.statement()),
+        feeds,
     }
 }
 
@@ -459,6 +463,7 @@ fn text_only(exported: ExportedGcode) -> String {
         load_outcome: _,
         warnings: _,
         feeds_cautions: _,
+        emitted_feeds: _,
     } = exported;
     gcode
 }
@@ -485,7 +490,7 @@ pub fn export_gcode_from_session_reporting(
             session,
             tc,
             emitted.toolpath.as_ref(),
-            emitted.feeds,
+            emitted.feeds.clone(),
         ))
     });
     export_through_core(session, gui, sim, arranged, &emitted)
@@ -523,6 +528,8 @@ pub struct SetupFile {
     /// W2.5: the feeds cautions of this file
     /// ([`ProjectSession::feeds_cautions`]).
     pub feeds_cautions: Vec<String>,
+    /// P30-1: the records of the feeds of this file's toolpaths.
+    pub emitted_feeds: Vec<rs_cam_core::session::NamedEmittedFeeds>,
 }
 
 /// The "one file per setup" export: one [`SetupFile`] per setup that has
@@ -574,6 +581,7 @@ pub fn export_per_setup_files(
                 load_outcome,
                 warnings,
                 feeds_cautions,
+                emitted_feeds,
             } = exported;
             SetupFile {
                 gcode: format!(
@@ -594,6 +602,7 @@ pub fn export_per_setup_files(
                 load_outcome,
                 warnings,
                 feeds_cautions,
+                emitted_feeds,
             }
         })
         .collect())
@@ -755,7 +764,9 @@ pub fn export_single_toolpath_reporting(
     let phases: Vec<GcodePhase<'_>> = emitted
         .toolpaths
         .iter()
-        .map(|e| gcode_phase_for_session_toolpath(session, tc, e.toolpath.as_ref(), e.feeds))
+        .map(|e| {
+            gcode_phase_for_session_toolpath(session, tc, e.toolpath.as_ref(), e.feeds.clone())
+        })
         .collect();
     export_through_core(session, gui, sim, ExportPhases::OneSetup(phases), &emitted)
 }
@@ -796,7 +807,7 @@ pub fn export_setup_gcode_from_session_reporting(
                 session,
                 tc,
                 e.toolpath.as_ref(),
-                e.feeds,
+                e.feeds.clone(),
             ))
         })
         .collect();

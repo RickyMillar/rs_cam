@@ -644,7 +644,7 @@ fn the_face_line_is_bounded_ic1() {
     let (mut state, id) = face_line_fixture();
     let envelope = state
         .session()
-        .limit_rows(0, None, rs_cam_viz::state::simulation::run_modulation())
+        .limit_rows(0, None)
         .expect("the toolpath exists")
         .envelope()
         .expect("the op has a tool")

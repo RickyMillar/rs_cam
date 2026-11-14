@@ -276,7 +276,7 @@ fn the_card_shows_one_planned_row_and_a_drawer_p29_10() {
         let closed = draw(&mut state, id, false, false);
         let session = state.session();
         let door = session
-            .limit_rows(index, None, rs_cam_viz::state::simulation::run_modulation())
+            .limit_rows(index, None)
             .expect("the toolpath exists");
         let envelope = door
             .envelope()

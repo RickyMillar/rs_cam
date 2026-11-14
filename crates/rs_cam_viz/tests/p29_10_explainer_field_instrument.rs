@@ -80,9 +80,7 @@ fn write_the_explainer_field_grids_p29_10() {
         let session = ProjectSession::load(&repo_root().join(rel)).expect("the project loads");
         let mut ops = Vec::new();
         for (index, tc) in session.toolpath_configs().iter().enumerate() {
-            let env = session
-                .safe_envelope(tc, rs_cam_viz::state::simulation::run_modulation())
-                .and_then(Result::ok);
+            let env = session.safe_envelope(tc).and_then(Result::ok);
             let tool_d = session
                 .load_context_parts(index)
                 .map(|p| rs_cam_core::tool::MillingCutter::diameter(&p.tool));

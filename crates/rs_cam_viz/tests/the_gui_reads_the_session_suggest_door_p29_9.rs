@@ -245,7 +245,7 @@ fn the_gui_reads_the_session_suggest_door_p29_9() {
         // 1. The envelope checks: the viz door against the session door.
         let viz = memo.envelope().expect("the memo holds the envelope");
         let door = session
-            .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
+            .safe_envelope(&tc)
             .expect("the case has a tool")
             .expect("the session envelope builds");
         assert!(!door.rows().is_empty(), "{name}: non-vacuity");

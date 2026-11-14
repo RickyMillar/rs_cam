@@ -307,8 +307,10 @@ pub struct FeedsInputs<'a> {
     pub suggest_slots: &'a rs_cam_core::feeds::suggest::SuggestSlots,
     /// The toolpath's dressups (the configured entry, P29-8 8d).
     pub dressups: &'a rs_cam_core::compute::config::DressupConfig,
-    /// P29-10z (lead ruling Q2): the feed modulation of the run for this
-    /// toolpath (`RunModulation::for_toolpath`), for the envelope rows.
+    /// P29-10z (lead ruling Q2), P30-2: the feed modulation of this
+    /// toolpath's stored result (`ProjectSession::run_modulation_of`, through
+    /// `ToolpathPanelInputs::run_modulation`), for the envelope rows. It is
+    /// in the key, so a simulation that modulates the result rebuilds them.
     pub modulation: rs_cam_core::dressup::feed_modulation::RunModulation,
 }
 

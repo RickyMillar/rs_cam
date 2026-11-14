@@ -2,7 +2,8 @@
 //! (`ProjectSession::limit_rows`). The GUI, MCP and the CLI read it, as
 //! `suggest_slots` is the one door to the Suggest context.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use super::{ProjectSession, ToolpathConfig};
 use crate::feeds::FeedsError;
@@ -17,8 +18,6 @@ pub struct LimitRows<'a> {
     index: usize,
     toolpath: &'a ToolpathConfig,
     trace: Option<&'a Arc<SimulationCutTrace>>,
-    /// P29-10z (lead ruling Q2): the feed modulation of the caller's run.
-    modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
 impl LimitRows<'_> {
@@ -29,7 +28,7 @@ impl LimitRows<'_> {
     #[must_use]
     pub fn envelope(&self) -> Option<Result<Vec<CheckRow>, FeedsError>> {
         self.session
-            .safe_envelope(self.toolpath, self.modulation)
+            .safe_envelope(self.toolpath)
             .map(|env| env.map(|env| env.rows().to_vec()))
     }
 
@@ -66,7 +65,7 @@ impl LimitRows<'_> {
     #[must_use]
     pub fn rpm(&self) -> Vec<CheckRow> {
         self.session
-            .cutter_op_profile(self.toolpath, self.modulation)
+            .cutter_op_profile(self.toolpath)
             .and_then(|profile| {
                 profile
                     .feeds
@@ -93,18 +92,14 @@ impl ProjectSession {
         index: usize,
         trace: Option<&Arc<SimulationCutTrace>>,
     ) -> Vec<CheckRow> {
-        self.limit_rows(
-            index,
-            trace,
-            crate::dressup::feed_modulation::RunModulation::Off,
-        )
-        .map(|rows| {
-            rows.verdict()
-                .into_iter()
-                .filter(|row| row.check().limit == crate::limits::LimitId::ForceBudget)
-                .collect()
-        })
-        .unwrap_or_default()
+        self.limit_rows(index, trace)
+            .map(|rows| {
+                rows.verdict()
+                    .into_iter()
+                    .filter(|row| row.check().limit == crate::limits::LimitId::ForceBudget)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// **THE door to the force plane of the toolpath at `index`** (P29-10
@@ -141,16 +136,16 @@ impl ProjectSession {
     /// **THE door to the limit rows of the toolpath at `index`** (P29-10,
     /// lead ruling L7). `trace` is the simulation the caller reads, as the
     /// `Arc` that holds it (the GUI keeps its trace beside the session; the
-    /// CLI passes the session's own). `modulation` is the feed modulation
-    /// of the caller's simulation run (P29-10z, lead ruling Q2: the GUI and
-    /// MCP state the value of the GUI adopt step, the CLI the value of its
-    /// options). `None` when no toolpath has the index.
+    /// CLI passes the session's own). P30-2: the envelope and RPM rows read
+    /// the feed modulation of the toolpath's stored result
+    /// (`ProjectSession::run_modulation_of`); no caller states it, so GUI,
+    /// MCP and the CLI give the same rows for the same session state.
+    /// `None` when no toolpath has the index.
     #[must_use]
     pub fn limit_rows<'a>(
         &'a self,
         index: usize,
         trace: Option<&'a Arc<SimulationCutTrace>>,
-        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> Option<LimitRows<'a>> {
         let toolpath = self.toolpath_config_at(index)?;
         Some(LimitRows {
@@ -158,7 +153,78 @@ impl ProjectSession {
             index,
             toolpath,
             trace,
-            modulation,
         })
+    }
+}
+
+/// P30-2: the session memo of [`ProjectSession::stated_row_over_until_modulated`].
+/// The GUI pre-flight modal and the readiness panel read the export
+/// warnings on each frame; an envelope costs about 0.2 s, so the face of
+/// each toolpath is kept against the `Debug` text of every input of its
+/// envelope (the `FeedsKey` idiom of the GUI memo: the text can only
+/// over-key). A clone of the session starts empty.
+#[derive(Default)]
+pub(crate) struct UnmodulatedRowMemo {
+    entries: Mutex<HashMap<crate::ids::ToolpathId, (String, Option<String>)>>,
+}
+
+impl Clone for UnmodulatedRowMemo {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl ProjectSession {
+    /// **P30-2: the face of the worst stated row of the toolpath at
+    /// `index` that exceeds with a gating tone under
+    /// `Caveat::UntilModulated`** (`Tone::Exceeds`, the rank of
+    /// `CheckRow::rank_cmp`), from the one door
+    /// ([`Self::limit_rows`]`(..).envelope()`). Such a row judges the
+    /// stated feed over its bound, and the export carries the stated feed.
+    /// `None` when no such row exists, the toolpath has no tool or the
+    /// envelope refuses. The export door raises
+    /// `export.stated_feed_over_limit` from it.
+    #[must_use]
+    pub fn stated_row_over_until_modulated(&self, index: usize) -> Option<String> {
+        let tc = self.toolpath_config_at(index)?;
+        let tool = self.toolpath_tool(tc)?;
+        let key = format!(
+            "{:?}|{tool:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            tc.operation,
+            self.machine(),
+            self.stock_config().material,
+            self.post_config().spindle_policy(),
+            self.suggest_slots(tc),
+            tc.dressups,
+            self.run_modulation_of(index),
+        );
+        let mut guard = match self.unmodulated_row_memo.entries.lock() {
+            Ok(guard) => guard,
+            // An entry is written only after its build returns.
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some((stored, face)) = guard.get(&tc.id)
+            && *stored == key
+        {
+            return face.clone();
+        }
+        let face =
+            self.limit_rows(index, None)
+                .and_then(|rows| rows.envelope())
+                .and_then(Result::ok)
+                .and_then(|rows| {
+                    rows.iter()
+                        .filter(|row| {
+                            row.is_stated()
+                                && row.tone() == crate::limits::Tone::Exceeds
+                                && row.caveats().iter().any(|c| {
+                                    matches!(c, crate::limits::Caveat::UntilModulated { .. })
+                                })
+                        })
+                        .min_by(|a, b| a.rank_cmp(b))
+                        .map(|row| row.face().to_owned())
+                });
+        let _ = guard.insert(tc.id, (key, face.clone()));
+        face
     }
 }

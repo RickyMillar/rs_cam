@@ -565,7 +565,7 @@ fn rough_env() -> (SafeEnvelope, f64) {
         .expect("rivmap100 has the 3D Rough")
         .clone();
     let env = session
-        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
+        .safe_envelope(&tc)
         .expect("a tool")
         .expect("a backed envelope");
     let low = flat_ceiling(&env, LimitKind::VendorAxial).expect("the vendor DOC is flat");

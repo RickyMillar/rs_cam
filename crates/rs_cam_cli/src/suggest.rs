@@ -162,31 +162,30 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     })
 }
 
-/// P29-10z (lead ruling Q2): the feed modulation that the `suggest`
-/// command states for its limit rows. The command runs no simulation, so it
-/// states the modulation of a default run (`SimulationOptions::default()`:
-/// on, `ConstrainedMax`, scale 1), the value of the `project` command with
-/// no flag and of the GUI.
-fn suggest_run_modulation() -> rs_cam_core::dressup::feed_modulation::RunModulation {
-    rs_cam_core::session::SimulationOptions::default().run_modulation()
-}
-
-/// The run modulation in JSON: `{"kind": "off"}` or `{"kind": "runs",
-/// "strategy", "feed_scale"}`.
+/// P29-10z, P30-2: the feed modulation of a toolpath in JSON, the value its
+/// limit rows read (`ProjectSession::run_modulation_of`):
+/// `{"kind": "off"}`, `{"kind": "current", "strategy", "feed_scale"}` or
+/// `{"kind": "not_run", "export": "stated" | "older_modulation"}`. The
+/// command runs no simulation, so an enabled toolpath reads `not_run`.
 fn run_modulation_json(m: rs_cam_core::dressup::feed_modulation::RunModulation) -> Value {
     use rs_cam_core::dressup::feed_modulation::{ModulationStrategy, RunModulation};
     match m {
         RunModulation::Off => json!({ "kind": "off" }),
-        RunModulation::Runs {
+        RunModulation::Current {
             strategy,
             feed_scale,
+            held: _,
         } => json!({
-            "kind": "runs",
+            "kind": "current",
             "strategy": match strategy {
                 ModulationStrategy::ConstrainedMax => "constrained_max",
                 ModulationStrategy::BandMid => "band_mid",
             },
             "feed_scale": feed_scale,
+        }),
+        RunModulation::NotRun { export } => json!({
+            "kind": "not_run",
+            "export": export,
         }),
     }
 }
@@ -198,14 +197,14 @@ fn record_json(
     index: usize,
     tc: &rs_cam_core::session::ToolpathConfig,
 ) -> Value {
-    let profile = session.cutter_op_profile(tc, suggest_run_modulation());
+    let profile = session.cutter_op_profile(tc);
     let mut record = serde_json::Map::new();
     record.insert("index".into(), json!(index));
-    // P29-10z (lead ruling Q2): the run modulation the limit rows state.
-    // This command runs no simulation, so it states the default run.
+    // P29-10z, P30-2: the feed modulation the limit rows read, from the
+    // session (`run_modulation_of`).
     record.insert(
         "run_modulation".into(),
-        run_modulation_json(suggest_run_modulation()),
+        run_modulation_json(session.run_modulation_of(index)),
     );
     record.insert("toolpath_id".into(), json!(tc.id));
     record.insert("toolpath_name".into(), json!(tc.name));
@@ -223,7 +222,7 @@ fn record_json(
     record.insert(
         "limit_rows".into(),
         session
-            .limit_rows(index, None, suggest_run_modulation())
+            .limit_rows(index, None)
             .map_or(Value::Array(Vec::new()), |rows| {
                 serde_json::to_value(rows.rpm()).unwrap_or(Value::Null)
             }),
@@ -299,7 +298,7 @@ pub fn run_suggest(input: &Path, json_out: bool) -> Result<()> {
         if json_out {
             println!("{}", record_json(&session, index, tc));
         } else {
-            let profile = session.cutter_op_profile(tc, suggest_run_modulation());
+            let profile = session.cutter_op_profile(tc);
             let sug = profile
                 .as_ref()
                 .and_then(|p| p.suggested_operation.as_ref());
@@ -422,9 +421,7 @@ mod tests {
         let session = session_with(OperationType::Pocket);
         let index = session.toolpath_configs().len() - 1;
         let record = last_record(&session);
-        let door = session
-            .limit_rows(index, None, suggest_run_modulation())
-            .expect("the toolpath");
+        let door = session.limit_rows(index, None).expect("the toolpath");
         assert_eq!(
             record["limit_rows"],
             serde_json::to_value(door.rpm()).expect("the rows serialise")
@@ -482,9 +479,7 @@ mod tests {
     fn the_shipped_power_reads_the_one_core_door_m9() {
         let session = session_with(OperationType::Pocket);
         let tc = session.toolpath_configs().last().expect("one toolpath");
-        let profile = session
-            .cutter_op_profile(tc, suggest_run_modulation())
-            .expect("the tool resolves");
+        let profile = session.cutter_op_profile(tc).expect("the tool resolves");
         let feeds = profile.feeds.as_ref().expect("Suggest serves the fixture");
         let by_hand = rs_cam_core::feeds::power_at_operating_point(
             profile.shipped_operation(),

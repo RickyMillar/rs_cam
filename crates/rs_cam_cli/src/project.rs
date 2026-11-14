@@ -234,6 +234,11 @@ struct ToolpathSummaryEntry {
     /// (`ProjectSession::limit_rows`), the rows of MCP
     /// `get_tool_load_report` `limit_rows`: one row per gate and cut group.
     limit_rows: Vec<rs_cam_core::limits::CheckRow>,
+    /// P30-1: the record of the feeds that an export of the toolpath emits
+    /// now (`ProjectSession::emitted_feeds`, the record of the G-code header
+    /// and of MCP `get_tool_load_report` `emitted_feeds`); `null` with no
+    /// result.
+    emitted_feeds: Option<rs_cam_core::session::EmittedFeeds>,
 }
 
 /// One operation that never generated because an upstream simulated stock was
@@ -645,6 +650,8 @@ pub(crate) struct GcodeExportSummary {
     warnings: Vec<String>,
     /// W2.5: feeds modulated from a simulation the session no longer holds.
     feeds_cautions: Vec<String>,
+    /// P30-1: the record of the feeds of each emitted toolpath.
+    emitted_feeds: Vec<rs_cam_core::session::NamedEmittedFeeds>,
 }
 
 impl GcodeExportSummary {
@@ -656,6 +663,7 @@ impl GcodeExportSummary {
             load_advisories: Vec::new(),
             warnings: Vec::new(),
             feeds_cautions: Vec::new(),
+            emitted_feeds: Vec::new(),
         }
     }
 }
@@ -680,6 +688,7 @@ pub(crate) fn report_export_checks(
         load_outcome,
         warnings,
         feeds_cautions,
+        emitted_feeds,
     } = exported;
     let errors = machine_safety
         .iter()
@@ -717,6 +726,9 @@ pub(crate) fn report_export_checks(
     for caution in &feeds_cautions {
         eprintln!("feeds caution: {caution}");
     }
+    if let Some(report) = rs_cam_core::session::emitted_feeds_report(&emitted_feeds) {
+        eprintln!("{report}");
+    }
     let rs_cam_core::gcode::LoadPolicyOutcome { advisories } = load_outcome;
     let summary = GcodeExportSummary {
         refused: None,
@@ -728,6 +740,7 @@ pub(crate) fn report_export_checks(
             .map(rs_cam_core::gcode::ExportWarning::header_line)
             .collect(),
         feeds_cautions,
+        emitted_feeds,
     };
     (gcode, summary)
 }
@@ -1187,19 +1200,13 @@ pub fn run_project_command(
                             session
                                 .simulation_result()
                                 .and_then(|sim| sim.cut_trace.as_ref()),
-                            // P29-10z: the modulation of this run.
-                            if adaptive_feed_modulation {
-                                rs_cam_core::dressup::feed_modulation::RunModulation::Runs {
-                                    strategy: modulation_strategy,
-                                    feed_scale: modulation_feed_scale,
-                                }
-                            } else {
-                                rs_cam_core::dressup::feed_modulation::RunModulation::Off
-                            },
                         )
                     })
                     .map(|rows| rows.verdict())
                     .unwrap_or_default(),
+                emitted_feeds: session
+                    .find_toolpath_config_by_id(d.toolpath_id)
+                    .and_then(|(index, _)| session.emitted_feeds(index)),
             }
         })
         .collect();
@@ -1390,6 +1397,10 @@ pub fn run_project_command(
                 && let Some(line) = kinematics_report_line(util)
             {
                 eprintln!("      {line}");
+            }
+            // P30-1: the feeds that an export emits now (the core line).
+            if let Some(feeds) = entry.emitted_feeds.as_ref() {
+                eprintln!("      feeds {}", feeds.line());
             }
         }
         eprintln!("Adaptive feed modulation: {modulation_state}");

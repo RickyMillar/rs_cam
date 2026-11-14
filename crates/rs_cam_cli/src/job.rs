@@ -995,6 +995,9 @@ pub(crate) struct OpResult {
     pub setup_name: Option<String>,
     /// G7: the drill cycle, for the G82 dwell and native cycles.
     pub drill: Option<rs_cam_core::gcode::PhaseDrill>,
+    /// P30-1: the record of the emitted feeds (the header lines of the
+    /// phase).
+    pub feeds: Option<rs_cam_core::session::EmittedFeeds>,
 }
 
 /// Result of executing a full job: combined toolpath + per-operation results.
@@ -1058,9 +1061,9 @@ pub(crate) fn job_phase(phase: &OpResult) -> GcodePhase<'_> {
         coolant: phase.coolant,
         controller_compensation: None,
         drill: phase.drill,
-        // W2.5 (D10): a job file generates and emits; no simulation
-        // modulates its feeds.
-        feeds: Some(rs_cam_core::session::FeedStage::Planned.statement()),
+        // W2.5 (D10), P30-1: a job file generates and emits; no simulation
+        // modulates its feeds. The record of the op names them.
+        feeds: phase.feeds.clone(),
     }
 }
 
@@ -1103,6 +1106,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         }
         let tp = output.toolpath;
         let drill = output.drill;
+        let feeds = output.feeds;
         let spindle_speed = output.spindle_rpm.unwrap_or(job.job.spindle_speed);
 
         info!(
@@ -1136,6 +1140,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             flute_count,
             setup_name: op.setup.clone(),
             drill,
+            feeds,
         });
     }
 
@@ -1164,6 +1169,8 @@ struct SessionOpOutput {
     drill: Option<rs_cam_core::gcode::PhaseDrill>,
     /// The op's own `spindle_rpm`. Empty: the `[job]` spindle speed.
     spindle_rpm: Option<u32>,
+    /// P30-1: the record of the emitted feeds of the op.
+    feeds: Option<rs_cam_core::session::EmittedFeeds>,
 }
 
 /// Build a session `ToolConfig` from a job-file tool definition.
@@ -1497,11 +1504,15 @@ fn execute_op_via_session(
     let config = session.toolpath_config_at(tp_index);
     let drill = config.and_then(rs_cam_core::gcode::phase_drill_for);
     let spindle_rpm = config.and_then(|tc| tc.operation.spindle_rpm());
+    // P30-1: the record of the emitted feeds, under the post the job file
+    // emits with (the job session holds the default post).
+    let feeds = session.emitted_feeds_under(tp_index, job.job.post.definition());
     Ok(SessionOpOutput {
         toolpath,
         trace,
         drill,
         spindle_rpm,
+        feeds,
     })
 }
 

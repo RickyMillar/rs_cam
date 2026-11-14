@@ -93,11 +93,7 @@ fn the_summary_prints_the_limit_rows_p29_10() {
             .find(|(_, tc)| serde_json::json!(tc.id) == entry["id"])
             .expect("the entry names a toolpath");
         let rows = session
-            .limit_rows(
-                index,
-                trace.as_ref(),
-                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-            )
+            .limit_rows(index, trace.as_ref())
             .expect("the toolpath")
             .verdict();
         // Through text and back, as `summary.json` is read: the parser of

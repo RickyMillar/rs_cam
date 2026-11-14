@@ -103,30 +103,75 @@ impl ModulationStrategy {
     }
 }
 
-/// Feeds contract P29-10z (lead ruling Q2): the feed modulation that the
-/// simulation run applies after it measures the engagement. A limit row
-/// before the simulation reads it to know if the modulator re-times the
-/// stated feed of a cut (`limits::Caveat::BeforeModulation`).
+/// Feeds contract P29-10z (lead ruling Q2), P30-2 (lead ruling
+/// 2026-11-14): the feed modulation of one toolpath, as its stored result
+/// holds it. A limit row reads it to know if the modulator re-times the
+/// stated feed of a cut, and if the export carries those re-timed feeds
+/// (`limits::Caveat::BeforeModulation`, which softens) or the stated feed
+/// (`limits::Caveat::UntilModulated`, which does not).
 ///
-/// No `Default`: every reader states the value. A surface that runs the
-/// simulation states the modulation of its run; a reader with no run (FM1,
-/// a geometry rule, a unit test) states [`Self::Off`].
+/// No `Default`. The session builds the value of a toolpath with one
+/// constructor (`ProjectSession::run_modulation_of`), and every session
+/// door of the limit rows (`limit_rows`, `safe_envelope`,
+/// `cutter_op_profile`) reads it: no surface passes a constant. A reader
+/// with no session (FM1, a geometry rule, a unit test) states
+/// [`Self::Off`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RunModulation {
-    /// No run modulates the feed: the option is off, the op is not
-    /// simulated (a disabled op), or the reader has no run.
+    /// No modulation is stated: a disabled toolpath (the run does not
+    /// simulate it), or a reader with no session. No row takes a caveat.
     Off,
-    /// The run modulates with this strategy and feed scale
-    /// (`SimulationOptions::modulation_strategy`, `modulation_feed_scale`).
-    Runs {
+    /// The toolpath holds a current modulated result: the run re-timed its
+    /// moves with this strategy and feed scale
+    /// (`ResultProvenance::Modulated` records them), and the export carries
+    /// the re-timed feeds. This is the one value that softens a row, so only
+    /// core builds it: `held` has no public constructor
+    /// (`ProjectSession::run_modulation_of`; a test states
+    /// [`Self::current_for_tests`]).
+    Current {
         /// The strategy.
         strategy: ModulationStrategy,
         /// The feed scale.
         feed_scale: f64,
+        /// The proof that a stored modulated result holds this value.
+        held: HeldByResult,
+    },
+    /// The toolpath holds no current modulated result (no result, a
+    /// planned result, a superseded result): a simulation with feed
+    /// modulation would re-time its moves, and an export carries `export`
+    /// now.
+    NotRun {
+        /// What an export of the toolpath carries now.
+        export: crate::limits::ExportFeed,
     },
 }
 
+/// P30-2: the proof that a current modulated result holds a
+/// [`RunModulation::Current`]. It has no public constructor, so a surface
+/// cannot state the softening value: it reads `ProjectSession::run_modulation_of`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeldByResult(());
+
+impl HeldByResult {
+    /// The proof; only core code that reads a stored result builds it.
+    pub(crate) const fn read_from_result() -> Self {
+        Self(())
+    }
+}
+
 impl RunModulation {
+    /// A [`Self::Current`] for a test with no session (the envelope rows
+    /// of a fixture, the declared-list proof). Only a test build has it.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub const fn current_for_tests(strategy: ModulationStrategy, feed_scale: f64) -> Self {
+        Self::Current {
+            strategy,
+            feed_scale,
+            held: HeldByResult(()),
+        }
+    }
+
     /// **THE declared list (lead ruling Q2): the limits whose bound the
     /// modulator holds on every engaged cutting move that it re-times.**
     /// The list holds a limit only where the code of the strategy caps the
@@ -143,14 +188,19 @@ impl RunModulation {
     ///   pin a move at the chip floor when no feed holds the budget, so the
     ///   move is not proved inside those limits. `ChipMin`: a point band has
     ///   no floor, and a load cap wins over the floor (P20g).
+    ///
+    /// P30-2: [`Self::NotRun`] reads the list of a default run
+    /// (`DEFAULT_RUN`: `ConstrainedMax` at scale 1), the run of the
+    /// GUI, MCP and the CLI with no flag.
     #[must_use]
     pub fn capped_limits(self) -> &'static [crate::limits::LimitId] {
         const CHIP_MAX: &[crate::limits::LimitId] = &[crate::limits::LimitId::ChipMax];
         match self {
             Self::Off => &[],
-            Self::Runs {
+            Self::Current {
                 strategy: ModulationStrategy::ConstrainedMax,
                 feed_scale,
+                held: _,
             } => {
                 if feed_scale <= 1.0 {
                     CHIP_MAX
@@ -158,31 +208,43 @@ impl RunModulation {
                     &[]
                 }
             }
-            Self::Runs {
+            Self::Current {
                 strategy: ModulationStrategy::BandMid,
                 feed_scale: _,
+                held: _,
             } => CHIP_MAX,
+            Self::NotRun { export: _ } => Self::DEFAULT_RUN.capped_limits(),
         }
     }
 
-    /// The modulation that the run applies to one toolpath. The run
-    /// modulates only the enabled toolpaths that it simulates
-    /// (`ProjectSession::apply_adaptive_feed_modulation` walks the enabled
-    /// toolpaths), so a disabled toolpath reads [`Self::Off`]. Every door that
-    /// builds the envelope rows of a toolpath reads it
-    /// (`ProjectSession::safe_envelope`, `cutter_op_profile`, the GUI feeds
-    /// memo).
-    #[must_use]
-    pub const fn for_toolpath(self, enabled: bool) -> Self {
-        if enabled { self } else { Self::Off }
-    }
+    /// The modulation of a default run (`SimulationOptions::default()`:
+    /// `ConstrainedMax`, scale 1; the GUI adopt step modulates with it).
+    /// Crate-private: it is a softening value.
+    pub(crate) const DEFAULT_RUN: Self = Self::Current {
+        strategy: ModulationStrategy::ConstrainedMax,
+        feed_scale: 1.0,
+        held: HeldByResult(()),
+    };
 
-    /// `true` when the run re-times the moves of `cut` and caps them at
-    /// the bound of `limit`: the limit is in [`Self::capped_limits`] and
-    /// the modulator re-times the cut ([`re_times`]).
+    /// What the modulation does to a row of `limit` on `cut`: nothing when
+    /// the limit is not in [`Self::capped_limits`] or the modulator does not
+    /// re-time the cut ([`re_times`]); else it capped the cut (a current
+    /// modulated result) or would cap it (no current modulated result).
     #[must_use]
-    pub fn caps(self, limit: crate::limits::LimitId, cut: crate::limits::CutKind) -> bool {
-        re_times(cut) && self.capped_limits().contains(&limit)
+    pub fn caps(
+        self,
+        limit: crate::limits::LimitId,
+        cut: crate::limits::CutKind,
+    ) -> crate::limits::RowModulation {
+        use crate::limits::RowModulation;
+        if !(re_times(cut) && self.capped_limits().contains(&limit)) {
+            return RowModulation::NotCapped;
+        }
+        match self {
+            Self::Off => RowModulation::NotCapped,
+            Self::Current { .. } => RowModulation::CapsTheBound,
+            Self::NotRun { export } => RowModulation::WouldCapTheBound { export },
+        }
     }
 }
 
@@ -193,7 +255,7 @@ impl RunModulation {
 /// gives the body kinds; an empty list is a kind that the code does not
 /// tie to an intent (the peck ladder: its plunges carry no intent of their
 /// own).
-const fn intents_of(cut: crate::limits::CutKind) -> &'static [MoveIntent] {
+pub(crate) const fn intents_of(cut: crate::limits::CutKind) -> &'static [MoveIntent] {
     use crate::limits::{CutKind, EntryKind};
     const CUT: &[MoveIntent] = &[
         MoveIntent::ClearingCut,
@@ -2711,10 +2773,7 @@ mod tests {
             ctx.cutting_ceiling = ceiling(1.0e5);
             ctx.strategy = strategy;
             ctx.feed_scale = feed_scale;
-            let run = RunModulation::Runs {
-                strategy,
-                feed_scale,
-            };
+            let run = RunModulation::current_for_tests(strategy, feed_scale);
             let mut tp = straight_toolpath(3, commanded);
             let engagements = vec![engaged; tp.moves.len()];
             let out = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
@@ -2748,5 +2807,16 @@ mod tests {
             }
         }
         assert!(RunModulation::Off.capped_limits().is_empty());
+        // P30-2: with no current modulated result the list is the list of a
+        // default run, so a row says what a simulation would cap.
+        for export in [
+            crate::limits::ExportFeed::Stated,
+            crate::limits::ExportFeed::OlderModulation,
+        ] {
+            assert_eq!(
+                RunModulation::NotRun { export }.capped_limits(),
+                RunModulation::DEFAULT_RUN.capped_limits()
+            );
+        }
     }
 }

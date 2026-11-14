@@ -47,6 +47,8 @@ impl RsCamApp {
                     warnings,
                     // The pre-flight modal shows the feeds cautions.
                     feeds_cautions: _,
+                    // P30-1: the records print in the MCP reply and the header.
+                    emitted_feeds: _,
                 } = exported;
                 self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                 if !self.gate(&gcode, post_format, allow_errors) {
@@ -140,6 +142,8 @@ impl RsCamApp {
                         load_outcome,
                         warnings,
                         feeds_cautions: _,
+                        // P30-1: the records print in the MCP reply and the header.
+                        emitted_feeds: _,
                     } = file;
                     self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                     out.push((name, gcode));
@@ -179,6 +183,8 @@ impl RsCamApp {
                         load_outcome,
                         warnings,
                         feeds_cautions: _,
+                        // P30-1: the records print in the MCP reply and the header.
+                        emitted_feeds: _,
                     } = exported;
                     self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                     out.push((name, gcode));
@@ -234,6 +240,8 @@ impl RsCamApp {
             load_outcome,
             warnings,
             feeds_cautions,
+            // P30-1: the records print in the MCP reply and the header.
+            emitted_feeds: _,
         } = exported;
         self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
         if let Some(report) = crate::io::export::feeds_caution_report(&feeds_cautions) {
@@ -342,6 +350,8 @@ impl RsCamApp {
                     warnings,
                     // The pre-flight modal shows the feeds cautions.
                     feeds_cautions: _,
+                    // P30-1: the records print in the MCP reply and the header.
+                    emitted_feeds: _,
                 } = exported;
                 self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                 let line_count = gcode.lines().count();

@@ -88,12 +88,7 @@ fn the_suggest_envelope_names_the_hobby_class_p11c() {
         }))
         .expect("the toolpath");
     let tc = s.toolpath_configs().last().expect("added").clone();
-    let profile = s
-        .cutter_op_profile(
-            &tc,
-            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-        )
-        .expect("a profile");
+    let profile = s.cutter_op_profile(&tc).expect("a profile");
     let envelope = profile.envelope.as_ref().expect("an envelope");
     let json = serde_json::to_string(envelope).expect("json");
     assert!(

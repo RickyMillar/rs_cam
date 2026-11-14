@@ -109,12 +109,7 @@ fn the_add_door_writes_the_proposal_and_states_its_assumptions_p13c() {
             }))
             .expect("add the toolpath");
         let tc = &s.toolpath_configs()[0];
-        let profile = s
-            .cutter_op_profile(
-                tc,
-                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
-            )
-            .expect("the profile");
+        let profile = s.cutter_op_profile(tc).expect("the profile");
         let rationale = SuggestRationale::from_warnings(&profile.warnings);
         let text = serde_json::to_string(&rationale).expect("json");
         for note in NOTES {

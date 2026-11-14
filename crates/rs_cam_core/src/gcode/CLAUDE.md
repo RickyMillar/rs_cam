@@ -22,8 +22,8 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
 - A post-processor is data, not code. Add a `PostDefinition` row, not a
   branch in the emitter. F090/F034: `tool_change` is required and an unknown post key refuses.
 - `PostFormat::from_token` reads only the `to_token` spellings; an unknown `[job.post] format` refuses (no GRBL fallback).
-- W2.5: every session door fills `GcodePhase::feeds` from the slot it emits
-  (`FeedStage::statement`). The line follows the label. It states, never refuses.
+- W2.5, P30-1: every session door fills `GcodePhase::feeds` with the record of the slot it emits
+  (`ProjectSession::emitted_feeds`); its `header_lines` follow the label (stage, cutting feeds, entries). It states, never refuses.
 - F067: ONE door, `ProjectSession::export_program`: the K6 warnings (`export_warnings`), `emit_checked`, the
   machine-safety pass, then the rapid rewrite, from the SESSION post config; `emit_checked` alone is for the
   session-less job file. K6 (ruling Q6): no finding refuses and no override exists. `EmitError` (inch units,
