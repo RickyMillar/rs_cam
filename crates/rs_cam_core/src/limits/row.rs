@@ -1439,7 +1439,9 @@ fn gate_rows<V>(
                     samples: Some(*samples),
                     material: None,
                 },
-                CheckState::NoNumber(NoNumberReason::NotJudgedHere),
+                // P29-11 11-2b: the cell takes the class of its row, as the
+                // envelope cell does (one classification).
+                super::scope_cell_state(row),
                 std::slice::from_ref(reason),
                 // The cell names its own row of `EXEMPTIONS`.
                 EXEMPTIONS

@@ -764,3 +764,18 @@ keys on `NotApplicableForOp`. 11-2b does not change them.
 The explainer: the CLI records of operator idx 3 and 4 hold 12 envelope rows each from before
 11-2 (`P28-20`, `NoNumber(NotJudgedHere)`); the tool-load report holds 48 gate rows that 11-2b
 moves. Both are refreshed from the probe dumps.
+
+Measured (11-2b): as predicted. The verdict rows of operator 48, `nz_wanaka_21` 24, rivmap100 12
+and rivmap100_live 12 (the drill group of each toolpath that is not a drill cycle: chip max,
+deflection, force budget) and 15 rows of the fixture dump go from `NoNumber(NotJudgedHere)` to
+`NotApplicable(NoRadialEngagement)`, with the face, the tone and the detail of the prediction;
+the exemption and the extra clause stay. No other line of the five dumps moves (envelope rows,
+`EFF`, `NARR`, profile lines, face lines). The `P28-10` rows do not move. FM1: no cell moves; the
+op golden shows only its known 46 rows. A new claim 4b of `one_record_on_every_surface_p29_10`
+holds the gate side (the state of each scope cell row equals `limits::scope_cell_state` of its
+row, with a non-vacuity count of each class on each fixture). The explainer: 24 envelope rows of
+the CLI records of operator idx 3 and 4 and 48 gate rows of the tool-load report are replaced by
+their rows of the probe dump, after a check that the old row equals the HEAD row in every field
+but the state, the tone, the face and the detail (`p29_11c/tools/regen_112b.py`); the page does not
+change; `assert_claims.py`: 11 of 11. Wire: the `state`, `tone`, `face` and `detail` of those gate
+rows; no key is added or removed.

@@ -90,6 +90,19 @@ pub fn physical_geometry_of(id: &str) -> Option<Geometry> {
     }
 }
 
+/// P29-11 11-2b: THE state of a cell that `limits::scope` does not judge,
+/// from the class of its row `id`: a physical row gives
+/// `NotApplicable(geometry)`, any other row `NoNumber(NotJudgedHere)`. One
+/// classification for both sides: the envelope cell (`feeds::envelope`,
+/// `CutRow::of_cell`) and the gate cell (`row::rows_of_verdict`) call it.
+#[must_use]
+pub fn scope_cell_state(id: &str) -> super::CheckState {
+    physical_geometry_of(id).map_or(
+        super::CheckState::NoNumber(super::NoNumberReason::NotJudgedHere),
+        super::CheckState::NotApplicable,
+    )
+}
+
 /// The load caps of the feed modulator.
 const MODULATOR_CAPS: &[LimitId] = &[
     LimitId::ChipMax,

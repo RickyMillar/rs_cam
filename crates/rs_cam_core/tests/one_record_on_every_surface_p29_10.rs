@@ -24,7 +24,9 @@
 //!   the end of its interval, so its state follows its margin); a planned or
 //!   stated row `Exceeds` exactly when its margin is below `-1e-9`.
 //! - Claim 4: every exemption id is a row of `EXEMPTIONS`; every `NoBound`,
-//!   `NotJudgedHere` and may-occur row has one.
+//!   `NotJudgedHere` and may-occur row has one. Claim 4b (P29-11 11-2b): a
+//!   gate row of a scope cell takes the class of its row
+//!   (`limits::scope_cell_state`, the classification of the envelope cell).
 //! - Claim 5: `WorstCase` holds exactly on a ramp entry row with an own
 //!   depth; `LowerBound` only on a row of the body plane of a Project
 //!   Curve (`BodyDepth::AtLeast`);
@@ -596,6 +598,34 @@ fn verdict_rows(name: &str, session: &ProjectSession) {
             "{name}: the {group:?} cell row {id} is not on its row"
         );
     }
+    // Claim 4b (P29-11 11-2b): a gate row of a cell that the scope does not
+    // judge takes the class of its row, by the one classification the
+    // envelope cell reads: a physical row gives `NotApplicable`, a row that
+    // needs a ruling `NoNumber(NotJudgedHere)`. Non-vacuity: one of each.
+    let (mut physical, mut ruling) = (0, 0);
+    for r in &rows {
+        let (Subject::Group { group, .. }, Some(id)) = (r.subject(), r.exemption()) else {
+            continue;
+        };
+        if !cells.iter().any(|(g, row)| g == group && row == id) {
+            continue;
+        }
+        assert_eq!(
+            r.check().state,
+            limits::scope_cell_state(id),
+            "{name}: {}: the cell takes the class of its row {id}",
+            r.face()
+        );
+        match r.check().state {
+            CheckState::NotApplicable(_) => physical += 1,
+            CheckState::NoNumber(_) => ruling += 1,
+            CheckState::Within | CheckState::Exceeds => {}
+        }
+    }
+    assert!(
+        physical > 0 && ruling > 0,
+        "{name}: non-vacuity: {physical} physical and {ruling} ruling scope cells"
+    );
     // Claim 3b: the depth gate rows compare a depth.
     for r in &rows {
         if r.check().limit == LimitId::ForceBudget {

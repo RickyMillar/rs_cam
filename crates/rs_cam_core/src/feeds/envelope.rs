@@ -1688,10 +1688,17 @@ impl CutRow {
         // P29-11 11-2: a scope cell whose row is physical (a drill cycle has
         // no radial engagement, P28-20) is `NotApplicable` with that
         // reason; a cell whose row needs a ruling (P28-10) keeps
-        // `NoNumber(NotJudgedHere)`. Both name their row.
+        // `NoNumber(NotJudgedHere)`. Both name their row. 11-2b: the one
+        // classification of both sides, `limits::scope_cell_state`.
+        let geometry = scope_row.and_then(|row| match crate::limits::scope_cell_state(row) {
+            crate::limits::CheckState::NotApplicable(geometry) => Some(geometry),
+            crate::limits::CheckState::Within
+            | crate::limits::CheckState::Exceeds
+            | crate::limits::CheckState::NoNumber(_) => None,
+        });
         Self {
             scope_row,
-            geometry: scope_row.and_then(crate::limits::physical_geometry_of),
+            geometry,
             ..Self::of(cut, presence, depth, value, bound)
         }
     }
