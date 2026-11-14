@@ -409,3 +409,41 @@ fn the_verdict_places_the_chipload_against_the_band() {
         assert_eq!(eff.verdict, want, "fz {fz}");
     }
 }
+
+/// P29-11 11-7 (lead ruling O4): the chip verdict reads the lift of Step 5
+/// at the ENGAGED diameter of the cut (`FeedsResult::effective_diameter_mm`,
+/// the diameter of a ball or a tapered tool at the shipped depth), not the
+/// nominal diameter. The advance sits between the band minimum over the two
+/// lifts, so the verdict at the engaged diameter is in the band and the
+/// verdict at the nominal diameter is thin.
+#[test]
+fn the_verdict_reads_the_lift_at_the_engaged_diameter_p29_11() {
+    let op = pocket_op();
+    let rule = op
+        .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+        .body_facts()
+        .thins_chip();
+    let engaged_mm = 0.75 * DIAMETER_MM;
+    let lift_nominal = rule.lift(RADIAL_WOC_MM, DIAMETER_MM);
+    let lift_engaged = rule.lift(RADIAL_WOC_MM, engaged_mm);
+    assert!(
+        lift_nominal > lift_engaged,
+        "non-vacuity: the lifts differ ({lift_nominal} against {lift_engaged})"
+    );
+    let fz = BAND_MIN_MM * (lift_nominal * lift_engaged).sqrt();
+    let verdict_at = |effective_mm: f64| {
+        let mut point = operating_point(17_000.0, fz, AXIAL_DOC_MM, RADIAL_WOC_MM, vendor_band());
+        point.effective_diameter_mm = effective_mm;
+        cut_efficiency(
+            &op,
+            &six_mm_flat(),
+            &softwood(),
+            &MachineProfile::default(),
+            &point,
+        )
+        .expect("softwood carries a force line")
+        .verdict
+    };
+    assert_eq!(verdict_at(engaged_mm), ChipVerdict::InBand);
+    assert_eq!(verdict_at(DIAMETER_MM), ChipVerdict::Thin);
+}

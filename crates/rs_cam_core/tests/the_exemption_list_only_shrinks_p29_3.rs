@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 25;
+const MAX_NEEDS_RULING: usize = 24;
 /// Every row.
-const ROWS: usize = 36;
+const ROWS: usize = 35;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -98,8 +98,10 @@ const RULED: usize = 3;
 /// judges every declared cut against `VerticalRateLimit::bound`.
 /// P29-11 11-3 closed the row `S-NotJudgedHere` with two files (ROWS 36,
 /// need a ruling 25): the stated point on a fixed axis or per point is a
-/// value check (`SafeEnvelope::stated_value_check`).
-const ROWS_WITH_A_FILE: usize = 36;
+/// value check (`SafeEnvelope::stated_value_check`). P29-11 11-7 closed the
+/// row `U-efficiency` (ROWS 35, need a ruling 24): the efficiency card reads
+/// the engaged diameter and the deflection limit of the cut.
+const ROWS_WITH_A_FILE: usize = 35;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [

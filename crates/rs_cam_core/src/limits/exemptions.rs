@@ -123,7 +123,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 36] = [
+pub static EXEMPTIONS: [Exemption; 35] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -498,16 +498,8 @@ pub static EXEMPTIONS: [Exemption; 36] = [
         where_: &["src/compute/catalog.rs", "src/compute/catalog/cuts.rs"],
         closes_in: "later (the planner feeds the sweep unlifted, or the sweep is a ceiling)",
     },
-    // Ruling Q7: `feeds/efficiency.rs` reads the nominal diameter.
-    Exemption {
-        id: "U-efficiency",
-        what: "the chip-thinning lift and the specific energy of the efficiency card",
-        limit: &[],
-        who: Who::Reader("feeds/efficiency.rs reads the nominal diameter, not the engagement"),
-        class: NR,
-        where_: &["src/feeds/efficiency.rs"],
-        closes_in: "P29-11",
-    },
+    // P29-11 11-7 closed `U-efficiency`: the efficiency card reads the
+    // engaged diameter and the deflection limit of the cut.
     // F: the facts of the cut that hold a label value (ruling Q2).
     Exemption {
         id: "F-ThinsChip",

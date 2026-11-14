@@ -126,7 +126,9 @@ pub struct CutEfficiency {
     /// `fz_mid / fz` — time is inversely proportional to chipload at
     /// fixed RPM, DOC and WOC. `None` without a band.
     pub time_ratio_vs_band_mid: Option<f64>,
-    /// `1 − predicted_δ / EXCEEDS_BOUND`. `None` when
+    /// `1 − predicted_δ / limit`, the limit being the deflection limit of
+    /// the body cut (P29-11 11-7: `tool_load::deflection::exceeds_limit` of
+    /// the cut's stock to leave, `min(leave, EXCEEDS_BOUND_MM)`). `None` when
     /// [`crate::feeds::predict::predict_peak_deflection_um`] refuses —
     /// a drill, no force line, a custom material, no DPP or no stickout, each
     /// of which the predictor now names through
@@ -206,12 +208,15 @@ pub fn cut_efficiency(
     // half the diameter and on a finish pass.
     // P23a: the width of Suggest's lift (`CutList::full_feed_width`). P29-11
     // L-1 (S6): the rule is the body cut's fact (`CutFacts::thins_chip`).
-    // EXEMPT(U-efficiency)
+    // P29-11 11-7 (lead ruling O4): the lift of Step 5 itself, at the
+    // ENGAGED diameter of the cut (`FeedsResult::effective_diameter_mm`, the
+    // diameter of a ball or a tapered tool at the shipped depth), not the
+    // nominal diameter.
     let cuts =
         operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
     let lift = cuts.body_facts().thins_chip().lift(
         cuts.full_feed_width(radial_width_mm, diameter_mm),
-        diameter_mm,
+        result.effective_diameter_mm,
     );
     let held_chip_mm = advance_per_tooth_mm / lift;
     let verdict = match band {
@@ -255,7 +260,10 @@ pub fn cut_efficiency(
     let deflection_ceiling_mm =
         deflection_chipload_ceiling_mm(tool, line, axial_doc_mm, radial_width_mm);
 
-    let force_headroom = force_headroom(operation, tool, material, machine);
+    // P29-11 11-7 (lead ruling O4): the deflection limit of the body cut.
+    let (limit_mm, _) =
+        crate::tool_load::deflection::exceeds_limit(cuts.body_facts().leave_after_mm());
+    let force_headroom = force_headroom(operation, tool, material, machine, limit_mm);
 
     Some(CutEfficiency {
         advance_per_tooth_mm,
@@ -364,8 +372,9 @@ fn deflection_chipload_ceiling_mm(
     .ok()
 }
 
-/// `1 − predicted_δ / EXCEEDS_BOUND`, or `None` when the predictor
-/// refuses or its figure is a floor.
+/// `1 − predicted_δ / limit_mm`, or `None` when the predictor refuses or
+/// its figure is a floor. `limit_mm` is the deflection limit of the body
+/// cut (P29-11 11-7).
 ///
 /// [`crate::feeds::predict::predict_peak_deflection_um`] used to report
 /// every refusal as `0.0 µm`, and this function decoded that zero back
@@ -377,6 +386,7 @@ fn force_headroom(
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
+    limit_mm: f64,
 ) -> Option<f64> {
     let prediction =
         crate::feeds::predict::predict_peak_deflection_um(operation, tool, material, machine)
@@ -393,6 +403,6 @@ fn force_headroom(
     if !(predicted_um.is_finite() && predicted_um > 0.0) {
         return None;
     }
-    let headroom = 1.0 - (predicted_um / 1000.0) / EXCEEDS_BOUND_MM;
+    let headroom = 1.0 - (predicted_um / 1000.0) / limit_mm;
     headroom.is_finite().then_some(headroom)
 }

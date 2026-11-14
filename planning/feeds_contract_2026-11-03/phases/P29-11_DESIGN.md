@@ -1059,3 +1059,20 @@ no card number moves.
 The claims move on synthetic cuts: a sentry claim in `cut_efficiency_is_closed_form_g_specenergy`
 holds both sides (a Pocket advance that is in the band at an engaged diameter of 0.75 D and thin at
 the nominal diameter; a Bore that leaves 0.1 mm doubles the used share `1 - headroom`).
+
+Measured (11-7): as predicted. The four project dumps and the fixture dump are byte-equal to the
+11-9 dumps: no `EFF` number, row, warning or proposal moves. FM1 holds no efficiency column.
+`U-efficiency` is closed: pins `ROWS` 35, `MAX_NEEDS_RULING` 24, `ROWS_WITH_A_FILE` 35, and the
+`EXEMPTIONS` array is 35 long (the compiler holds the length). A departure: the prediction named a
+sentry claim for the headroom on a Bore with a leave of 0.1 mm. A Bore is the only op that states a
+radial leave (`OperationConfig::radial_stock_to_leave_mm`), and it has no pre-simulation deflection
+figure (`predict_peak_deflection_um` refuses it), so no op of today reaches the leave branch of the
+headroom; the claim is not written. The headroom reads `deflection::exceeds_limit`, the one function
+of the gate and the envelope. `predict.rs` keeps its drill test by family (X entry `P28-17`, count 9):
+not changed here. Wire: none (the card numbers keep their fields).
+
+- Gates: the eleven named core sentries, `cut_efficiency_is_closed_form_g_specenergy`,
+  `efficiency_abstains_without_kc_g_specenergy`, `the_force_line_is_printed_per_family_b6`,
+  `suggests_own_recipe_is_not_above_the_band_p11b2`: pass. Core `--lib`: only the known timing red
+  (alone three times: pass). MCP, CLI, viz `--lib` and the ten viz binaries: pass. FM1: pass. Op
+  golden: the known 46 rows. Clippy: clean.
