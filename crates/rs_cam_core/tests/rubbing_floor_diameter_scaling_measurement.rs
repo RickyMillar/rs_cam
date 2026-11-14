@@ -35,7 +35,8 @@
 //!
 //! 1. [`report_how_often_the_rubbing_floor_binds`] — a Suggest sweep over
 //!    16 cutters x 7 cut cases x 10 species x 3 machine presets. How often the
-//!    clamp fires, by what factor it raises the advance, split by whether a vendor
+//!    warning fires (since P29-11 11-9 on the PEAK chip of the body cut, not the
+//!    commanded advance; the count was 243 under the old rule and is 261 now), by what factor it raises the advance, split by whether a vendor
 //!    band was matched, and how often the machine feed cap stops it reaching the
 //!    floor anyway.
 //! 2. [`report_the_bound_floor_as_a_fraction_of_tool_diameter`] — the "2.5 % vs
@@ -603,8 +604,13 @@ struct Row {
     banded: bool,
     /// `true` when the rubbing-floor clamp fired.
     bound: bool,
-    /// Pre-clamp commanded advance per tooth. Meaningful only when `bound`.
+    /// The commanded advance per tooth. Meaningful only when `bound`.
     requested_fpt: f64,
+    /// The peak chip of the body cut that the warning reports (mm/tooth).
+    /// Meaningful only when `bound`.
+    peak_chip: f64,
+    /// The radial width of the cut (mm).
+    ae_mm: f64,
     /// The floor actually applied — the global constant, or the matched band's
     /// derated ceiling when that sat lower. Meaningful only when `bound`.
     applied_floor: f64,
@@ -726,13 +732,17 @@ fn sweep() -> Vec<Row> {
                             // `Some(global)` when a band bound set it (the band
                             // minimum since ruling R4 Q9).
                             FeedsWarning::ChiploadBelowRubbingFloor {
-                                commanded, floor, ..
+                                commanded,
+                                peak_chip,
+                                floor,
+                                ..
                             } => {
                                 clamp = Some((
                                     *commanded,
                                     *floor,
                                     (*floor < RUBBING_FLOOR_MM_TOOTH)
                                         .then_some(RUBBING_FLOOR_MM_TOOTH),
+                                    *peak_chip,
                                 ));
                             }
                             FeedsWarning::VendorRowPublishesNoChipload { .. } => {
@@ -775,6 +785,8 @@ fn sweep() -> Vec<Row> {
                         banded: result.chipload_bounds.is_some(),
                         bound: clamp.is_some(),
                         requested_fpt: clamp.map_or(final_fpt, |c| c.0),
+                        peak_chip: clamp.map_or(f64::NAN, |c| c.3),
+                        ae_mm: ae,
                         applied_floor: clamp.map_or(f64::NAN, |c| c.1),
                         band_capped_from: clamp.and_then(|c| c.2),
                         final_fpt,
@@ -972,7 +984,7 @@ fn report_how_often_the_rubbing_floor_binds() {
         pct(unbanded.len(), total),
     );
     eprintln!(
-        "  floor BINDS on {:5} of {total} ({:5.1} %)",
+        "  floor BINDS (peak chip under the floor) on {:5} of {total} ({:5.1} %)",
         bound.len(),
         pct(bound.len(), total),
     );
@@ -1067,20 +1079,33 @@ fn report_how_often_the_rubbing_floor_binds() {
     }
     eprintln!("------------------------------------------------------------------------\n");
 
-    // Consistency of the warning itself, on every binding row. Not a new bar: a
-    // clamp that reported `requested >= floor` would be describing something other
-    // than the clamp it accompanies.
+    // Consistency of the warning itself, on every binding row. Since P29-11
+    // 11-9 the warning tests the PEAK chip of the body cut (the advance times
+    // the sine of the engagement angle), not the commanded advance. A warning
+    // that reported a peak chip at or over the floor would describe something
+    // other than a sub-floor cut. The peak chip never exceeds the advance, so
+    // a cut can warn although the commanded advance is over the floor.
     for row in &bound {
         assert!(
-            row.requested_fpt > 0.0 && row.requested_fpt < row.applied_floor,
-            "{} / {} / {:?}: ChiploadBelowRubbingFloor reported commanded {:.6} \
+            row.peak_chip > 0.0 && row.peak_chip < row.applied_floor,
+            "{} / {} / {:?}: ChiploadBelowRubbingFloor reported peak chip {:.6} \
              against floor {:.6} — the warning must describe a genuine sub-floor \
-             advance",
+             peak chip",
             row.tool,
             row.case,
             row.species,
-            row.requested_fpt,
+            row.peak_chip,
             row.applied_floor,
+        );
+        assert!(
+            row.peak_chip <= row.requested_fpt * (1.0 + 1e-9),
+            "{} / {} / {:?}: peak chip {:.6} is over the commanded advance {:.6}; \
+             the peak chip is the advance times a sine, so it cannot be over it",
+            row.tool,
+            row.case,
+            row.species,
+            row.peak_chip,
+            row.requested_fpt,
         );
         // Ruling R4 WP2a: the warning does not lift, so the recipe ships the
         // advance the warning reports.
