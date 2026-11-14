@@ -419,3 +419,73 @@ deflection) have a sample gate that judges the cut after a simulation.
   Two of them also hold known-46 rows of other fields
   (`adaptive3d/by_area_helix_cp`, `unified_finish/claims_rest_clip`); the
   field-only bless leaves those rows as they are.
+
+## R8: the export warning keeps the limits that no sample gate judges
+
+### Cause
+
+R4 (`155a25ee3`) skips `export.stated_cut_over_limit` for an op that a
+simulation covers (`sim_trace_is_fresh_for`), because the sample gates then
+judge the cut. The vendor depth table, the rubbing floor and the plunge
+rate have no sample gate (`tool_load::groups::gate_of` gives none; row
+`S-NoSampleGate`). After a simulation, a stated row of those limits with
+the gating tone warns nowhere.
+
+### Rule
+
+1. With no simulation that is fresh for the op, the warning keeps every
+   stated row with the gating tone (R4, no change).
+2. With a fresh simulation, the warning keeps only the stated rows of a
+   limit that `tool_load::groups::judged_only_before_the_simulation` gives:
+   a limit with a planned role (a depth ceiling or a value check) and no
+   gate in `gate_of`. Claim 1 of `every_limit_judges_every_declared_cut_p29_7`
+   asserts that this function equals the limits of the row
+   `S-NoSampleGate`. A new sample gate for one of them removes it from the
+   function, and its warning stops.
+3. The detail after a fresh simulation ends "no sample gate of the
+   simulation judges this limit"; with no fresh simulation it ends "no
+   current simulation measured this op" (no change).
+4. The face of the id is true in both states: "Stated cut over a limit: no
+   measured gate" (it was "Stated cut over a limit: no current
+   simulation"). The G-code header line prints this face.
+
+### Predictions (measured with the code in place, before the patch)
+
+Probe on the two test fixtures (`zz_probe_r8.rs`, deleted): the stated rows
+with the gating tone and the export warnings, with no simulation, a
+simulation with modulation off, and a simulation with modulation on.
+
+- Fixture of `a_row_softens_only_under_a_current_modulation_p30_2` (Pocket,
+  Ramp, feed 9000 mm/min):
+  - No simulation: no change. The warning names "stated point · feed cap
+    125 % over limit; 3 more stated rows over a limit; no current
+    simulation measured this op".
+  - Modulation off (claim 3): GAINS one warning, "Toolpath 'pocket': ramp
+    entry · rubbing 44 % under floor; no sample gate of the simulation
+    judges this limit". The two chip maximum rows and the feed cap row do
+    not count (the chip gate judges the chip; `load.chipload.high` stays).
+  - Modulation on (claim 2): GAINS the same warning, same text.
+  - So the claims 2 and 3 of the sentry change: each asserts that literal
+    text and that no chip row and no "more stated row" clause is in it.
+- Fixture of the R4 test (Pocket, no entry style, plunge 9000 mm/min):
+  - No simulation: no change ("plunge entry · plunge rate 294 % over
+    limit; no current simulation measured this op").
+  - Modulation off: GAINS "Toolpath 'pocket': plunge entry · plunge rate
+    294 % over limit; no sample gate of the simulation judges this limit"
+    (the reviewer's case).
+  - Modulation on: GAINS the same warning.
+- Op golden: golden arms run no simulation, so no arm gains or loses a
+  warning. But the header line prints the face of the id, and the face
+  changes: the `gcode_hash` of each arm that carries the warning moves (the
+  49 arms of R4). No `moves_hash`, `spans_hash`, feed or count row moves.
+  The alternative (keep the old face) moves no row, but its header then
+  says "no current simulation" under a fresh simulation.
+- FM1: no cell moves (FM1 reads no export warning).
+- The four project files with no simulation: the same warnings as after
+  R4; only the face word of the header line changes.
+- Task 2 (rivmap100, simulated in the GUI): the export after the
+  simulation keeps a stated-cut warning for each op whose stated rubbing
+  row gates (R4 list: idx 0 to 3), with the R8 detail.
+- Open (not in this ruling): a stated row of a limit that is not a limit
+  of each cut (the p30_2 fixture: "stated point · feed cap 125 % over
+  limit", `CuttingFeedCap`) still warns nowhere after a fresh simulation.
