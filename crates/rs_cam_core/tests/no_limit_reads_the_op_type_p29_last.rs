@@ -28,6 +28,9 @@
 //! - Claim 3 (non-vacuity): the declaration file holds hits; a planted read
 //!   is found in a fixture string; a comment, a string, a test module, an
 //!   import and a definition are not reads; the scan reads the guarded tree.
+//!   Review 2026-11-15 F9: an alias, an import of the variants, a helper
+//!   that returns an op type, a family or a role, and `Self::Variant` in an
+//!   `impl` of one are reads (a planted read of each).
 //! - Claim 4: only `compute/catalog/cuts.rs` calls `CutFacts::declared`.
 //!
 //! The viz display files and MCP are scanned by the twin
@@ -293,6 +296,84 @@ fn the_scan_finds_a_planted_read_p29_last() {
     );
     let hits = op_type_scan::hits(quiet);
     assert!(hits.is_empty(), "not reads: {hits:?}");
+}
+
+/// Claim 3, review 2026-11-15 F9: the four ways round a token are reads.
+/// Each fixture plants one read; the scan of HEAD found none of them.
+#[test]
+fn the_scan_finds_the_four_blind_spots_review_f9() {
+    // 1. An alias of the op type.
+    let alias = concat!(
+        "use crate::compute::catalog::OperationType as Kind;\n",
+        "fn judge(k: Kind) -> bool {\n    k == Kind::Drill\n}\n",
+    );
+    let hits = op_type_scan::hits(alias);
+    assert_eq!(hits.len(), 2, "two reads of the alias: {hits:?}");
+    assert!(
+        hits.iter()
+            .all(|h| h.function == "judge" && h.token == "Kind"),
+        "{hits:?}"
+    );
+    // An alias of `OperationConfig` reads only before a variant.
+    let config_alias = concat!(
+        "use crate::compute::catalog::OperationConfig as Op;\n",
+        "fn judge(op: &Op) -> bool {\n    matches!(op, Op::Drill(_))\n}\n",
+    );
+    assert_eq!(
+        op_type_scan::hits(config_alias).len(),
+        1,
+        "one variant path"
+    );
+    // 2. An import of the variants: a glob, a list, at the top or in a fn.
+    let glob = concat!(
+        "use crate::compute::catalog::OperationConfig::*;\n",
+        "fn judge(op: &X) -> bool {\n",
+        "    use crate::compute::catalog::OperationType::{Drill, Pocket};\n",
+        "    matches!(op, Pocket(_))\n}\n",
+    );
+    let hits = op_type_scan::hits(glob);
+    assert_eq!(hits.len(), 2, "two imports of the variants: {hits:?}");
+    assert!(
+        hits.iter().all(|h| h.token == op_type_scan::VARIANT_IMPORT),
+        "{hits:?}"
+    );
+    assert!(hits.iter().any(|h| h.function == "judge"), "{hits:?}");
+    // 3. A helper outside the guarded files that returns the family, called
+    //    by a neutral name.
+    let outside = "impl Catalog {\n    pub fn kind_of(&self) -> Option<OperationFamily> {\n        self.f\n    }\n}\n";
+    let helpers = op_type_scan::helper_names([outside]);
+    assert!(helpers.contains("kind_of"), "{helpers:?}");
+    let guarded = "fn judge(c: &Catalog) -> bool {\n    c.kind_of() == None\n}\n";
+    assert!(op_type_scan::hits(guarded).is_empty(), "no token by itself");
+    let hits = op_type_scan::hits_with(guarded, &helpers);
+    assert_eq!(hits.len(), 1, "the helper call: {hits:?}");
+    assert_eq!(hits[0].function, "judge");
+    // 4. `Self::Variant` inside an impl of the op type; `Self` of another
+    //    type is not a read.
+    let self_variant = concat!(
+        "impl OperationConfig {\n",
+        "    fn depth_cap(&self) -> f64 {\n",
+        "        match self {\n            Self::Pocket(_) => 1.0,\n            Self::Drill(_) => 0.0,\n        }\n",
+        "    }\n}\n",
+        "impl From<Lut> for Row {\n    fn from(l: Lut) -> Self {\n        Self::A\n    }\n}\n",
+    );
+    let hits = op_type_scan::hits(self_variant);
+    assert_eq!(hits.len(), 2, "two Self variants of the op type: {hits:?}");
+    assert!(
+        hits.iter()
+            .all(|h| h.function == "depth_cap" && h.token == op_type_scan::SELF_VARIANT),
+        "{hits:?}"
+    );
+    // Non-vacuity on the tree: the scan finds the helpers of core.
+    let core: Vec<String> = source_scan::rust_files(&src_root())
+        .iter()
+        .map(|p| std::fs::read_to_string(p).expect("a source file reads"))
+        .collect();
+    let names = op_type_scan::helper_names(core.iter().map(String::as_str));
+    assert!(
+        names.contains("op_type") && names.contains("family"),
+        "the helpers of core: {names:?}"
+    );
 }
 
 /// Claim 4: the facts of a cut have one constructor, and only the

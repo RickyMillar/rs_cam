@@ -74,7 +74,10 @@ fn src_root() -> PathBuf {
 
 #[test]
 fn no_surface_reads_the_op_type_p29_last() {
-    let table = op_type_scan::counts(&src_root(), guarded);
+    // Review 2026-11-15 F9 (3): the helpers that return an op type, a
+    // family or a role live in core too.
+    let core_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rs_cam_core/src");
+    let table = op_type_scan::counts_with_helpers(&src_root(), &[&src_root(), &core_src], guarded);
     if let Ok(out) = std::env::var("P29_GUARD_TABLE") {
         let _ = std::fs::write(out, op_type_scan::table_text(&table));
     }

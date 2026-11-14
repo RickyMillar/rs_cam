@@ -171,7 +171,7 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
     let recorder =
         rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let clipped = clip_annotated_to_boundary_set(
-        rs_cam_core::geometry::boundary::Reentering::none(annotated),
+        rs_cam_core::geometry::boundary::Reentering::none_for_tests(annotated),
         boundaries.first().map(std::slice::from_ref).unwrap_or(&[]),
         20.0,
         // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
@@ -181,7 +181,7 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
     .reconcile(
         &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
     )
-    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
+    .plunges_with_no_operation_for_tests();
 
     assert_eq!(
         clipped.toolpath.moves.len(),
@@ -251,7 +251,7 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
     let semantic_ctx = recorder.root_context();
 
     let result = ProjectSession::apply_boundary_clip_multi(
-        rs_cam_core::geometry::boundary::Reentering::none(annotated),
+        rs_cam_core::geometry::boundary::Reentering::none_for_tests(annotated),
         &inside_boundary_config(),
         &regions,
         &[],
@@ -309,7 +309,7 @@ fn a_genuine_collapse_refuses_g_boundcollapse() {
     let semantic_ctx = recorder.root_context();
 
     let err = ProjectSession::apply_boundary_clip_multi(
-        rs_cam_core::geometry::boundary::Reentering::none(annotated),
+        rs_cam_core::geometry::boundary::Reentering::none_for_tests(annotated),
         &inside_boundary_config(),
         &regions,
         &[],

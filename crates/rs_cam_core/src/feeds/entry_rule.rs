@@ -407,11 +407,26 @@ impl EntryPlungeFeed {
     ///
     /// [`EntryNoNumber::NoPlungeRate`] when the op states no usable plunge
     /// rate (S11).
-    pub fn of_op_plunge_rate(op_plunge_rate: Option<f64>) -> Result<Self, EntryNoNumber> {
+    ///
+    /// Review 2026-11-15 F9: crate-private, so a door outside core cannot
+    /// pass a number that is not the op plunge rate; a test outside the
+    /// crate takes [`Self::of_op_plunge_rate_for_tests`].
+    pub(crate) fn of_op_plunge_rate(op_plunge_rate: Option<f64>) -> Result<Self, EntryNoNumber> {
         op_plunge_rate
             .filter(usable)
             .map(|mm_min| Self { mm_min })
             .ok_or(EntryNoNumber::NoPlungeRate)
+    }
+
+    /// [`Self::of_op_plunge_rate`] for a test outside the crate (the
+    /// `test-support` door).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::of_op_plunge_rate`].
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn of_op_plunge_rate_for_tests(op_plunge_rate: Option<f64>) -> Result<Self, EntryNoNumber> {
+        Self::of_op_plunge_rate(op_plunge_rate)
     }
 
     /// The feed (mm/min).

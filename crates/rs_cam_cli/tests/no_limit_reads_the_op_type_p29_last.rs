@@ -36,8 +36,9 @@ fn zero_tolerance(_rel: &str) -> bool {
     false
 }
 
-/// The allow-list as it stands after commits L-1 and L-2 (no X entry). The
-/// list only shrinks.
+/// The allow-list as it stands after commits L-1 and L-2 (no X entry), and
+/// the six callers that the scan of review 2026-11-15 F9 sees. The list
+/// only shrinks.
 #[rustfmt::skip]
 const ALLOW: &[Allow] = &[
     // W: op parsing of the job file and the command line.
@@ -46,6 +47,14 @@ const ALLOW: &[Allow] = &[
     Allow { file: "run.rs", function: "parse_op_type", class: Class::W },
     Allow { file: "smoke.rs", function: "materialize_case_toolpath", class: Class::W },
     Allow { file: "smoke.rs", function: "parse_op_type", class: Class::W },
+    // W, review 2026-11-15 F9 (3): the callers of those parse helpers (each
+    // returns the op type), seen since the scan reads a helper call.
+    Allow { file: "job.rs", function: "execute_op_via_session", class: Class::W },
+    Allow { file: "job.rs", function: "job_op_session", class: Class::W },
+    Allow { file: "job.rs", function: "parse_job_file", class: Class::W },
+    Allow { file: "run.rs", function: "run_generic", class: Class::W },
+    Allow { file: "smoke.rs", function: "run_single_case_inner", class: Class::W },
+    Allow { file: "sweep.rs", function: "patch_job_param", class: Class::W },
     // T: a label or a report field.
     Allow { file: "run.rs", function: "print_ops", class: Class::T },
     Allow { file: "run.rs", function: "print_params", class: Class::T },
@@ -62,7 +71,10 @@ fn src_root() -> PathBuf {
 
 #[test]
 fn no_surface_reads_the_op_type_p29_last() {
-    let table = op_type_scan::counts(&src_root(), guarded);
+    // Review 2026-11-15 F9 (3): the helpers that return an op type, a
+    // family or a role live in core too.
+    let core_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rs_cam_core/src");
+    let table = op_type_scan::counts_with_helpers(&src_root(), &[&src_root(), &core_src], guarded);
     if let Ok(out) = std::env::var("P29_GUARD_TABLE") {
         let _ = std::fs::write(out, op_type_scan::table_text(&table));
     }

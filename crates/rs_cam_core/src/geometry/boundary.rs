@@ -111,11 +111,14 @@ pub struct Reentering {
 }
 
 /// Why the re-entry descents of a clip stay straight plunges with no entry
-/// step (P29-8e).
+/// step (P29-8e). Review 2026-11-15 F9: crate-private, and the reason of
+/// no operation exists only in a test build, so a new product door cannot
+/// leave its re-entries as plunges by naming it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlungesStay {
+pub(crate) enum PlungesStay {
     /// No operation and so no entry rule: a test or a probe of the clip
     /// alone.
+    #[cfg(any(test, feature = "test-support"))]
     NoOperation,
     /// The K1 obstacle backstop after the entry-descent split. A vertical
     /// descent keeps the tool in a column that the obstacle check allowed;
@@ -134,12 +137,29 @@ pub enum PlungesStay {
 
 impl Reentering {
     /// A toolpath before any clip, or one whose re-entries all met the
-    /// entry rule: no open re-entry.
-    pub fn none(annotated: AnnotatedToolpath) -> Self {
+    /// entry rule: no open re-entry. Review 2026-11-15 F9: crate-private;
+    /// a test outside the crate takes [`Self::none_for_tests`].
+    pub(crate) fn none(annotated: AnnotatedToolpath) -> Self {
         Self {
             annotated,
             reentries: ClipReentries::default(),
         }
+    }
+
+    /// [`Self::none`] for a test or a probe of the clip alone (the
+    /// `test-support` door).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn none_for_tests(annotated: AnnotatedToolpath) -> Self {
+        Self::none(annotated)
+    }
+
+    /// The toolpath with each re-entry descent left a straight plunge, for a
+    /// test or a probe of the clip alone, with no operation and so no entry
+    /// rule (the `test-support` door; `PlungesStay::NoOperation`).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn plunges_with_no_operation_for_tests(self) -> AnnotatedToolpath {
+        self.stay_plunges(PlungesStay::NoOperation)
     }
 
     /// The toolpath.
@@ -155,12 +175,13 @@ impl Reentering {
     }
 
     /// The toolpath with each re-entry descent left a straight plunge, for
-    /// the reason `why`.
+    /// the reason `why` (review 2026-11-15 F9: crate-private).
     #[must_use]
-    pub fn stay_plunges(self, why: PlungesStay) -> AnnotatedToolpath {
+    pub(crate) fn stay_plunges(self, why: PlungesStay) -> AnnotatedToolpath {
         match why {
-            PlungesStay::NoOperation
-            | PlungesStay::ObstacleBackstop
+            #[cfg(any(test, feature = "test-support"))]
+            PlungesStay::NoOperation => self.annotated,
+            PlungesStay::ObstacleBackstop
             | PlungesStay::RestEntryRamp
             | PlungesStay::SurfaceProbe => self.annotated,
         }

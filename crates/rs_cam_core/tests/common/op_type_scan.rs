@@ -15,6 +15,17 @@
 //! `use` declaration. It then finds each token of [`TOKENS`] as a whole
 //! word, and names the function that holds it (the innermost `fn`), or the
 //! item for a hit outside a function.
+//!
+//! Review 2026-11-15 F9 (structure item 1) closes four ways round a token:
+//!
+//! 1. an alias (`use ..::OperationType as Kind;`): each read of `Kind` is a
+//!    read;
+//! 2. an import of the variants (`use OperationConfig::*;`,
+//!    `use OperationType::{Pocket, ..};`): the `use` declaration is a read;
+//! 3. a helper on a type outside the guarded files that returns an op type,
+//!    a family or a role ([`helper_names`]): each call of it by name is a
+//!    read;
+//! 4. `Self::Variant` inside an `impl` of an op type, a family or a role.
 
 #![allow(
     dead_code,
@@ -50,6 +61,23 @@ pub const TOKENS: [&str; 17] = [
     "feeds_pass_role",
     "FeedsOperationFamily",
 ];
+
+/// Review 2026-11-15 F9: the types of an op type, a family or a role. An
+/// alias of one is a token; an import of its variants is a read; `Self::`
+/// in its `impl` is a read.
+pub const TYPE_TOKENS: [&str; 6] = [
+    "OperationType",
+    "OperationFamily",
+    "PassRole",
+    "UiProcessRole",
+    "FeedsOperationFamily",
+    "OperationConfig",
+];
+
+/// The token of an import of the variants of a type of [`TYPE_TOKENS`].
+pub const VARIANT_IMPORT: &str = "use <op type>::<variants>";
+/// The token of `Self::Variant` in an `impl` of a type of [`TYPE_TOKENS`].
+pub const SELF_VARIANT: &str = "Self::<variant>";
 
 /// The class of an allow entry (`P29-11_DESIGN.md` section 5.2). The list
 /// is closed.
@@ -92,10 +120,177 @@ pub struct Allow {
 /// line count stays.
 #[must_use]
 pub fn code_of(src: &str) -> String {
+    cut_use_declarations(&code_with_uses(src))
+}
+
+/// [`code_of`] before the `use` declarations are cut.
+fn code_with_uses(src: &str) -> String {
     let no_comments = crate::source_scan::strip_comments(src);
     let no_strings = blank_literals(&no_comments);
-    let no_tests = cut_cfg_test_items(&no_strings);
-    cut_use_declarations(&no_tests)
+    cut_cfg_test_items(&no_strings)
+}
+
+/// The byte range of each `use` declaration of `code`.
+fn use_ranges(code: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    for line in code.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        let lead = line.len() - trimmed.len();
+        for vis in ["use ", "pub use ", "pub(crate) use ", "pub(super) use "] {
+            if trimmed.starts_with(vis) {
+                let start = offset + lead;
+                out.push((start, item_end(code, start)));
+                break;
+            }
+        }
+        offset += line.len();
+    }
+    out
+}
+
+/// The byte offsets of each whole-word `word` in `code`.
+fn word_hits(code: &str, word: &str) -> Vec<usize> {
+    let bytes = code.as_bytes();
+    code.match_indices(word)
+        .filter(|&(at, _)| {
+            let end = at + word.len();
+            (at == 0 || !is_ident(bytes[at - 1])) && (end >= bytes.len() || !is_ident(bytes[end]))
+        })
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// Review 2026-11-15 F9 (1): the aliases that the `use` declarations of
+/// `code` give a type of [`TYPE_TOKENS`] (`OperationType as Kind`), with the
+/// type.
+fn aliases(code: &str) -> Vec<(String, &'static str)> {
+    let mut out = Vec::new();
+    for (from, to) in use_ranges(code) {
+        let decl = &code[from..to];
+        for ty in TYPE_TOKENS {
+            for at in word_hits(decl, ty) {
+                let rest = decl[at + ty.len()..].trim_start();
+                if let Some(after) = rest.strip_prefix("as ") {
+                    let name: String = after
+                        .trim_start()
+                        .chars()
+                        .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                        .collect();
+                    if !name.is_empty() && name != "_" {
+                        out.push((name, ty));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Review 2026-11-15 F9 (2): the offset of each import of the variants of a
+/// type of [`TYPE_TOKENS`] (`Type::*`, `Type::{..}`, `Type::Variant`) in a
+/// `use` declaration of `code`.
+fn variant_imports(code: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (from, to) in use_ranges(code) {
+        let decl = &code[from..to];
+        for ty in TYPE_TOKENS {
+            for at in word_hits(decl, ty) {
+                if decl[at + ty.len()..].trim_start().starts_with("::") {
+                    out.push(from + at);
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// The type that `Self` names in an `impl` head (`impl<T> Trait for Type`
+/// or `impl Type`), without its generics.
+fn self_type_of_impl(head: &str) -> String {
+    let head = head.trim();
+    let rest = match head.rfind(" for ") {
+        Some(at) => &head[at + 5..],
+        None => {
+            let mut rest = head.trim_start_matches("impl").trim_start();
+            if rest.starts_with('<') {
+                let mut depth = 0_i32;
+                let mut end = 0;
+                for (k, ch) in rest.char_indices() {
+                    match ch {
+                        '<' => depth += 1,
+                        '>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = k + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                rest = rest[end..].trim_start();
+            }
+            rest
+        }
+    };
+    let path: String = rest
+        .chars()
+        .take_while(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == ':')
+        .collect();
+    path.rsplit("::").next().unwrap_or_default().to_owned()
+}
+
+/// Review 2026-11-15 F9 (3): the names of the functions of `srcs` whose
+/// return type names a type of [`TYPE_TOKENS`] other than
+/// `OperationConfig` (an op type, a family or a role), outside a test item.
+/// A call of such a helper by name is a read of the op type.
+#[must_use]
+pub fn helper_names<'a>(
+    srcs: impl IntoIterator<Item = &'a str>,
+) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for src in srcs {
+        let code = code_with_uses(src);
+        for (at, _) in code.match_indices("fn ") {
+            if at > 0 && is_ident(code.as_bytes()[at - 1]) {
+                continue;
+            }
+            let name: String = code[at + 3..]
+                .chars()
+                .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                .collect();
+            if name.is_empty() {
+                continue;
+            }
+            let rest = &code[at..];
+            let Some(head_end) = rest.find(['{', ';']) else {
+                continue;
+            };
+            let head = &rest[..head_end];
+            let Some(arrow) = head.find("->") else {
+                continue;
+            };
+            let ret = head[arrow + 2..]
+                .split(" where ")
+                .next()
+                .unwrap_or_default();
+            if TYPE_TOKENS
+                .iter()
+                .filter(|ty| **ty != "OperationConfig")
+                .any(|ty| !word_hits(ret, ty).is_empty())
+            {
+                let _ = out.insert(name);
+            }
+        }
+    }
+    out
+}
+
+/// A name as a token of a [`Hit`] (a dynamic token: an alias or a helper).
+fn leak(text: String) -> &'static str {
+    Box::leak(text.into_boxed_str())
 }
 
 /// Replace the text of each string and char literal by spaces (newlines
@@ -383,9 +578,117 @@ pub struct Hit {
 /// The hits of the source `src`.
 #[must_use]
 pub fn hits(src: &str) -> Vec<Hit> {
-    let code = code_of(src);
+    hits_with(src, &std::collections::BTreeSet::new())
+}
+
+/// The hits of the source `src`, with each call of a function of `helpers`
+/// ([`helper_names`]: it returns an op type, a family or a role) a read
+/// (review 2026-11-15 F9).
+#[must_use]
+pub fn hits_with(src: &str, helpers: &std::collections::BTreeSet<String>) -> Vec<Hit> {
+    let with_uses = code_with_uses(src);
+    let code = cut_use_declarations(&with_uses);
     let (fns, items) = spans(&code);
     let mut out = Vec::new();
+    // The function or the item that holds the offset `at`.
+    let holder = |at: usize| match fns
+        .iter()
+        .filter(|s| s.start <= at && at < s.end)
+        .min_by_key(|s| s.end - s.start)
+    {
+        Some(s) => s.name.clone(),
+        None => items
+            .iter()
+            .filter(|s| s.start <= at && at < s.end)
+            .min_by_key(|s| s.end - s.start)
+            .map_or_else(|| "?".to_owned(), |s| s.name.clone()),
+    };
+    let line_of = |at: usize| code[..at].matches('\n').count() + 1;
+    // F9 (2): an import of the variants is a read, named by the function
+    // (or the item) that holds the `use`.
+    for at in variant_imports(&with_uses) {
+        out.push(Hit {
+            function: holder(at),
+            line: line_of(at),
+            token: VARIANT_IMPORT,
+        });
+    }
+    // F9 (1): an alias is a token; an alias of `OperationConfig` counts
+    // before a variant only, as `OperationConfig::` does.
+    for (alias, ty) in aliases(&with_uses) {
+        // An alias that is a token already (`FeedsOperationFamily`) is
+        // found by its token.
+        if TOKENS.contains(&alias.as_str()) {
+            continue;
+        }
+        let token = leak(alias.clone());
+        for at in word_hits(&code, &alias) {
+            if ty == "OperationConfig" {
+                let after = &code[at + alias.len()..];
+                if !(after.starts_with("::")
+                    && after.as_bytes().get(2).is_some_and(u8::is_ascii_uppercase))
+                {
+                    continue;
+                }
+            }
+            out.push(Hit {
+                function: holder(at),
+                line: line_of(at),
+                token,
+            });
+        }
+    }
+    // F9 (3): a call of a helper that returns an op type, a family or a
+    // role.
+    for name in helpers {
+        if TOKENS
+            .iter()
+            .any(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '_') == name)
+        {
+            continue;
+        }
+        let token = leak(format!("{name}() -> op type"));
+        for at in word_hits(&code, name) {
+            let after = code[at + name.len()..].trim_start();
+            let fn_def = code[..at].ends_with("fn ");
+            if !after.starts_with('(') || fn_def {
+                continue;
+            }
+            out.push(Hit {
+                function: holder(at),
+                line: line_of(at),
+                token,
+            });
+        }
+    }
+    // F9 (4): `Self::Variant` inside an `impl` of an op type, a family or a
+    // role.
+    for item in &items {
+        if !item.name.starts_with("impl") {
+            continue;
+        }
+        let self_type = self_type_of_impl(&item.name);
+        if !TYPE_TOKENS.contains(&self_type.as_str()) {
+            continue;
+        }
+        let body = &code[item.start..item.end];
+        for (k, _) in body.match_indices("Self::") {
+            let at = item.start + k;
+            let before_ok = at == 0 || !is_ident(code.as_bytes()[at - 1]);
+            if before_ok
+                && code
+                    .as_bytes()
+                    .get(at + "Self::".len())
+                    .is_some_and(u8::is_ascii_uppercase)
+            {
+                out.push(Hit {
+                    function: holder(at),
+                    line: line_of(at),
+                    token: SELF_VARIANT,
+                });
+            }
+        }
+    }
     for token in TOKENS {
         for at in token_hits(&code, token) {
             let inner = fns
@@ -418,11 +721,47 @@ pub fn hits(src: &str) -> Vec<Hit> {
     out
 }
 
+/// `true` for a test file (`tests.rs`, `*_tests.rs`, a `tests/` folder).
+fn is_test_file(rel: &str) -> bool {
+    rel.ends_with("/tests.rs")
+        || rel == "tests.rs"
+        || rel.ends_with("_tests.rs")
+        || rel.contains("/tests/")
+        || rel.starts_with("tests/")
+}
+
 /// The hit counts of each `(file, function)` of the files under `root`
 /// whose relative path `guarded` accepts. Test files (`tests.rs`,
-/// `*_tests.rs`, a `tests/` folder) are not read.
+/// `*_tests.rs`, a `tests/` folder) are not read. The helpers of F9 (3)
+/// are the ones under `root` ([`counts_with_helpers`]).
 #[must_use]
 pub fn counts(root: &Path, guarded: impl Fn(&str) -> bool) -> BTreeMap<(String, String), Vec<Hit>> {
+    counts_with_helpers(root, &[root], guarded)
+}
+
+/// [`counts`], with the helpers of F9 (3) read from every source file (not
+/// a test file) under each of `helper_roots`: a viz or CLI guard names the
+/// core source too, where the helpers on the op types live.
+#[must_use]
+pub fn counts_with_helpers(
+    root: &Path,
+    helper_roots: &[&Path],
+    guarded: impl Fn(&str) -> bool,
+) -> BTreeMap<(String, String), Vec<Hit>> {
+    let mut sources = Vec::new();
+    for helper_root in helper_roots {
+        for path in crate::source_scan::rust_files(helper_root) {
+            let rel = path
+                .strip_prefix(helper_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if !is_test_file(&rel) {
+                sources.push(std::fs::read_to_string(&path).unwrap_or_default());
+            }
+        }
+    }
+    let helpers = helper_names(sources.iter().map(String::as_str));
     let mut out: BTreeMap<(String, String), Vec<Hit>> = BTreeMap::new();
     for path in crate::source_scan::rust_files(root) {
         let rel = path
@@ -430,17 +769,11 @@ pub fn counts(root: &Path, guarded: impl Fn(&str) -> bool) -> BTreeMap<(String, 
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
-        if rel.ends_with("/tests.rs")
-            || rel == "tests.rs"
-            || rel.ends_with("_tests.rs")
-            || rel.contains("/tests/")
-            || rel.starts_with("tests/")
-            || !guarded(&rel)
-        {
+        if is_test_file(&rel) || !guarded(&rel) {
             continue;
         }
         let src = std::fs::read_to_string(&path).unwrap_or_default();
-        for hit in hits(&src) {
+        for hit in hits_with(&src, &helpers) {
             out.entry((rel.clone(), hit.function.clone()))
                 .or_default()
                 .push(hit);

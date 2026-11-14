@@ -367,3 +367,55 @@ deflection) have a sample gate that judges the cut after a simulation.
   `Reentering::plunges_with_no_operation_for_tests`,
   `EntryPlungeFeed::of_op_plunge_rate_for_tests`. Nine integration tests
   move to the doors (no assertion changes).
+
+### R7 results
+
+- Cause: the scan matched 17 tokens as words and cut each `use`, so an
+  alias, a variant import, a helper call and `Self::Variant` were not
+  reads; the entry doors were `pub`.
+- Fix: as predicted. Proof:
+  `the_scan_finds_the_four_blind_spots_review_f9` plants one read of each
+  form (the scan of HEAD has no function that finds them; each assert
+  names the token and the function).
+- The core guard: 5 passed (X total 86, no new entry). The CLI twin: six
+  new W entries, as predicted. The viz twin: no change.
+
+## Final checks of the whole chain
+
+- Operator file: idx 0, 3 to 13 and 17 dumped with the reviewer's probe on
+  the final tree: 13 of 13 dumps byte-equal to the reviewer's
+  `now_<idx>.csv`. The export of the same session: every line that is not a
+  comment equals the reviewer's `export.nc`; the comment lines differ only
+  by the renamed warning (2 lines, R4) and the drill lines (2 lines, R6).
+  `gck.py`: 0 bytes above 127, 0 bad comment lines, the longest comment 126
+  characters (the reviewer measured 128).
+- Gates on the final tree (one cargo job at a time): fmt check clean on the
+  changed files; core sentries `one_record_on_every_surface_p29_10` (10),
+  `every_limit_judges_every_declared_cut_p29_7` (12),
+  `every_declared_cut_is_judged_at_the_stated_point_p29_10` (4),
+  `the_exemption_list_only_shrinks_p29_3` (6, pins unchanged),
+  `no_limit_reads_the_op_type_p29_last` (5),
+  `a_row_softens_only_under_a_current_modulation_p30_2` (4),
+  `the_record_states_what_the_gcode_runs_p30_1` (3),
+  `one_entry_rule_two_emitters_p29_8` (6),
+  `modulated_feeds_read_their_own_prefix_b5` (2), the new
+  `a_stated_cut_over_any_limit_warns_review_f4` and
+  `every_fed_move_is_in_a_feed_class_review_f8`, and the nine tests that
+  moved to the test doors: all pass. Core `--lib`: 2822 passed, 1 failed in
+  the parallel run (`the_envelope_meets_its_time_budget`, the known timing
+  red); alone 3 of 3 pass. `every_op_conforms_w4`: 11 passed, check 6 fails
+  (the known red). `rs_cam_mcp` 39 passed; `rs_cam_cli` all pass (the twin
+  guard 2). Viz `--lib` 704 passed (no GUI ran); the viz binaries
+  `the_card_shows_one_planned_row_and_a_drawer_p29_10`,
+  `the_inspector_text_is_bounded_ic1`, `no_surface_matches_a_limit_p29_10`,
+  `readiness_shows_the_limits_g_readylimits`,
+  `a_job_with_each_finding_exports_and_names_it_on_every_surface_k6`,
+  `export_states_the_feed_stage_w2_5`, `mcp_wire_surface_pin` and the twin
+  guard pass. FM1: 2 passed. Op golden: the known 46 rows and the 53
+  predicted `gcode_hash` rows (49 of R4, 4 new of R6, `drill/rest` moved by
+  both). Full clippy: clean.
+- Op golden re-bless (not done here; the lead runs it): a field-only bless
+  of `gcode_hash` on the 53 arms of the scratchpad list `bless_arms.txt`.
+  Two of them also hold known-46 rows of other fields
+  (`adaptive3d/by_area_helix_cp`, `unified_finish/claims_rest_clip`); the
+  field-only bless leaves those rows as they are.

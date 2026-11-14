@@ -219,13 +219,14 @@ fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
         .retract_z;
     let mut channels = ReconcileSet::empty();
     clip_annotated_to_obstacles(
-        rs_cam_core::geometry::boundary::Reentering::none(AnnotatedToolpath::new(tp)),
+        rs_cam_core::geometry::boundary::Reentering::none_for_tests(AnnotatedToolpath::new(tp)),
         &view,
         retract,
-        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(300.0)).ok(),
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate_for_tests(Some(300.0))
+            .ok(),
     )
     .reconcile(&mut channels)
-    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation)
+    .plunges_with_no_operation_for_tests()
     .toolpath
 }
 

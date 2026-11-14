@@ -186,7 +186,10 @@ fn clipped_and_optimised(stock: &TriDexelStock, ramp: bool) -> Toolpath {
         &crossing_run(),
         std::slice::from_ref(&island()),
         SAFE_Z,
-        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(PLUNGE_RATE)).ok(),
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate_for_tests(Some(
+            PLUNGE_RATE,
+        ))
+        .ok(),
     );
     let cfg = RestEntryRamp {
         contact_radius_mm: tip_contact_radius(&cutter),
