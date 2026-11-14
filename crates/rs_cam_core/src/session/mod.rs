@@ -114,7 +114,7 @@ pub use emitted_feeds::{
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};
-pub use limit_rows::LimitRows;
+pub use limit_rows::{LimitRows, StatedCutOverLimit};
 pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
@@ -1976,7 +1976,7 @@ pub struct ProjectSession {
     /// The memo behind [`Self::emitted_feeds`] (P30-1). Derived data: a
     /// clone starts empty, and the key reads the moves and the post.
     pub(crate) emitted_feeds_memo: emitted_feeds::EmittedFeedsMemo,
-    /// The memo behind [`Self::stated_row_over_until_modulated`] (P30-2).
+    /// The memo behind [`Self::stated_cut_over_a_limit`] (P30-2, review F4).
     /// Derived data: a clone starts empty, and the key reads the inputs.
     pub(crate) unmodulated_row_memo: limit_rows::UnmodulatedRowMemo,
 

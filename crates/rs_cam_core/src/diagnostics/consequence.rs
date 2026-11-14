@@ -86,11 +86,10 @@ pub enum Gate {
     /// K7 (feeds contract P9): a fresh simulation measured a point outside
     /// the K2b envelope (`compute::simulate::envelope_placement`).
     SimOutsideEnvelope,
-    /// P30-2: an emitted op with a planned result has a stated row that
-    /// exceeds with a gating tone under `Caveat::UntilModulated`
-    /// (`ProjectSession::stated_row_over_until_modulated`): the export
-    /// carries the stated feed that the row judges over.
-    UnmodulatedOverLimit,
+    /// Review 2026-11-15 F4: an emitted op with no current measured verdict
+    /// has a stated row that exceeds with a gating tone, whatever the limit
+    /// (`ProjectSession::stated_cut_over_a_limit`).
+    StatedCutOverLimit,
 }
 
 impl Gate {
@@ -109,7 +108,7 @@ impl Gate {
         Self::Feasibility,
         Self::FluteOverreach,
         Self::SimOutsideEnvelope,
-        Self::UnmodulatedOverLimit,
+        Self::StatedCutOverLimit,
     ];
 }
 

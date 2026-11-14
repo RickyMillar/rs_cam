@@ -370,22 +370,26 @@ impl ProjectSession {
                         }
                     }
                 }
-                Gate::UnmodulatedOverLimit => {
-                    // P30-2: a superseded result gets no second line; the
-                    // feeds caution of W2.5 names it.
+                Gate::StatedCutOverLimit => {
+                    // Review 2026-11-15 F4: with no current measured verdict
+                    // (no simulation that is fresh for the op), the stated
+                    // rows are the only judgement of the cut, so every
+                    // stated row with the gating tone warns, whatever the
+                    // limit. A fresh simulation measured the cut: its gate
+                    // rows judge it (`Gate::LoadRowRefuses`). Open (review
+                    // F4): a limit with no sample gate (the vertical rate,
+                    // the rubbing floor, the vendor depth table; row
+                    // `S-NoSampleGate`) and a stated-point row then warn
+                    // nowhere.
                     for &idx in emitted {
-                        if self.feed_stage(idx) != Some(crate::session::FeedStage::Planned) {
+                        if sim_trace.is_some_and(|t| self.sim_trace_is_fresh_for(t, idx)) {
                             continue;
                         }
-                        if let Some(face) = self.stated_row_over_until_modulated(idx) {
+                        if let Some(over) = self.stated_cut_over_a_limit(idx) {
                             push(
-                                ids::EXPORT_STATED_FEED_OVER_LIMIT,
+                                ids::EXPORT_STATED_CUT_OVER_LIMIT,
                                 name_at(idx),
-                                format!(
-                                    "Toolpath '{}': {face}; the export carries the stated feed, \
-                                     a simulation with feed modulation caps this cut",
-                                    name_at(idx)
-                                ),
+                                format!("Toolpath '{}': {}", name_at(idx), over.words()),
                             );
                         }
                     }

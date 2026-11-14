@@ -5,13 +5,16 @@
 //! 1. With a planned result (no simulation), its stated chip-maximum row of
 //!    the body keeps the danger tone (`Tone::Exceeds`) and carries
 //!    `Caveat::UntilModulated { export: Stated }`; the export carries one
-//!    `export.stated_feed_over_limit` warning (the result list and a header
+//!    `export.stated_cut_over_limit` warning (the result list and a header
 //!    line), and the program is still written (a warning, never a refusal).
 //! 2. After a simulation with feed modulation, the result is modulated: the
 //!    same row carries `Caveat::BeforeModulation`, takes the caution tone,
 //!    and the export carries no such warning.
 //! 3. A simulation with modulation off on a fresh result keeps the planned
-//!    stage, so the row keeps its danger tone and the warning stays.
+//!    stage, so the row keeps its danger tone. Review 2026-11-15 F4: the
+//!    simulation is fresh for the op, so a measured verdict judges the cut:
+//!    the export names the measured chip row (`load.chipload.*`), not the
+//!    stated row.
 //!
 //! The door (`ProjectSession::limit_rows`) takes no modulation argument: it
 //! reads `ProjectSession::run_modulation_of`, so the states above come from
@@ -112,11 +115,11 @@ fn export_names_the_warning(session: &ProjectSession) -> bool {
     let in_list = exported
         .warnings
         .iter()
-        .any(|w| w.id == ids::EXPORT_STATED_FEED_OVER_LIMIT);
+        .any(|w| w.id == ids::EXPORT_STATED_CUT_OVER_LIMIT);
     let in_header = exported
         .gcode
         .lines()
-        .any(|l| l.contains("WARNING") && l.contains(ids::EXPORT_STATED_FEED_OVER_LIMIT));
+        .any(|l| l.contains("WARNING") && l.contains(ids::EXPORT_STATED_CUT_OVER_LIMIT));
     assert_eq!(in_list, in_header, "the list and the header agree");
     in_list
 }
@@ -148,7 +151,7 @@ fn a_planned_result_keeps_the_danger_tone_and_warns_p30_2() {
         row.detail()
     );
     assert!(
-        session.stated_row_over_until_modulated(0).is_some(),
+        session.stated_cut_over_a_limit(0).is_some(),
         "the export door reads the row"
     );
     assert!(export_names_the_warning(&session), "the export warns");
@@ -180,11 +183,28 @@ fn a_current_modulated_result_softens_and_does_not_warn_p30_2() {
 }
 
 #[test]
-fn a_simulation_with_modulation_off_keeps_the_warning_p30_2() {
+fn a_simulation_with_modulation_off_warns_by_the_measured_row_p30_2() {
     let mut session = fast_pocket();
     simulate(&mut session, false);
     assert_eq!(session.feed_stage(0), Some(FeedStage::Planned));
     let row = body_chip_max(&session);
     assert_eq!(row.tone(), Tone::Exceeds, "{}", row.face());
-    assert!(export_names_the_warning(&session), "the stage did not run");
+    assert!(
+        !export_names_the_warning(&session),
+        "a current measured verdict judges the cut"
+    );
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.clone());
+    let exported = session
+        .export_gcode_checked(trace.as_deref())
+        .expect("a warning never refuses the export");
+    assert!(
+        exported
+            .warnings
+            .iter()
+            .any(|w| w.id.starts_with("load.chipload.")),
+        "the measured chip row warns: {:?}",
+        exported.warnings.iter().map(|w| w.id).collect::<Vec<_>>()
+    );
 }

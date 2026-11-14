@@ -221,3 +221,38 @@ deflection) have a sample gate that judges the cut after a simulation.
   the deflection root: `Exceeds`, caveat `LowerBound`, tone `Exceeds`. Red
   with the R2 `row.rs` (tone `ExceedsAdvisory`), green with R3.
 - Rows: no change on the four files, as predicted.
+
+### R4 results
+
+- Cause: `stated_row_over_until_modulated` kept only the stated rows with
+  `UntilModulated`, which only the chip maximum takes.
+- Fix: `ProjectSession::stated_cut_over_a_limit` keeps every stated row with
+  `Tone::Exceeds` (the worst by `rank_cmp` and the count of the others);
+  `Gate::StatedCutOverLimit` warns for an emitted op that has no simulation
+  fresh for it (`sim_trace_is_fresh_for`). Wire changes: the warning id
+  `export.stated_feed_over_limit` is `export.stated_cut_over_limit`; the
+  presentation face "Stated cut over a limit: no current simulation"; the
+  detail "<face>; <n> more stated rows over a limit; no current simulation
+  measured this op"; `Gate::UnmodulatedOverLimit` is
+  `Gate::StatedCutOverLimit`; the session door and its memo hold
+  `StatedCutOverLimit`.
+- Proof: `a_stated_cut_over_any_limit_warns_review_f4` (a Pocket whose
+  stated plunge feed is over the vertical-rate limit and whose chip is in
+  its band: one warning that names the plunge rate, in the list and in the
+  header; HEAD gave no warning for this op). The P30-2 sentry claim 3 now
+  states that a fresh simulation names the measured chip row.
+- Warnings: as predicted on the four files (0 mismatches). Op golden: the
+  49 predicted `gcode_hash` rows. The 89 dumped golden programs: 0 bytes
+  above 127, 0 comment lines with an inner or unbalanced parenthesis; the
+  longest warning line is 124 characters.
+- Open, for the lead (measured after the patch, not changed): the rule
+  skips an op with a simulation that is fresh for it. A limit with no
+  sample gate (the vertical rate, the rubbing floor, the vendor depth
+  table; row `S-NoSampleGate`) and a stated-point row then warn nowhere:
+  the F4 fixture after a simulation with modulation off exports with no
+  warning while its stated plunge-rate row gates (294 % over its limit).
+  The alternative is to keep those limits in the warning when the op has
+  a fresh simulation. The comment in `export.rs` states the gap.
+- Departure from P30-2: a superseded modulated result has no current
+  measured verdict, so it now gets this warning too (P30-2 gave it no
+  second line beside the feeds caution).

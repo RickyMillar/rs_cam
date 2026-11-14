@@ -763,9 +763,9 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Left out of the export: no current result",
     ),
     (
-        ids::EXPORT_STATED_FEED_OVER_LIMIT,
+        ids::EXPORT_STATED_CUT_OVER_LIMIT,
         OP,
-        "Stated feed over a limit: no current modulation",
+        "Stated cut over a limit: no current simulation",
     ),
 ];
 

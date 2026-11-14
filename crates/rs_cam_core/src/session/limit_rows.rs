@@ -157,7 +157,8 @@ impl ProjectSession {
     }
 }
 
-/// P30-2: the session memo of [`ProjectSession::stated_row_over_until_modulated`].
+/// The session memo of [`ProjectSession::stated_cut_over_a_limit`] (P30-2,
+/// review 2026-11-15 F4).
 /// The GUI pre-flight modal and the readiness panel read the export
 /// warnings on each frame; an envelope costs about 0.2 s, so the face of
 /// each toolpath is kept against the `Debug` text of every input of its
@@ -165,7 +166,35 @@ impl ProjectSession {
 /// over-key). A clone of the session starts empty.
 #[derive(Default)]
 pub(crate) struct UnmodulatedRowMemo {
-    entries: Mutex<HashMap<crate::ids::ToolpathId, (String, Option<String>)>>,
+    entries: Mutex<HashMap<crate::ids::ToolpathId, (String, Option<StatedCutOverLimit>)>>,
+}
+
+/// Review 2026-11-15 F4: the stated rows of one toolpath that exceed with
+/// the gating tone (`Tone::Exceeds`), whatever the limit: the worst row by
+/// `CheckRow::rank_cmp` and the count of the others.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatedCutOverLimit {
+    /// The face of the worst row.
+    pub face: String,
+    /// The count of the other stated rows with the gating tone.
+    pub others: usize,
+}
+
+impl StatedCutOverLimit {
+    /// The warning text after the toolpath name: the worst row, the count
+    /// of the others, and why the stated rows judge the cut.
+    #[must_use]
+    pub fn words(&self) -> String {
+        let others = match self.others {
+            0 => String::new(),
+            1 => "; 1 more stated row over a limit".to_owned(),
+            n => format!("; {n} more stated rows over a limit"),
+        };
+        format!(
+            "{}{others}; no current simulation measured this op",
+            self.face
+        )
+    }
 }
 
 impl Clone for UnmodulatedRowMemo {
@@ -175,17 +204,16 @@ impl Clone for UnmodulatedRowMemo {
 }
 
 impl ProjectSession {
-    /// **P30-2: the face of the worst stated row of the toolpath at
-    /// `index` that exceeds with a gating tone under
-    /// `Caveat::UntilModulated`** (`Tone::Exceeds`, the rank of
-    /// `CheckRow::rank_cmp`), from the one door
-    /// ([`Self::limit_rows`]`(..).envelope()`). Such a row judges the
-    /// stated feed over its bound, and the export carries the stated feed.
-    /// `None` when no such row exists, the toolpath has no tool or the
-    /// envelope refuses. The export door raises
-    /// `export.stated_feed_over_limit` from it.
+    /// **Review 2026-11-15 F4: the stated rows of the toolpath at `index`
+    /// that exceed with the gating tone (`Tone::Exceeds`), whatever the
+    /// limit**: the face of the worst by `CheckRow::rank_cmp` and the count
+    /// of the others, from the one door
+    /// ([`Self::limit_rows`]`(..).envelope()`). `None` when no such row
+    /// exists, the toolpath has no tool or the envelope refuses. The export
+    /// door raises `export.stated_cut_over_limit` from it when no current
+    /// simulation measured the op.
     #[must_use]
-    pub fn stated_row_over_until_modulated(&self, index: usize) -> Option<String> {
+    pub fn stated_cut_over_a_limit(&self, index: usize) -> Option<StatedCutOverLimit> {
         let tc = self.toolpath_config_at(index)?;
         let tool = self.toolpath_tool(tc)?;
         let key = format!(
@@ -208,23 +236,25 @@ impl ProjectSession {
         {
             return face.clone();
         }
-        let face =
-            self.limit_rows(index, None)
-                .and_then(|rows| rows.envelope())
-                .and_then(Result::ok)
-                .and_then(|rows| {
-                    rows.iter()
-                        .filter(|row| {
-                            row.is_stated()
-                                && row.tone() == crate::limits::Tone::Exceeds
-                                && row.caveats().iter().any(|c| {
-                                    matches!(c, crate::limits::Caveat::UntilModulated { .. })
-                                })
-                        })
-                        .min_by(|a, b| a.rank_cmp(b))
-                        .map(|row| row.face().to_owned())
-                });
-        let _ = guard.insert(tc.id, (key, face.clone()));
-        face
+        let over = self
+            .limit_rows(index, None)
+            .and_then(|rows| rows.envelope())
+            .and_then(Result::ok)
+            .and_then(|rows| {
+                let gating: Vec<&crate::limits::CheckRow> = rows
+                    .iter()
+                    .filter(|row| row.is_stated() && row.tone() == crate::limits::Tone::Exceeds)
+                    .collect();
+                gating
+                    .iter()
+                    .copied()
+                    .min_by(|a, b| a.rank_cmp(b))
+                    .map(|worst| StatedCutOverLimit {
+                        face: worst.face().to_owned(),
+                        others: gating.len() - 1,
+                    })
+            });
+        let _ = guard.insert(tc.id, (key, over.clone()));
+        over
     }
 }

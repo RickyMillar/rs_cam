@@ -21,7 +21,7 @@ One typed finding model for every upstream source. `diagnostics::diagnose` turns
 - K6 (`consequence.rs`): each row ends `=> <column>`: `warn(Danger::X)`, `INFO` or `NOT_READY` (a
   missing input, ruling Q10); a row with none does not compile. The macro writes `CONSEQUENCES`.
   `Consequence` has no refusing arm (ruling Q6): no finding refuses generation or export. `Gate` decides
-  whether an export raises a finding (`ProjectSession::export_warnings` walks `Gate::ALL`; P30-2: `Gate::UnmodulatedOverLimit` raises `export.stated_feed_over_limit`, a Tool warning, for a planned op with a stated danger row under `Caveat::UntilModulated`). The `emit.*`
+  whether an export raises a finding (`ProjectSession::export_warnings` walks `Gate::ALL`; review F4: `Gate::StatedCutOverLimit` raises `export.stated_cut_over_limit`, a Tool warning, for an op with no current measured verdict and a stated row of any limit with the gating tone; one per op, the worst row by `rank_cmp` and the count of the others). The `emit.*`
   ids (`gcode::EmitError::id`) are not rows. K5 (P7): the three `tool.*` rule ids (`physical_rules!`) reach the list through the `from_generation` feasibility adapter and `Gate::Feasibility`; P7 B: the simulation rows `tool.flute_overreach` and `tool.flute_reach_within` (input `ToolpathDiagnoseInputs::flute_reach`, `Gate::FluteOverreach`) supersede `tool.reach_past_flute` when the trace is fresh; P22-0c-3: `safety.non_centre_cutting_descent` / `_clear` (input `core_contact`) supersede `safety.non_centre_cutting_plunge` alike. Sentries: `..._k6`, `one_contact_finding_on_every_surface_p22_0c`.
 - An adapter converts. It does not compute a verdict. The verdict belongs to
   the source layer. Example: the tool-kind finding reads

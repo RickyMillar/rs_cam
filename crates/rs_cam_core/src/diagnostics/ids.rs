@@ -632,9 +632,10 @@ diag_ids! {
     /// An enabled op has no current result, so the export leaves it out
     /// (G-EXPORTSKIP, G-STALEXPORT).
     pub const EXPORT_OP_LEFT_OUT: &str = "export.op_left_out" => warn(Danger::Part);
-    /// P30-2: an emitted op with a planned result (no current modulated
-    /// result) has a stated row that exceeds with a gating tone under the
-    /// caveat `until_modulated`: the export carries the stated feed that
-    /// the row judges over. A simulation with feed modulation caps the cut.
-    pub const EXPORT_STATED_FEED_OVER_LIMIT: &str = "export.stated_feed_over_limit" => warn(Danger::Tool);
+    /// Review 2026-11-15 F4 (was P30-2 `export.stated_feed_over_limit`): an
+    /// emitted op with no current measured verdict (no simulation that is
+    /// fresh for it) has a stated row that exceeds with a gating tone,
+    /// whatever the limit. One warning per op names the worst row and the
+    /// count of the others. A warning, never a refusal.
+    pub const EXPORT_STATED_CUT_OVER_LIMIT: &str = "export.stated_cut_over_limit" => warn(Danger::Tool);
 }
