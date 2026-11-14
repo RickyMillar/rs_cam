@@ -548,3 +548,26 @@ Two changes after the review of the shots and the code:
 - Not changed: the simulation inspector prints the line only with its cut-metric cards, so a stale
   trace (the cards say "the cut trace is from an earlier version") shows no line there; the
   Passes tab still shows it.
+
+## State after P30-1 and P30-2 (lead, 2026-11-15)
+
+Commit `30a037567` holds both steps. No emitted F word changes.
+
+Open, logged for the operator's decision or the next step:
+
+- **The modulator raises entries too.** On rivmap100 Face 5 the header reads "ramp entries run up to
+  3000 mm/min, the stated ramp feed is 500 mm/min", and 77 of 77 cutting moves run above the
+  stated 2200 mm/min. This is question 1 of section 6, now with a number on every surface.
+- **A superseded result stays superseded.** After a second simulation at another cell size the
+  op read "modulated, run 1, not current", and the next simulation did not clear it. Its rows keep
+  the gating tone (the safe side), the header states the run, and no `export.stated_feed_over_limit`
+  warning is raised. The cause is not traced (a likely cause: the second pass changed no feed, so
+  the slot kept its tag).
+- **The export warning is narrow.** It fires for a stated row of a capped limit with no current
+  modulation. A gating row of another limit raises no export warning, as before P30.
+- **Wording.** With feed optimisation on, the hover "an export now carries the stated feed" is not
+  exact.
+- **The inspector line** shows only with the cut-metric cards, so it is absent while the trace is
+  stale.
+- Two reds that the agent met and did not measure at HEAD: `modulated_feeds_read_their_own_prefix_b5`
+  (a regenerate refuses with unset feeds) and `layered_framework_owns_the_ladder_w3` (known).
