@@ -220,7 +220,11 @@ fn an_upstream_change_supersedes_the_downstream_modulation_b5() {
     // GUI door).
     let pocket = index_of(&session, "Pocket");
     let mut edited = session.toolpath_configs()[pocket].clone();
-    edited.operation = pocket_to(2.0);
+    // S11: the new op states the fixture values that `toolpath_config`
+    // states for every row of the chain (`compute::fixture_values`).
+    let mut operation = pocket_to(2.0);
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
+    edited.operation = operation;
     let _ = session
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
             index: pocket,
