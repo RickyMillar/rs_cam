@@ -702,6 +702,23 @@ Written from the HEAD fixture dump (`base_b`) and the FM1 sim CSV, before any co
   28, 29; not measured). No feed, depth or proposal column moves (the depth row does not gate, and
   the modulator reads its own caps).
 
+  **Correction (round 2b, before the code of 11-5).** A throwaway build of 11-5 (the code of
+  12.2, applied, measured with `RS_CAM_UPDATE_FEEDS_MATRIX=1`, then `depth.rs` and the three FM1
+  files restored with `cp -p` and `touch`) gives the exact list. The main CSV
+  (`matrix_2026-09-23.csv`) does not move. In the sim CSV exactly 4 cells and exactly 4 fields
+  move:
+
+  | Cell | Tool, op, material | `depth_cap_mm` | `depth_cap_factor` | `depth_detail` | `diagnostic_ids_after_sim` |
+  |---|---|---|---|---|---|
+  | 8 | EndMill, Profile, softwood | empty to 18.0000 | empty to 35.3224 | "Reported" to empty | `load.depth.reported` to `load.depth.within` |
+  | 12 | BullNose, Profile, softwood | the same | the same | the same | the same |
+  | 14 | BullNose, Profile, mdf | the same | the same | the same | the same |
+  | 16 | EndMill, Adaptive, softwood | the same | the same | the same | the same |
+
+  `diagnostic_severities_after_sim` does not move (both ids are `Info`; the line above said it
+  would). `depth_state` and `depth_peak_mm` do not move. None of the "possible" cells moves. A
+  cell or field outside this table stops the work.
+
 ### 11.5 Open for the lead after round 2a
 
 - **11-5 is not built.** Its prediction is section 11.4. The code needs: the width door
