@@ -879,3 +879,43 @@ Measured, against 11.4:
   in the parallel run (alone three times: pass). `rs_cam_mcp`, `rs_cam_cli`, viz `--lib` and the ten
   viz binaries: pass. FM1: pass on the re-blessed CSV. Op golden: only the known 46 rows. Full
   clippy: clean. The fixture dump after 2b is byte-equal to the dump before 2b.
+
+### 12.3 Commit 11-6: the narration reads the depth row (prediction)
+
+Written on the 11-5 tree, before the code. Today `append_peak_doc_anomaly` (`trace/narrate.rs`)
+takes the sample with the largest `axial_doc_mm` (the time-mean depth of M4) and writes `⚠` when
+it is over `1.5 x` the commanded depth per pass (`DEEP_DOC_MULTIPLIER`, a constant with no
+source), else `ℹ`. The change:
+
+- One producer, `ProjectSession::narration_depth_rows(index, trace)`: the force-budget rows of
+  every cut group of the toolpath from the one door (`limit_rows(..).verdict()`). The rows are a
+  required argument of `narrate_toolpath_with_context` (`DepthRows::Rows` or
+  `DepthRows::NoVerdict`), so the compiler asks every narration door for them. The core door
+  (`ProjectSession::narrate_toolpath`) and the MCP door of the GUI (`mcp_narrate_toolpath`) pass
+  the rows of the producer; a caller with no project (`narrate_toolpath`, the tests) passes
+  `NoVerdict`.
+- The line reads the worst of those rows by the core rank (`CheckRow::rank_cmp`, rows that hold a
+  number): `⚠` exactly when that row exceeds (its tone), else `ℹ`; the line names the row face.
+  With no row that holds a number (no simulation, a finish pass with no bound, a drill), the line
+  is `ℹ` with no row clause.
+- The peak sample is the sample with the largest `axial_engagement_mm` (the depth that the depth
+  gate judges), not `axial_doc_mm`. `DEEP_DOC_MULTIPLIER` is deleted. The label "peak axial DOC"
+  stays (the MCP tool text and two narration tests name it) and gains "(engaged depth)".
+
+Predicted lines on the five fixtures (the severity, the depth and the row; the sample, the move
+and the position are the deepest engaged sample, which can be another sample of the same depth,
+and are not predicted):
+
+| Fixture | Before | After |
+|---|---|---|
+| Pocket | `ℹ peak axial DOC 1.50mm at sample 1893 (…). commanded depth_per_pass = 1.50mm. …` | `ℹ peak axial DOC 1.50mm (engaged depth) at sample … . commanded depth_per_pass = 1.50mm. Depth row: entry · depth 8.3 % of force cap. …` |
+| Pocket with dogbones | `ℹ peak axial DOC 1.50mm …` | the same as the Pocket |
+| Profile | `ℹ peak axial DOC 2.00mm …`, depth per pass 2.00 | `ℹ peak axial DOC 2.00mm (engaged depth) …. Depth row: entry · depth 11 % of force cap.` |
+| 2D Adaptive | `ℹ peak axial DOC 2.00mm …` | `ℹ peak axial DOC 2.00mm (engaged depth) …. Depth row: body · depth 9.7 % of force cap.` |
+| Shelf 3D rough | `ℹ peak axial DOC 5.50mm …`, depth per pass 6.00 | `ℹ peak axial DOC 5.50mm (engaged depth) …. Depth row: body · depth 32 % of force cap.` |
+
+No severity moves (no depth row exceeds; no line was `⚠`). No other narration line moves. No row,
+FM1 cell or golden row moves (FM1 holds no narration text). The `⚠` side has no fixture, so a
+sentry claim narrates the Pocket fixture with the rows of its verdict on the machine with half
+its body force peak as the budget (claim 8 of `no_removing_sample_is_outside_the_gates_p29_6`):
+`⚠` and the face of the exceeding row; with the rows of the real machine: `ℹ`.
