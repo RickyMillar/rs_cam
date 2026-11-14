@@ -9,12 +9,14 @@
 //!    line), and the program is still written (a warning, never a refusal).
 //! 2. After a simulation with feed modulation, the result is modulated: the
 //!    same row carries `Caveat::BeforeModulation`, takes the caution tone,
-//!    and the export carries no such warning.
+//!    and the chip row gives no export warning. Review R8: the stated
+//!    rubbing row of the ramp entry warns (no sample gate judges the
+//!    rubbing floor, row `S-NoSampleGate`).
 //! 3. A simulation with modulation off on a fresh result keeps the planned
 //!    stage, so the row keeps its danger tone. Review 2026-11-15 F4: the
 //!    simulation is fresh for the op, so a measured verdict judges the cut:
 //!    the export names the measured chip row (`load.chipload.*`), not the
-//!    stated row.
+//!    stated chip row. Review R8: the stated rubbing row warns, as in 2.
 //!
 //! The door (`ProjectSession::limit_rows`) takes no modulation argument: it
 //! reads `ProjectSession::run_modulation_of`, so the states above come from
@@ -35,7 +37,9 @@ use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::dressup::feed_modulation::RunModulation;
 use rs_cam_core::limits::{Caveat, CheckRow, CutKind, ExportFeed, LimitId, Subject, Tone};
-use rs_cam_core::session::{FeedStage, ProjectSession, SimulationOptions, SimulationResolution};
+use rs_cam_core::session::{
+    FeedStage, ProjectSession, SimulationCover, SimulationOptions, SimulationResolution,
+};
 
 mod common;
 use common::kind_fixtures::{FLAT_CELL, TOOL_D};
@@ -124,6 +128,28 @@ fn export_names_the_warning(session: &ProjectSession) -> bool {
     in_list
 }
 
+/// Review R8: the detail of each `export.stated_cut_over_limit` warning of
+/// an export of the session.
+fn stated_cut_details(session: &ProjectSession) -> Vec<String> {
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.clone());
+    session
+        .export_gcode_checked(trace.as_deref())
+        .expect("a warning never refuses the export")
+        .warnings
+        .into_iter()
+        .filter(|w| w.id == ids::EXPORT_STATED_CUT_OVER_LIMIT)
+        .map(|w| w.detail)
+        .collect()
+}
+
+/// Review R8: after a fresh simulation the chip rows do not warn (the chip
+/// gate judges them), and the stated rubbing row of the ramp entry warns
+/// (the rubbing floor has no sample gate, row `S-NoSampleGate`).
+const RAMP_RUBBING_AFTER_A_SIMULATION: &str = "Toolpath 'pocket': ramp entry · rubbing 44 % \
+     under floor; no sample gate of the simulation judges this limit";
+
 #[test]
 fn a_planned_result_keeps_the_danger_tone_and_warns_p30_2() {
     let session = fast_pocket();
@@ -151,7 +177,9 @@ fn a_planned_result_keeps_the_danger_tone_and_warns_p30_2() {
         row.detail()
     );
     assert!(
-        session.stated_cut_over_a_limit(0).is_some(),
+        session
+            .stated_cut_over_a_limit(0, SimulationCover::NoFreshSimulation)
+            .is_some(),
         "the export door reads the row"
     );
     assert!(export_names_the_warning(&session), "the export warns");
@@ -176,9 +204,12 @@ fn a_current_modulated_result_softens_and_does_not_warn_p30_2() {
     let row = body_chip_max(&session);
     assert_eq!(row.tone(), Tone::ExceedsAdvisory, "{}", row.face());
     assert!(row.caveats().contains(&Caveat::BeforeModulation));
-    assert!(
-        !export_names_the_warning(&session),
-        "no warning when modulated"
+    // Review R8: the chip row warns no more; the stated rubbing row of the
+    // ramp entry warns, since no sample gate judges the rubbing floor.
+    assert!(export_names_the_warning(&session), "the rubbing row warns");
+    assert_eq!(
+        stated_cut_details(&session),
+        vec![RAMP_RUBBING_AFTER_A_SIMULATION.to_owned()]
     );
 }
 
@@ -241,9 +272,12 @@ fn a_simulation_with_modulation_off_warns_by_the_measured_row_p30_2() {
     assert_eq!(session.feed_stage(0), Some(FeedStage::Planned));
     let row = body_chip_max(&session);
     assert_eq!(row.tone(), Tone::Exceeds, "{}", row.face());
-    assert!(
-        !export_names_the_warning(&session),
-        "a current measured verdict judges the cut"
+    // Review R8: the measured verdict judges the chip, so the stated chip
+    // row does not warn; the stated rubbing row of the ramp entry warns.
+    assert!(export_names_the_warning(&session), "the rubbing row warns");
+    assert_eq!(
+        stated_cut_details(&session),
+        vec![RAMP_RUBBING_AFTER_A_SIMULATION.to_owned()]
     );
     let trace = session
         .simulation_result()

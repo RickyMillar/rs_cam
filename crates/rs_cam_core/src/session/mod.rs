@@ -115,7 +115,7 @@ pub use emitted_feeds::{
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};
-pub use limit_rows::{LimitRows, StatedCutOverLimit};
+pub use limit_rows::{LimitRows, SimulationCover, StatedCutOverLimit};
 pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,

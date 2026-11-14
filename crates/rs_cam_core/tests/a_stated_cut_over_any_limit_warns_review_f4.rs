@@ -9,6 +9,10 @@
 //! chip inside its band: before F4 the export warned only for a chip
 //! maximum row, so this op had no "over a limit" line.
 //!
+//! Review R8 (lead ruling): the vertical rate has no sample gate (row
+//! `S-NoSampleGate`), so after a simulation that is fresh for the op the
+//! same stated row still warns, with the detail of a fresh simulation.
+//!
 //! `cargo test -p rs_cam_core -q --test a_stated_cut_over_any_limit_warns_review_f4`
 
 #![expect(
@@ -23,10 +27,10 @@ use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::limits::{LimitId, Tone};
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, SimulationOptions, SimulationResolution};
 
 mod common;
-use common::kind_fixtures::TOOL_D;
+use common::kind_fixtures::{FLAT_CELL, TOOL_D};
 use common::op_fixtures::{flat_stock, outline_model};
 use common::session::single_op_session_with;
 use common::tools::endmill_tool_config;
@@ -115,6 +119,56 @@ fn a_stated_vertical_rate_over_its_limit_warns_with_no_simulation_review_f4() {
             .gcode
             .lines()
             .any(|l| l.contains("WARNING") && l.contains(ids::EXPORT_STATED_CUT_OVER_LIMIT)),
+        "the header names the warning"
+    );
+}
+
+/// Review R8, the reviewer's case: the F4 fixture after a simulation with
+/// modulation off. The simulation is fresh for the op, and no sample gate
+/// judges the vertical rate, so the stated plunge-rate row warns. Before
+/// R8 this export had no warning.
+#[test]
+fn a_stated_vertical_rate_over_its_limit_warns_after_a_simulation_review_r8() {
+    let mut session = fast_plunge_pocket();
+    session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: SimulationResolution::Fixed(FLAT_CELL),
+                adaptive_feed_modulation: false,
+                ..SimulationOptions::default()
+            },
+            &AtomicBool::new(false),
+        )
+        .expect("the session simulates");
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.clone())
+        .expect("the simulation holds a cut trace");
+    assert!(
+        session.sim_trace_is_fresh_for(&trace, 0),
+        "non-vacuity: the simulation is fresh for the op"
+    );
+    let exported = session
+        .export_gcode_checked(Some(&trace))
+        .expect("a warning never refuses the export");
+    let details: Vec<&str> = exported
+        .warnings
+        .iter()
+        .filter(|w| w.id == ids::EXPORT_STATED_CUT_OVER_LIMIT)
+        .map(|w| w.detail.as_str())
+        .collect();
+    assert_eq!(
+        details,
+        vec![
+            "Toolpath 'pocket': plunge entry · plunge rate 294 % over limit; no sample gate \
+             of the simulation judges this limit"
+        ]
+    );
+    assert!(
+        exported.gcode.lines().any(|l| l.contains(
+            "WARNING Tool export.stated_cut_over_limit pocket: Stated cut over a limit: no \
+             measured gate"
+        )),
         "the header names the warning"
     );
 }

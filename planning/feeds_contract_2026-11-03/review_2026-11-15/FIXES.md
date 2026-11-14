@@ -489,3 +489,51 @@ simulation with modulation off, and a simulation with modulation on.
 - Open (not in this ruling): a stated row of a limit that is not a limit
   of each cut (the p30_2 fixture: "stated point · feed cap 125 % over
   limit", `CuttingFeedCap`) still warns nowhere after a fresh simulation.
+
+### R8 results
+
+- Fix: `tool_load::groups::judged_only_before_the_simulation` (a planned
+  role and no gate in `gate_of`) is the one list. Claim 1 of
+  `every_limit_judges_every_declared_cut_p29_7` asserts, for each
+  `LimitId`, that it is true exactly for the limits of the row
+  `S-NoSampleGate`. `ProjectSession::stated_cut_over_a_limit` takes a
+  `SimulationCover`; the memo keeps the gating stated rows worst first
+  with their limits, and `FreshSimulation` keeps only the rows of that
+  function. The export door passes `FreshSimulation` when the simulation
+  is fresh for the op, and does not skip the op.
+- Proof: `a_stated_vertical_rate_over_its_limit_warns_after_a_simulation_review_r8`
+  in `a_stated_cut_over_any_limit_warns_review_f4` (the reviewer's case:
+  the F4 fixture, a simulation with modulation off, literal detail and
+  header line). Red with the old skip put back in `export.rs` (no
+  warning), green with the fix. Claims 2 and 3 of
+  `a_row_softens_only_under_a_current_modulation_p30_2` assert the literal
+  rubbing warning; both were red with the old skip.
+- Warnings: as predicted (the four gains, the same texts; no change with no
+  simulation). rivmap100 in the release GUI of this tree (generate_all, one
+  run_simulation, export): four `export.stated_cut_over_limit` warnings
+  with the R8 detail, idx 0 "ramp entry · rubbing 44 % under floor", idx 1
+  "helix entry · rubbing 44 % under floor", idx 2 "body · rubbing 17 %
+  under floor", idx 3 "body · rubbing 17 % under floor; 1 more stated row
+  over a limit". As predicted (the R4 list).
+- Op golden: the known 46 rows and 49 `gcode_hash` rows, the 49 arms of
+  R4 (the face word of the header line). No other field moves. Not
+  blessed here: the field-only bless of `gcode_hash` on those 49 arms is
+  the lead's step.
+- FM1: 2 passed, no cell moves. As predicted.
+- Gates: fmt check on the changed files; the core sentries
+  `a_stated_cut_over_any_limit_warns_review_f4` (2),
+  `a_row_softens_only_under_a_current_modulation_p30_2` (4),
+  `the_record_states_what_the_gcode_runs_p30_1` (3),
+  `every_limit_judges_every_declared_cut_p29_7` (12),
+  `one_record_on_every_surface_p29_10` (10),
+  `the_exemption_list_only_shrinks_p29_3` (6),
+  `no_limit_reads_the_op_type_p29_last` (5); core `--lib` 2822 passed, 1
+  failed (`the_envelope_meets_its_time_budget`, the known timing red of a
+  parallel run); `rs_cam_mcp` 39; `rs_cam_cli` all pass; viz `--lib` 704;
+  the viz binaries
+  `a_job_with_each_finding_exports_and_names_it_on_every_surface_k6`,
+  `export_states_the_feed_stage_w2_5`, `mcp_wire_surface_pin` pass; full
+  clippy clean.
+- Open: a stated row of a limit that is not a limit of each cut (for
+  example `CuttingFeedCap`, "stated point · feed cap 125 % over limit" on
+  the P30-2 fixture) still warns nowhere after a fresh simulation.

@@ -765,7 +765,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::EXPORT_STATED_CUT_OVER_LIMIT,
         OP,
-        "Stated cut over a limit: no current simulation",
+        "Stated cut over a limit: no measured gate",
     ),
 ];
 

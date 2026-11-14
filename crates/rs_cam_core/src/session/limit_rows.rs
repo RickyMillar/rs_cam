@@ -166,7 +166,34 @@ impl ProjectSession {
 /// over-key). A clone of the session starts empty.
 #[derive(Default)]
 pub(crate) struct UnmodulatedRowMemo {
-    entries: Mutex<HashMap<crate::ids::ToolpathId, (String, Option<StatedCutOverLimit>)>>,
+    entries: Mutex<HashMap<crate::ids::ToolpathId, (String, GatingRows)>>,
+}
+
+/// The memo value of one toolpath: its stated rows with the gating tone,
+/// worst first, or `None` when the toolpath has no tool or the envelope
+/// refuses.
+type GatingRows = Option<Vec<GatingRow>>;
+
+/// One stated row with the gating tone, in the memo: its limit and its
+/// face. The memo keeps them worst first (`CheckRow::rank_cmp`).
+#[derive(Debug, Clone)]
+struct GatingRow {
+    limit: crate::limits::LimitId,
+    face: String,
+}
+
+/// Review 2026-11-15 R8: what judges the cut of an op after its
+/// simulation, so which stated rows the export warning keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimulationCover {
+    /// No simulation is fresh for the op: the stated rows are the only
+    /// judgement of the cut, so every limit counts.
+    NoFreshSimulation,
+    /// A simulation is fresh for the op: its sample gates judge the cut.
+    /// Only a limit with no sample gate counts
+    /// (`tool_load::groups::judged_only_before_the_simulation`, the row
+    /// `S-NoSampleGate`).
+    FreshSimulation,
 }
 
 /// Review 2026-11-15 F4: the stated rows of one toolpath that exceed with
@@ -178,6 +205,8 @@ pub struct StatedCutOverLimit {
     pub face: String,
     /// The count of the other stated rows with the gating tone.
     pub others: usize,
+    /// What judged the cut after the simulation (review R8).
+    pub cover: SimulationCover,
 }
 
 impl StatedCutOverLimit {
@@ -190,10 +219,13 @@ impl StatedCutOverLimit {
             1 => "; 1 more stated row over a limit".to_owned(),
             n => format!("; {n} more stated rows over a limit"),
         };
-        format!(
-            "{}{others}; no current simulation measured this op",
-            self.face
-        )
+        let why = match self.cover {
+            SimulationCover::NoFreshSimulation => "no current simulation measured this op",
+            SimulationCover::FreshSimulation => {
+                "no sample gate of the simulation judges this limit"
+            }
+        };
+        format!("{}{others}; {why}", self.face)
     }
 }
 
@@ -210,10 +242,18 @@ impl ProjectSession {
     /// of the others, from the one door
     /// ([`Self::limit_rows`]`(..).envelope()`). `None` when no such row
     /// exists, the toolpath has no tool or the envelope refuses. The export
-    /// door raises `export.stated_cut_over_limit` from it when no current
-    /// simulation measured the op.
+    /// door raises `export.stated_cut_over_limit` from it.
+    ///
+    /// Review R8: with [`SimulationCover::FreshSimulation`] only the rows of
+    /// a limit that no sample gate judges count
+    /// ([`crate::tool_load::groups::judged_only_before_the_simulation`]):
+    /// the gate rows of the simulation judge every other limit.
     #[must_use]
-    pub fn stated_cut_over_a_limit(&self, index: usize) -> Option<StatedCutOverLimit> {
+    pub fn stated_cut_over_a_limit(
+        &self,
+        index: usize,
+        cover: SimulationCover,
+    ) -> Option<StatedCutOverLimit> {
         let tc = self.toolpath_config_at(index)?;
         let tool = self.toolpath_tool(tc)?;
         let key = format!(
@@ -231,30 +271,46 @@ impl ProjectSession {
             // An entry is written only after its build returns.
             Err(poisoned) => poisoned.into_inner(),
         };
-        if let Some((stored, face)) = guard.get(&tc.id)
-            && *stored == key
-        {
-            return face.clone();
-        }
-        let over = self
-            .limit_rows(index, None)
-            .and_then(|rows| rows.envelope())
-            .and_then(Result::ok)
-            .and_then(|rows| {
-                let gating: Vec<&crate::limits::CheckRow> = rows
-                    .iter()
-                    .filter(|row| row.is_stated() && row.tone() == crate::limits::Tone::Exceeds)
-                    .collect();
+        let gating = match guard.get(&tc.id) {
+            Some((stored, gating)) if *stored == key => gating.clone(),
+            Some(_) | None => {
+                let gating = self
+                    .limit_rows(index, None)
+                    .and_then(|rows| rows.envelope())
+                    .and_then(Result::ok)
+                    .map(|rows| {
+                        let mut gating: Vec<&crate::limits::CheckRow> = rows
+                            .iter()
+                            .filter(|row| {
+                                row.is_stated() && row.tone() == crate::limits::Tone::Exceeds
+                            })
+                            .collect();
+                        gating.sort_by(|a, b| a.rank_cmp(b));
+                        gating
+                            .into_iter()
+                            .map(|row| GatingRow {
+                                limit: row.check().limit,
+                                face: row.face().to_owned(),
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                let _ = guard.insert(tc.id, (key, gating.clone()));
                 gating
-                    .iter()
-                    .copied()
-                    .min_by(|a, b| a.rank_cmp(b))
-                    .map(|worst| StatedCutOverLimit {
-                        face: worst.face().to_owned(),
-                        others: gating.len() - 1,
-                    })
-            });
-        let _ = guard.insert(tc.id, (key, over.clone()));
-        over
+            }
+        };
+        let kept: Vec<GatingRow> = gating?
+            .into_iter()
+            .filter(|row| match cover {
+                SimulationCover::NoFreshSimulation => true,
+                SimulationCover::FreshSimulation => {
+                    crate::tool_load::groups::judged_only_before_the_simulation(row.limit)
+                }
+            })
+            .collect();
+        kept.first().map(|worst| StatedCutOverLimit {
+            face: worst.face.clone(),
+            others: kept.len() - 1,
+            cover,
+        })
     }
 }

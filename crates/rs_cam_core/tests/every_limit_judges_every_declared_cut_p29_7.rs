@@ -96,7 +96,7 @@ use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
 use rs_cam_core::limits::{CheckRow, CutGroup, CutKind, LimitId, NoEngagementModel, Scope, scope};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::tool_load::groups::{Gate, gate_of};
+use rs_cam_core::tool_load::groups::{Gate, gate_of, judged_only_before_the_simulation};
 
 /// P29-10: the planned rows of an envelope (`Subject::Planned`), in order.
 fn planned(env: &SafeEnvelope) -> Vec<CheckRow> {
@@ -333,8 +333,20 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
                 if gate_of(limit).is_empty() {
                     no_gate += 1;
                 }
+                // Review R8: the export reads this one function for the
+                // limits that no sample gate judges after a simulation.
+                assert_eq!(
+                    judged_only_before_the_simulation(limit),
+                    no_sample_gate.limit.contains(&limit),
+                    "{limit:?}: judged only before the simulation exactly when it is a limit \
+                     of the row S-NoSampleGate"
+                );
             }
             PlaneRole::NotACutLimit(reason) => {
+                assert!(
+                    !judged_only_before_the_simulation(limit),
+                    "{limit:?}: not a limit of each cut, so not a limit of S-NoSampleGate"
+                );
                 assert!(
                     !judged_somewhere,
                     "{limit:?}: the scope judges it and the role is not a cut limit"

@@ -379,3 +379,21 @@ pub const fn gate_of(limit: LimitId) -> &'static [Gate] {
         | LimitId::DrillPlungeFeed => &[],
     }
 }
+
+/// **A limit of each cut that only the envelope judges** (review
+/// 2026-11-15 R8): the limit has a planned role (`feeds::planned`, a depth
+/// ceiling or a value check of each declared cut) and [`gate_of`] gives no
+/// sample gate. These are the limits of the row `S-NoSampleGate`; claim 1
+/// of the sentry `every_limit_judges_every_declared_cut_p29_7` holds that
+/// this set equals the row. After a simulation no gate row judges such a
+/// limit, so the export warns for its stated rows. A new sample gate for
+/// the limit removes it from this set.
+#[must_use]
+pub const fn judged_only_before_the_simulation(limit: LimitId) -> bool {
+    gate_of(limit).is_empty()
+        && matches!(
+            crate::feeds::planned::planned_limit_of(limit),
+            crate::feeds::planned::PlaneRole::DepthCeiling(_)
+                | crate::feeds::planned::PlaneRole::ValueCheck(_)
+        )
+}

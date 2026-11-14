@@ -376,16 +376,19 @@ impl ProjectSession {
                     // rows are the only judgement of the cut, so every
                     // stated row with the gating tone warns, whatever the
                     // limit. A fresh simulation measured the cut: its gate
-                    // rows judge it (`Gate::LoadRowRefuses`). Open (review
-                    // F4): a limit with no sample gate (the vertical rate,
-                    // the rubbing floor, the vendor depth table; row
-                    // `S-NoSampleGate`) and a stated-point row then warn
-                    // nowhere.
+                    // rows judge it (`Gate::LoadRowRefuses`). Review R8: a
+                    // limit with no sample gate (row `S-NoSampleGate`) has
+                    // no gate row, so its stated rows still warn after a
+                    // fresh simulation. Open: a stated-point row of a limit
+                    // that is not a limit of each cut warns nowhere then.
                     for &idx in emitted {
-                        if sim_trace.is_some_and(|t| self.sim_trace_is_fresh_for(t, idx)) {
-                            continue;
-                        }
-                        if let Some(over) = self.stated_cut_over_a_limit(idx) {
+                        let cover =
+                            if sim_trace.is_some_and(|t| self.sim_trace_is_fresh_for(t, idx)) {
+                                crate::session::SimulationCover::FreshSimulation
+                            } else {
+                                crate::session::SimulationCover::NoFreshSimulation
+                            };
+                        if let Some(over) = self.stated_cut_over_a_limit(idx, cover) {
                             push(
                                 ids::EXPORT_STATED_CUT_OVER_LIMIT,
                                 name_at(idx),

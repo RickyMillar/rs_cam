@@ -88,7 +88,9 @@ pub enum Gate {
     SimOutsideEnvelope,
     /// Review 2026-11-15 F4: an emitted op with no current measured verdict
     /// has a stated row that exceeds with a gating tone, whatever the limit
-    /// (`ProjectSession::stated_cut_over_a_limit`).
+    /// (`ProjectSession::stated_cut_over_a_limit`). Review R8: after a fresh
+    /// simulation, only a stated row of a limit with no sample gate
+    /// (`tool_load::groups::judged_only_before_the_simulation`).
     StatedCutOverLimit,
 }
 
