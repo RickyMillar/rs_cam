@@ -18,7 +18,9 @@
 //!   row per drill gate, and one row per own material and gate (S6). The
 //!   force reading gives no row (the F6 merge stopped, section 13.3). The
 //!   headline row of each gate is `of_criterion` of the headline verdict
-//!   (the gate's own state). The door gives the same rows.
+//!   (the gate's own state) where `limits::scope` judges the headline
+//!   group; on a drill cycle it is a scope cell (claim 4b). The door gives
+//!   the same rows.
 //! - Claim 3: every row with a value, a bound and a margin has
 //!   `margin == side.margin(judged value, bound)` (a stored-feed row judges
 //!   the end of its interval, so its state follows its margin); a planned or
@@ -27,6 +29,8 @@
 //!   `NotJudgedHere` and may-occur row has one. Claim 4b (P29-11 11-2b): a
 //!   gate row of a scope cell takes the class of its row
 //!   (`limits::scope_cell_state`, the classification of the envelope cell).
+//!   P29-11 section 13, ruling 4: the headline cell too; the drill cycle of
+//!   claim 8 holds it (three physical rows and the power row `P28-10`).
 //! - Claim 5: `WorstCase` holds exactly on a ramp entry row with an own
 //!   depth; `LowerBound` only on a row of the body plane of a Project
 //!   Curve (`BodyDepth::AtLeast`);
@@ -1085,6 +1089,57 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
     assert!(
         rows.iter().any(|r| r.tone() == Tone::NotApplicable),
         "the side gates do not apply to a drill cycle"
+    );
+    // Claim 4b, the headline group (P29-11 section 13, ruling 4): the
+    // headline row of each side gate of a drill cycle is a scope cell. It
+    // names the row of `limits::scope` on the drill group and takes the
+    // class of that row: chip max, deflection and force budget physical
+    // (`NotApplicable`), power `P28-10` (`NoNumber(NotJudgedHere)`).
+    let (mut physical, mut ruling) = (0, 0);
+    for limit in [
+        LimitId::ChipMax,
+        LimitId::SpindlePower,
+        LimitId::ToolDeflection,
+        LimitId::ForceBudget,
+    ] {
+        let rs_cam_core::limits::Scope::NotJudged(cell) =
+            rs_cam_core::limits::scope(limit, CutGroup::Drill)
+        else {
+            panic!("{limit:?}: the scope does not judge the drill group");
+        };
+        let r = rows
+            .iter()
+            .find(|r| {
+                r.check().limit == limit
+                    && matches!(
+                        r.subject(),
+                        Subject::Group {
+                            group: CutGroup::Drill,
+                            headline: true,
+                            material: None,
+                            ..
+                        }
+                    )
+            })
+            .unwrap_or_else(|| panic!("{limit:?}: the headline drill row"));
+        assert_eq!(r.exemption(), Some(cell.row), "{}: names its row", r.face());
+        assert_eq!(
+            r.check().state,
+            limits::scope_cell_state(cell.row),
+            "{}: the headline cell takes the class of its row {}",
+            r.face(),
+            cell.row
+        );
+        match r.check().state {
+            CheckState::NotApplicable(_) => physical += 1,
+            CheckState::NoNumber(_) => ruling += 1,
+            CheckState::Within | CheckState::Exceeds => {}
+        }
+    }
+    assert_eq!(
+        (physical, ruling),
+        (3, 1),
+        "the drill headline: three physical rows and the power row P28-10"
     );
     for r in &rows {
         check_row("drill", r);

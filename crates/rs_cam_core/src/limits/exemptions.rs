@@ -123,7 +123,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 35] = [
+pub static EXEMPTIONS: [Exemption; 37] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -440,7 +440,7 @@ pub static EXEMPTIONS: [Exemption; 35] = [
         where_: &["src/session/compute.rs"],
         closes_in: "later",
     },
-    // S: the scope reason of P29-2 (`NoNumberReason::NoBound`). P29-11
+    // S: the scope reasons. P29-2: `NoNumberReason::NoBound`. P29-11
     // 11-3 closed `S-NotJudgedHere`: the stated point is a value check.
     Exemption {
         id: "S-NoBound",
@@ -455,6 +455,28 @@ pub static EXEMPTIONS: [Exemption; 35] = [
             "src/limits/row.rs",
         ],
         closes_in: "stays, as P28-02",
+    },
+    // P29-11 section 13, ruling 1 (2026-11-14): commit 11-8 is not built in
+    // P29, so the gap of the three sample gates has a row of its own.
+    Exemption {
+        id: "S-NoSampleGate",
+        what: "the sample gate of the vendor depth table, the rubbing floor and the plunge rate",
+        limit: &[
+            LimitId::VendorDepthTable,
+            LimitId::RubbingFloor,
+            LimitId::PlungeRate,
+        ],
+        who: Who::Reader(
+            "the samples after the simulation: the envelope judges each declared cut before the \
+             simulation (VendorDepthTablePlanned, RubbingFloorPlanned, VerticalRatePlanned), and \
+             tool_load::groups::gate_of gives no gate. The plunge rate needs the Suggest \
+             vertical-rate limit (VerticalRateLimit::limit_at) in the gate context, which holds \
+             no Suggest result, and a ramp or a helix sample has no vertical-rate field \
+             (P29-11_DESIGN.md 11.6.4)",
+        ),
+        class: NR,
+        where_: &["src/feeds/planned.rs", "src/tool_load/groups.rs"],
+        closes_in: "the modulation design step, option D-1 of P29-11_DESIGN.md 11.6.4 first",
     },
     // U: one row for each cut that no limit reads before the simulation
     // (ruling Q3). P29-7 7b declared six of them with their feed rules and
@@ -498,8 +520,26 @@ pub static EXEMPTIONS: [Exemption; 35] = [
         where_: &["src/compute/catalog.rs", "src/compute/catalog/cuts.rs"],
         closes_in: "later (the planner feeds the sweep unlifted, or the sweep is a ceiling)",
     },
-    // P29-11 11-7 closed `U-efficiency`: the efficiency card reads the
-    // engaged diameter and the deflection limit of the cut.
+    // P29-11 11-7 narrowed `U-efficiency` (lead ruling 2 of P29-11 section
+    // 13): the chip verdict reads the engaged diameter and the force
+    // headroom the deflection limit of the cut; two numbers do not.
+    Exemption {
+        id: "U-efficiency",
+        what: "the specific energy and the deflection chip ceiling of the efficiency card",
+        limit: &[],
+        who: Who::Reader(
+            "feeds/efficiency.rs: specific_energy and force::immersion_angle(ae, D / 2) read the \
+             nominal diameter (tool.diameter; the wear ratio too), and \
+             deflection_chipload_ceiling_mm holds the flat EXCEEDS_BOUND_MM (200 um), not the \
+             deflection limit of the cut (tool_load::deflection::exceeds_limit). The GUI card \
+             reads rs_cam_viz ui/feeds/shared.rs applied_cut: a stated depth with the engaged \
+             diameter of the recommendation",
+        ),
+        class: NR,
+        where_: &["src/feeds/efficiency.rs"],
+        closes_in: "the clean-up pass (the card reads the engagement of the kept cut and the \
+                    deflection limit of the cut)",
+    },
     // F: the facts of the cut that hold a label value (ruling Q2).
     Exemption {
         id: "F-ThinsChip",

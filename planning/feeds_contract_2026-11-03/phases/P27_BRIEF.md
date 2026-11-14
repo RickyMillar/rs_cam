@@ -109,3 +109,81 @@ Use your judgment and keep moving; you do not need permission for decisions insi
 Bring the operator in when a choice changes what they will cut with (a number that ships, a
 ruling of theirs that the model would replace), and when you have something worth looking at.
 They prefer to see a model working, with its evidence, over a plan.
+
+## From P29 (2026-11-14)
+
+P29 ended with the guard `no_limit_reads_the_op_type_p29_last` and the lead rulings of
+`P29-11_DESIGN.md` section 13. Its end state is section 12 of that note. This section is what P29
+hands on. The source of each row is the row of `limits::EXEMPTIONS`
+(`crates/rs_cam_core/src/limits/exemptions.rs`); the sentry
+`the_exemption_list_only_shrinks_p29_3` pins 37 rows: 8 physical, 3 ruled, 26 that need a ruling.
+
+### The open rows by owner
+
+The 11 physical and ruled rows stay (`P28-04`, `P28-07`, `P28-17`, `P28-20`, `P28-24`, `P28-26`,
+`P28-30p`, `M9`; `P28-02`, `P28-18`, `S-NoBound`). The 26 rows that need a ruling:
+
+| Owner | Count | Rows | Why |
+|---|---|---|---|
+| P27 | 7 | `P28-05`, `P28-06`, `P28-08`, `P28-13`, `P28-14`, `F-OffsetRing` | No printed width rule |
+| | | `P28-10` | Drill power as a limit: no end-cut force source |
+| P25 / P27 | 10 | `P28-09`, `P28-19`, `P28-25`, `P28-27`, `P28-28`, `P28-31`, `P28-33`, `M6`, `M10`, `F-ThinsChip` | A model or a source does not exist: move model, ball axial thinning, vendor axial bound, tip plunge cap, plunge deflection, default cut, V-bit tip, vendor row by op kind, planner floor, finish thinning |
+| The modulation design step | 5 | `P28-16`, `P28-21`, `P28-29`, `P28-30` | The feed modulator's own caps and finding |
+| | | `S-NoSampleGate` | No sample gate for the vendor depth table, the rubbing floor and the plunge rate; option D-1 of `P29-11_DESIGN.md` 11.6.4 first |
+| A generator change | 2 | `U-PerimeterSweep`, `U-EntryFallback` | Generation facts: the geodesic grow refuses; a helix with no room ramps |
+| The clean-up pass | 1 | `U-efficiency` | The specific energy and the deflection chip ceiling of the efficiency card read the nominal tool |
+| The operator | 1 | `M4` | Two sample depths; M4-A or M4-A1 (`P29-11_DESIGN.md` section 3.5) |
+
+A new limit or model goes into `OperationConfig::cuts()` as a fact of the cut and judges every
+cut group, before and after the simulation (`limits/CLAUDE.md`, "How to add a limit"). The guard
+fails on a read of the op type, the family or the pass role in a limit file.
+
+### F-OF1: one obstacle frame on every face
+
+`P29-8e_OBSTACLE_FRAME.md` section 4. The value frame of an obstacle is the emission frame, and
+the emission frame moves with the face: the world frame on a Top / 0 degree setup, the stock
+corner on every other face. The editor numbers of setup 1 match neither the G-code nor the screen.
+One rule (the stock-corner frame on every face, as the alignment pins use, `StockRelXy`) removes
+the trap. It is a lead decision outside P29. The corrected boxes of setup "3 Front" of the
+operator file (section 5 of that note) wait for the operator.
+
+### The fold ramp for a surface-riding clip re-entry
+
+`P29-8e_TAB_REPLUNGE.md`, section 11 (addendum), ruling Q10 and its log. A clip re-entry of a
+surface-riding op stays the straight plunge: with a surface probe, `emit_ramp` walks straight
+legs and clips them in Z only, so it does not fold. A fold under the probe's Z clip is a new
+emitter path with no measurement. Open.
+
+### For the clean-up pass
+
+- L-4 (`P29-11_DESIGN.md` section 1 items 16 and 17, section 10 ruling L4): the old records
+  (`CriterionStatus`, `Placement`, `JudgedValue`, `criteria()`) become projections with no
+  judgement of their own, and a record with no reader goes; each diagnostic and load-policy
+  message has one writer (today `diagnostics/adapters/from_tool_load.rs` and the `gcode`
+  advisories format their own numbers).
+- The triage classifier (`P29-11_DESIGN.md` section 2, ruling L4): `stock/sim_triage.rs` has its
+  own intent predicates beside `CutKind::of_sample`; one classifier.
+- The three MRR formulas in two units (section 2): `ui/feeds/compare.rs` (ap x ae x f),
+  `calculator/close.rs` (section x feed), the sample `mrr_mm3_s` (mm³/s); one MRR function of
+  `CutLoad`. A display number moves on a V-bit and a ball.
+- The duplicate static checks (section 2): the vendor-table and cutting-length checks of
+  `diagnostics/adapters/from_static_checks.rs` duplicate the `VendorDepthTable` and
+  `CuttingLength` rows.
+- One chord law and a cusp display for every finisher (section 1 item 13; the clean-up pass and
+  the UI work).
+- `Capabilities::flat_floor_clearing` leaves out 2D Adaptive (section 1 item 15).
+- The new-op Suggest context has no stock slot (section 1 item 10).
+- `U-efficiency` (section 13, ruling 2): the card reads the engagement of the kept cut
+  (`applied_cut` keeps a stated depth with the recommendation's engaged diameter) and the
+  deflection limit of the cut.
+- A constructor for `Diagnostic`, so that a new field does not touch about 100 struct literals
+  (`P29-10_DESIGN.md` section 14).
+- `geometry/boundary.rs` imports `feeds::entry_rule`; `apply_dressups_with_entry` is a second door
+  into the dressup pipeline (`P29-8e_TAB_REPLUNGE.md` section 12).
+- Logged, not traced (`NEXT_SESSION.md`, the row "P29-10 GUI"): an MCP `set_tool_param` is
+  written back by the open tool panel; a second `run_simulation` on the operator file OOM-killed
+  the GUI at 15 GB; the S7 Warnings list is flooded by 578 holder findings; the S9 idx 16 force
+  card reads "Width 1 to 154 % of D"; a black band under the timeline after a window resize; the
+  IC1 counter counts rotated axis titles as lines; `set_ui_view` cannot select a tool or resize
+  the inspector; the card depths of idx 14 and 15 (5.73, 6.41 mm) differ from the depth peak of
+  the load report (2.99, 3.27 mm).

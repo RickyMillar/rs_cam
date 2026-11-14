@@ -876,6 +876,9 @@ pub struct TableEnv {
 /// ceiling and whether the table binds there (a share above one half).
 pub struct VendorDepthTablePlanned;
 
+// P29-11 section 13, ruling 1: no sample gate judges this limit after the
+// simulation (`tool_load::groups::gate_of` gives none).
+// EXEMPT(S-NoSampleGate)
 impl PlannedLimit for VendorDepthTablePlanned {
     const LIMIT: LimitId = LimitId::VendorDepthTable;
     type Env<'e> = TableEnv;
@@ -1186,6 +1189,9 @@ impl PlannedLimit for ChipMinPlanned {
 /// The rubbing floor (a value check, no ceiling; it warns, never lifts).
 pub struct RubbingFloorPlanned;
 
+// P29-11 section 13, ruling 1: no sample gate judges this limit after the
+// simulation (`tool_load::groups::gate_of` gives none).
+// EXEMPT(S-NoSampleGate)
 impl PlannedLimit for RubbingFloorPlanned {
     const LIMIT: LimitId = LimitId::RubbingFloor;
     type Env<'e> = ChipEnv;
@@ -1368,6 +1374,9 @@ pub enum VerticalReading {
 /// so the check judges each of them.
 pub struct VerticalRatePlanned;
 
+// P29-11 section 13, ruling 1: no sample gate judges this limit after the
+// simulation (`tool_load::groups::gate_of` gives none).
+// EXEMPT(S-NoSampleGate)
 impl PlannedLimit for VerticalRatePlanned {
     const LIMIT: LimitId = LimitId::PlungeRate;
     type Env<'e> = VerticalEnv<'e>;

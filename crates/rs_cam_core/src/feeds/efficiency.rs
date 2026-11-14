@@ -181,6 +181,9 @@ pub fn cut_efficiency(
     let axial_doc_mm = result.axial_depth_mm;
 
     let advance_per_tooth_mm = commanded_advance_per_tooth_mm(result, tool.flute_count_planning())?;
+    // P29-11 section 13, ruling 2: the specific energy and its immersion
+    // angle read the nominal diameter, not the engaged diameter of the cut.
+    // EXEMPT(U-efficiency)
     let immersion_rad = force::immersion_angle(radial_width_mm, diameter_mm / 2.0);
 
     let specific_energy_j_per_mm3 = specific_energy(
@@ -257,6 +260,9 @@ pub fn cut_efficiency(
         .map(|mid| mid / advance_per_tooth_mm)
         .filter(|r| r.is_finite());
 
+    // P29-11 section 13, ruling 2: the ceiling holds the flat 200 um
+    // (`EXCEEDS_BOUND_MM`), not the deflection limit of the cut.
+    // EXEMPT(U-efficiency)
     let deflection_ceiling_mm =
         deflection_chipload_ceiling_mm(tool, line, axial_doc_mm, radial_width_mm);
 

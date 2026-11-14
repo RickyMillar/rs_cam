@@ -1105,31 +1105,38 @@ not changed here. Wire: none (the card numbers keep their fields).
 
 ## 12. End state of P29
 
-Written 2026-11-14 at the end of round 2b. Section 11.6 (round 2b) was first written as a section
-12; L-5 moves it into section 11 as the brief asks, with no change of text.
+Written 2026-11-14 at the end of round 2b; corrected by the closing patch to what landed with the
+lead rulings of section 13. Section 11.6 (round 2b) was first written as a section 12; L-5 moved
+it into section 11 with no change of text.
 
-**Pins** (`the_exemption_list_only_shrinks_p29_3`): `ROWS` 35, `MAX_NEEDS_RULING` 24,
-`ROWS_WITH_A_FILE` 35 (`PHYSICAL` 8). They are final only if 11-8 is built: if the lead keeps 11-8
-out of P29, the gap of the three sample gates gets its own row (+1 each, section 7). Today NO row
-of `EXEMPTIONS` holds that gap (`limits/CLAUDE.md` says so).
+**Pins** (`the_exemption_list_only_shrinks_p29_3`): `ROWS` 37, `MAX_NEEDS_RULING` 26,
+`ROWS_WITH_A_FILE` 37 (`PHYSICAL` 8, `RULED` 3). L-5 left 35 / 24 / 35. Section 13, rulings 1 to
+3: the row `U-efficiency` comes back narrowed (11-7 did not close it), and the new row
+`S-NoSampleGate` names the gap of the three sample gates (11-8 is not built in P29). Against the
+36 / 25 / 36 before 11-7, the list grows by that one row, which names a gap that existed with no
+row. The test comment beside the pins states this lead ruling with its date.
 
-**What P29 leaves open, and why** (section 7, corrected to what landed: 11-3 and 11-7 closed
-`S-NotJudgedHere` and `U-efficiency`; `M4` stays open by lead ruling O1):
+**What P29 leaves open, and why** (every row of `EXEMPTIONS`, counted from the array):
 
-| Rows | Count | Why it stays | Owner |
-|---|---|---|---|
-| `P28-04`, `P28-07`, `P28-17`, `P28-20`, `P28-24`, `P28-26`, `P28-30p`, `M9` | 8 | Physical: no radial engagement, not an offset ring, no vertical feed | stays |
-| `P28-02`, `P28-18`, `S-NoBound` | 3 | Operator rulings (R2 2026-09-23; P11 L1/L2) | stays |
-| `M4` | 1 | Two sample depths; M4-A can lower an exported feed where the spindle power binds | the operator (section 3.5, lead ruling O1) |
-| `P28-16`, `P28-21`, `P28-29`, `P28-30` | 4 | The feed modulator's own caps and finding | the modulation design step |
-| `P28-05`, `P28-06`, `P28-08`, `P28-13`, `P28-14`, `F-OffsetRing` | 6 | No printed width rule | P27 |
-| `P28-09`, `P28-19`, `P28-25`, `P28-27`, `P28-28`, `P28-31`, `P28-33`, `M6`, `M10`, `F-ThinsChip` | 10 | A model or a source does not exist (move model, ball axial thinning, vendor axial bound, tip plunge cap, plunge deflection, default cut, V-bit tip, row by op kind, planner floor, finish thinning) | P25 / P27 |
-| `U-PerimeterSweep`, `U-EntryFallback` | 2 | Generation facts (the grow refuses; a helix with no room ramps) | a generator change, outside P29 |
-| `P28-10` | 1 | Drill power as a limit: no end-cut force source | P27 |
+| Rows | Count | Class | Why it stays | Owner |
+|---|---|---|---|---|
+| `P28-04`, `P28-07`, `P28-17`, `P28-20`, `P28-24`, `P28-26`, `P28-30p`, `M9` | 8 | physical | No radial engagement, not an offset ring, no vertical feed | stays |
+| `P28-02`, `P28-18`, `S-NoBound` | 3 | ruled | Operator rulings (R2 2026-09-23; P11 L1/L2 2026-11-05) | stays |
+| `M4` | 1 | needs a ruling | Two sample depths; M4-A can lower an exported feed where the spindle power binds | the operator (section 3.5, lead ruling O1) |
+| `P28-16`, `P28-21`, `P28-29`, `P28-30` | 4 | needs a ruling | The feed modulator's own caps and finding | the modulation design step |
+| `S-NoSampleGate` | 1 | needs a ruling | No sample gate for the vendor depth table, the rubbing floor and the plunge rate (11.6.4; section 13, ruling 1) | the modulation design step (option D-1 first) |
+| `P28-05`, `P28-06`, `P28-08`, `P28-13`, `P28-14`, `F-OffsetRing` | 6 | needs a ruling | No printed width rule | P27 |
+| `P28-09`, `P28-19`, `P28-25`, `P28-27`, `P28-28`, `P28-31`, `P28-33`, `M6`, `M10`, `F-ThinsChip` | 10 | needs a ruling | A model or a source does not exist (move model, ball axial thinning, vendor axial bound, tip plunge cap, plunge deflection, default cut, V-bit tip, row by op kind, planner floor, finish thinning) | P25 / P27 |
+| `P28-10` | 1 | needs a ruling | Drill power as a limit: no end-cut force source | P27 |
+| `U-PerimeterSweep`, `U-EntryFallback` | 2 | needs a ruling | Generation facts (the grow refuses; a helix with no room ramps) | a generator change, outside P29 |
+| `U-efficiency` | 1 | needs a ruling | The specific energy (and its immersion angle) and the deflection chip ceiling of the efficiency card read the nominal tool; the GUI card reads `applied_cut` (section 13, ruling 2) | the clean-up pass |
 
-35 rows: 8 physical, 3 ruled, 24 that need a ruling.
+37 rows: 8 physical, 3 ruled, 26 that need a ruling. The 26 by owner: the modulation design step
+5, P27 7 (6 width rules and `P28-10`), P25 / P27 10, a generator change 2, the operator 1, the
+clean-up pass 1. Some `closes_in` texts still name a past step (`P28-05` "P29-4", `P28-10`
+"P29-8", `M4` "P29-11") or "later"; the owner column above is the owner of today.
 
-**The X list of the guard** (`no_limit_reads_the_op_type_p29_last`, `X_TOTAL` 86):
+**The X list of the guard** (`no_limit_reads_the_op_type_p29_last`; no entry moved after L-5):
 
 | File | Function | Rows | Count |
 |---|---|---|---|
@@ -1142,29 +1149,44 @@ of `EXEMPTIONS` holds that gap (`limits/CLAUDE.md` says so).
 | `feeds/suggest/adaptive_entry.rs` | `check_plunge_entry_stability` | `P28-28` | 7 |
 | `feeds/suggest/invariants.rs` | `enforce_invariants_at_fixed_geometry` | `P28-28` | 3 |
 
+`X_TOTAL` 86 (8 entries).
+
 **Not done in P29, and why:**
 
 - 11-4 (M4-A): held by lead ruling O1 for the operator.
-- 11-8 (three sample gates): not built in round 2b (section 11.6.4: the decisions D-1 to D-3).
-- The S11 drill test of `predict.rs` (`P28-17`, X count 9) is not changed (11-7 changed only the
-  efficiency card).
-- `U-efficiency` is closed as the brief says, but two numbers of the efficiency card still read
-  the nominal tool: the specific energy and its immersion angle (`specific_energy`,
-  `force::immersion_angle(ae, D / 2)`), and the deflection chip ceiling
-  (`deflection_chipload_ceiling_mm`, the flat 200 um). The lead decides whether they need a row.
-- The 11-7 measure ("no card number moves") is a measure of `cut_efficiency` on the stored op and
-  the Suggest result. The GUI card calls it on `applied_cut` (`ui/feeds/shared.rs`), which keeps a
-  stated depth but not the engaged diameter of that depth: on a ball or a tapered tool whose kept
-  depth differs from the recommendation, the lift reads the recommendation's engaged diameter. Not
-  measured; not changed.
-- The table above is not copied into `phases/P27_BRIEF.md` (lead ruling "End state"): the lead
-  does it with the last commit.
+- 11-8 (three sample gates): not built (section 13, ruling 1); the row `S-NoSampleGate` holds the
+  gap; 11.6.4 holds the options D-1 to D-3.
+- L-4 (the old records as projections, one writer of each message): the clean-up pass (lead
+  ruling L4).
+- The S11 drill test of `predict.rs` (`P28-17`, X count 9) is not changed.
+- The 11-7 measure ("no card number moves") reads `cut_efficiency` on the stored op and the
+  Suggest result, not on `applied_cut`; not measured on a ball or a tapered tool whose kept depth
+  differs from the recommendation.
+- A disabled drill op (`rows_without_a_verdict`) states the body group as the headline and no
+  scope cell; section 13, ruling 4 does not change it.
 
 **What waits for the operator:**
 
-- M4-A against M4-A1 (section 3.5), after a modulated run of the 6 mm working file with and without.
-- O5, corrected: the rubbing warning of Suggest now tests the peak chip, which is at or UNDER the
-  feed per tooth, so it warns on the same cuts or more, not fewer (section 11.6.5). It only warns.
+- **M4-A or M4-A1** (section 3.5). M4-A: one depth, the maximum, for every gate and for the feed
+  modulator; it can lower an exported feed where the modulator's power cap binds; it needs a
+  modulated run of the 6 mm working file with and without, and the move list (`modulated_feeds`
+  move by move). M4-A1: as M4-A for the gates only; the modulator keeps the mean depth; no exported
+  feed moves, but the gates and the modulator read two definitions again (against lead ruling 2
+  of P20g). It needs only the operator's choice.
+- **O5, corrected** (section 13, ruling 5): the rubbing warning of Suggest tests the peak chip,
+  which is at or UNDER the feed per tooth, so it warns on the same cuts or more, never fewer. It
+  only warns. Measured: no FM1 cell moves; on the four project files only the basis of the
+  rubbing-floor rows moves.
+- **The clamp boxes of setup "3 Front"** of the operator file: the corrected boxes are in
+  `P29-8e_OBSTACLE_FRAME.md` section 5. `nz_wanaka_21_operator.toml`, `nz_wanaka_21.toml` and
+  `derive_wanaka21.py` hold the same error; nobody edits them without the operator.
+- **The screenshot review** of P29-10: `P29-10_shots/INDEX.md` (S1 to S10 from one build of the review tree; S11 from a release build of the 10z tree).
+- **Ten caution lines on 18 ops**: is a caution face line on 10 of the 18 operator ops too much
+  (the ramp "worst case" lines of idx 2, 14, 15; the engagement-floor rows that read "depth
+  12000 % of min engage floor")?
+- **Over before the simulation, within after it**: a row can be over before the simulation and
+  within after it, because the simulation's feed modulation changes the feed (the modulation
+  design step owns it; `Caveat::BeforeModulation` marks the capped rows).
 
 ## 13. Lead rulings after round 2b
 
@@ -1258,6 +1280,10 @@ Not moved:
 - FM1 (it holds no row text) and the op golden (it holds no row).
 - `rows_without_a_verdict` (a disabled toolpath): it states the body group as the headline on
   every op and has no scope cell; it does not change.
+- The own-material rows (`own_material_rows`, S6): a toolpath that cuts an own material (a stock
+  change) gets one row per own material and gate on the headline group, built by `of_criterion`.
+  On a drill op they keep `NotApplicable` with no exemption, the power row too. No dump holds such
+  an op. The ruling names three callers, so this patch adds no fourth; the lead decides.
 
 What the operator sees (reasoned from the viz code, not run): `CheckRow::in_default_view` keeps a
 headline `NoNumber` row and drops a `NotApplicable` row. So the power row of a drill op enters the
@@ -1272,3 +1298,39 @@ The explainer: the tool-load report (`P29-10_explainer/data/mcp_tool_load_report
 holds the 8 operator rows; they are replaced by their rows of the after dump, after a check that
 each old row equals its HEAD dump row (with no trace) in every field but the predicted ones. No
 claim of `assert_claims.py` reads them.
+
+### 13.2 Measured
+
+The two probes ran again after the code (copies in the session scratchpad folder `p29_end/`).
+Ruling 4, as predicted: the verdict rows of operator idx 3 and 4 (8 rows) and `nz_wanaka_21` idx 3
+(4 rows) move, each in exactly the predicted fields (a script compares each moved row with its HEAD
+row field by field). No other line of the five dumps moves: rivmap100, rivmap100_live and the
+fixture dump are byte-equal to the HEAD dumps. The gantry-push rows do not move.
+
+- The explainer: the 8 rows of the tool-load report were replaced from the after dump. Each old
+  row was equal to its HEAD dump row (with no trace) in every field. The CLI records hold no
+  verdict row of a drill op, so they do not change. `assert_claims.py`: 11 of 11.
+- The explainer page gains one line: the tool-load report comes from the simulation of 10g
+  (`de37ede1c`), the deepest samples from the GUI of the review tree (`702c8e97b`); both are older
+  than F6-a (`f210f23c7`), so their depth populations can differ from a simulation of today. No
+  claim of `assert_claims.py` reads a depth population (claim 1 reads the row keys of the report,
+  claim 9 the drill gate populations).
+- Rulings 1 to 3: pins 37 / 26 / 37 (counted by the sentry). Two injected faults went red: the
+  headline arm without the scope cell (claim 8, "names its row"), and `PlungeRate` removed from
+  `S-NoSampleGate` (claim 1 of `every_limit_judges_every_declared_cut_p29_7`).
+- `folder_maps_name_real_files_f140` failed on the token `cuts.rs` in the sentry line of
+  `limits/CLAUDE.md`. The token is in the HEAD text (L-5); the test was not run at HEAD. The line
+  now names `compute/catalog/cuts.rs`.
+- Gates: fmt (no diff); `the_exemption_list_only_shrinks_p29_3`,
+  `one_record_on_every_surface_p29_10`, `every_limit_judges_every_declared_cut_p29_7`,
+  `every_limit_is_a_limit_id_p29_2`, `no_limit_reads_the_op_type_p29_last`,
+  `folder_maps_name_real_files_f140`: pass. Core `--lib`: 2818 pass, only the known timing red in
+  the parallel run (alone three times: pass). `rs_cam_mcp`, `rs_cam_cli`: pass. Viz `--lib` 703
+  pass; `readiness_shows_the_limits_g_readylimits`, `the_limit_rows_read_their_own_bound_g_ownbound`,
+  `cut_metric_cards_read_the_gate_g_cutcards`, `mcp_wire_surface_pin`: pass. FM1: pass (no cell
+  moves). Op golden: only the known 46 rows. Full clippy: clean. Also run:
+  `every_declared_cut_is_judged_at_the_stated_point_p29_10`, `no_removing_sample_is_outside_the_gates_p29_6`,
+  viz `the_inspector_text_is_bounded_ic1`, `the_card_shows_one_planned_row_and_a_drawer_p29_10`,
+  `no_surface_matches_a_limit_p29_10` and the viz and CLI twins of the guard: pass.
+- Not verified: the GUI was not run, so the new default-view row of a drill op ("drill · power
+  not judged here") is reasoned from the code, not seen.

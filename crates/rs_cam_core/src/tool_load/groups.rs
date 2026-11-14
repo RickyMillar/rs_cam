@@ -344,9 +344,10 @@ impl Gate {
 /// `every_limit_judges_every_declared_cut_p29_7` holds that this list
 /// equals the gates whose [`Gate::limits`] name the limit.
 ///
-/// The vendor depth table and the rubbing floor are limits of each cut
-/// (`limits::scope` judges them) with no sample gate yet: the envelope
-/// judges them before the simulation only.
+/// The vendor depth table, the rubbing floor and the plunge rate are limits
+/// of each cut (`limits::scope` judges them) with no sample gate: the
+/// envelope judges them before the simulation only (row `S-NoSampleGate`,
+/// P29-11 section 13, ruling 1).
 #[must_use]
 pub const fn gate_of(limit: LimitId) -> &'static [Gate] {
     match limit {
@@ -354,9 +355,9 @@ pub const fn gate_of(limit: LimitId) -> &'static [Gate] {
         LimitId::SpindlePower => &[Gate::Power],
         LimitId::ToolDeflection => &[Gate::Deflection],
         LimitId::ForceBudget => &[Gate::Depth, Gate::CutForce],
-        LimitId::RubbingFloor
-        | LimitId::VendorDepthTable
-        | LimitId::FluteGuard
+        // EXEMPT(S-NoSampleGate)
+        LimitId::RubbingFloor | LimitId::VendorDepthTable | LimitId::PlungeRate => &[],
+        LimitId::FluteGuard
         | LimitId::CuttingLength
         | LimitId::VendorAxial
         | LimitId::CornerCoverage
@@ -367,7 +368,6 @@ pub const fn gate_of(limit: LimitId) -> &'static [Gate] {
         | LimitId::CuttingFeedCap
         | LimitId::PlannerFeedCap
         | LimitId::KinematicReach
-        | LimitId::PlungeRate
         | LimitId::SpindleMaxRpm
         | LimitId::ZAxisRate
         | LimitId::OperatorRpmCeiling

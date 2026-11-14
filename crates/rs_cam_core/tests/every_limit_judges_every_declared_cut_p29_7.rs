@@ -14,8 +14,9 @@
 //!   the state of the cell follows `limits::scope(limit, cut.kind.group())`.
 //!   The lists of a limit agree: a limit that `limits::scope` judges on a
 //!   group has a planned role (`planned_limit_of`: a depth ceiling or a
-//!   value check) that names the limit, and has a gate OR a named exemption
-//!   row for the side after the simulation; a limit with no judged group has
+//!   value check) that names the limit, and has a gate OR is a limit of the
+//!   row `S-NoSampleGate` (P29-11 section 13, ruling 1; each limit of that
+//!   row has no gate) for the side after the simulation; a limit with no judged group has
 //!   the role `NotACutLimit` with the reason that `limits::scope` gives on
 //!   every group; `gate_of` names exactly the gates whose `LIMITS` name the
 //!   limit. Non-vacuity: the force budget and the deflection have a role and
@@ -294,6 +295,18 @@ fn cells<L: PlannedLimit>(
 fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
     // The lists of each limit agree.
     let mut found_force_and_deflection = 0;
+    let no_sample_gate = rs_cam_core::limits::EXEMPTIONS
+        .iter()
+        .find(|e| e.id == "S-NoSampleGate")
+        .expect("the row S-NoSampleGate");
+    // Each limit of the row has no gate: a new gate closes the row.
+    for limit in no_sample_gate.limit {
+        assert!(
+            gate_of(*limit).is_empty(),
+            "{limit:?}: a sample gate judges it; close it in the row S-NoSampleGate"
+        );
+    }
+    let mut no_gate = 0;
     for limit in LimitId::ALL {
         let judged_somewhere = CutGroup::ALL
             .iter()
@@ -310,14 +323,16 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
                     judged_somewhere,
                     "{limit:?}: a planned role and no judged group"
                 );
-                // The side after the simulation: a gate, or a named row.
-                let row = rs_cam_core::limits::EXEMPTIONS
-                    .iter()
-                    .find(|e| e.limit.contains(&limit));
+                // The side after the simulation: a gate, or the named row of
+                // the gap (P29-11 section 13, ruling 1: `S-NoSampleGate`).
                 assert!(
-                    !gate_of(limit).is_empty() || row.is_some(),
-                    "{limit:?}: judged before the simulation, with no gate and no exemption row"
+                    !gate_of(limit).is_empty() || no_sample_gate.limit.contains(&limit),
+                    "{limit:?}: judged before the simulation, with no gate and not in the row \
+                     S-NoSampleGate"
                 );
+                if gate_of(limit).is_empty() {
+                    no_gate += 1;
+                }
             }
             PlaneRole::NotACutLimit(reason) => {
                 assert!(
@@ -349,6 +364,11 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
     assert_eq!(
         found_force_and_deflection, 2,
         "the force budget and the deflection have a role and a gate"
+    );
+    assert_eq!(
+        no_gate,
+        no_sample_gate.limit.len(),
+        "non-vacuity: each limit of S-NoSampleGate is a planned limit with no gate"
     );
 
     let machine = MachineProfile::default();

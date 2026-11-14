@@ -20,6 +20,7 @@ use super::{
     SampleDepth, of_criterion, of_rpm_choice,
 };
 use crate::feeds::RpmChoice;
+use crate::tool_load::groups::Gate;
 use crate::tool_load::verdict::{
     AdvisoryLowSide, CriterionKind, CriterionStatus, ToolpathLoadVerdict,
 };
@@ -1387,8 +1388,15 @@ fn empty_row(
 }
 
 /// The rows of one gate over every cut group: one row per group.
+///
+/// P29-11 section 13, ruling 4: the headline group is a scope cell too.
+/// When `limits::scope` does not judge the gate's `limits` on it (a drill
+/// cycle), its row is the row of a `NotJudged` cell: the state of
+/// `scope_cell_state` and the row id, as on every other scope cell. The
+/// headline verdict (`NotApplicableForOp`) does not change.
 fn gate_rows<V>(
     kind: CriterionKind,
+    limits: &[LimitId],
     headline: &V,
     cells: &super::ByGroup<GroupCell<V>>,
     headline_group: CutGroup,
@@ -1397,15 +1405,22 @@ fn gate_rows<V>(
 ) {
     for group in CutGroup::ALL {
         let row = match cells.get(group) {
-            GroupCell::Headline => group_row(
-                &status_of(headline),
-                Subject::Group {
+            GroupCell::Headline => {
+                let subject = Subject::Group {
                     group,
                     headline: true,
                     samples: None,
                     material: None,
-                },
-            ),
+                };
+                match super::scope_of_all(limits, group) {
+                    super::Scope::NotJudged(cell) => {
+                        scope_cell_row(kind, subject, cell.row, cell.reason)
+                    }
+                    super::Scope::Judged | super::Scope::NotACutLimit(_) => {
+                        group_row(&status_of(headline), subject)
+                    }
+                }
+            }
             GroupCell::Judged { samples, verdict } => group_row(
                 &status_of(verdict),
                 Subject::Group {
@@ -1431,7 +1446,7 @@ fn gate_rows<V>(
                 samples,
                 row,
                 reason,
-            } => empty_row(
+            } => scope_cell_row(
                 kind,
                 Subject::Group {
                     group,
@@ -1439,19 +1454,26 @@ fn gate_rows<V>(
                     samples: Some(*samples),
                     material: None,
                 },
-                // P29-11 11-2b: the cell takes the class of its row, as the
-                // envelope cell does (one classification).
-                super::scope_cell_state(row),
-                std::slice::from_ref(reason),
-                // The cell names its own row of `EXEMPTIONS`.
-                EXEMPTIONS
-                    .iter()
-                    .find(|e| e.id == row.as_str())
-                    .map(|e| e.id),
+                row,
+                reason,
             ),
         };
         out.push(row);
     }
+}
+
+/// The row of a gate cell that `limits::scope` does not judge, on the
+/// headline group or another group. P29-11 11-2b: the cell takes the class
+/// of its row, as the envelope cell does (one classification,
+/// `scope_cell_state`), and names its own row of `EXEMPTIONS`.
+fn scope_cell_row(kind: CriterionKind, subject: Subject, row: &str, reason: &str) -> CheckRow {
+    empty_row(
+        kind,
+        subject,
+        super::scope_cell_state(row),
+        &[reason.to_owned()],
+        EXEMPTIONS.iter().find(|e| e.id == row).map(|e| e.id),
+    )
 }
 
 /// THE projection of a gate verdict (P29-10): one row per gate and cut
@@ -1498,6 +1520,7 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
     let mut out = Vec::new();
     gate_rows(
         CriterionKind::Chipload,
+        Gate::Chipload.limits(),
         chipload,
         chip_cells,
         h,
@@ -1506,6 +1529,7 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
     );
     gate_rows(
         CriterionKind::Power,
+        Gate::Power.limits(),
         power,
         power_cells,
         h,
@@ -1514,6 +1538,7 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
     );
     gate_rows(
         CriterionKind::Deflection,
+        Gate::Deflection.limits(),
         deflection,
         deflection_cells,
         h,
@@ -1522,6 +1547,7 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
     );
     gate_rows(
         CriterionKind::DepthOfCut,
+        Gate::Depth.limits(),
         depth,
         depth_cells,
         h,

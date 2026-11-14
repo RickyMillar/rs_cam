@@ -48,9 +48,16 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 24;
-/// Every row.
-const ROWS: usize = 35;
+///
+/// Lead ruling of 2026-11-14 (`P29-11_DESIGN.md` section 13, rulings 1 to
+/// 3): the pins rise from 35 / 24 / 35 to 37 / 26 / 37, on purpose. The row
+/// `U-efficiency` comes back narrowed (11-7 did not close it), and the new
+/// row `S-NoSampleGate` names a gap that existed with no row (commit 11-8
+/// is not built in P29). Against the 36 / 25 / 36 before 11-7 the list
+/// grows by that one row. It is not a silent rise.
+const MAX_NEEDS_RULING: usize = 26;
+/// Every row (see [`MAX_NEEDS_RULING`] for the rise of 2026-11-14).
+const ROWS: usize = 37;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -100,8 +107,13 @@ const RULED: usize = 3;
 /// need a ruling 25): the stated point on a fixed axis or per point is a
 /// value check (`SafeEnvelope::stated_value_check`). P29-11 11-7 closed the
 /// row `U-efficiency` (ROWS 35, need a ruling 24): the efficiency card reads
-/// the engaged diameter and the deflection limit of the cut.
-const ROWS_WITH_A_FILE: usize = 35;
+/// the engaged diameter and the deflection limit of the cut. The lead
+/// ruling of 2026-11-14 (`P29-11_DESIGN.md` section 13) gives it back,
+/// narrowed to the two numbers that still read the nominal tool, with its
+/// file (`src/feeds/efficiency.rs`), and adds the row `S-NoSampleGate` with
+/// two files (`src/feeds/planned.rs`, `src/tool_load/groups.rs`): ROWS 37,
+/// need a ruling 26.
+const ROWS_WITH_A_FILE: usize = 37;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
