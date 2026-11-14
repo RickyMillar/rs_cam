@@ -255,9 +255,12 @@ fn a_job_with_each_finding_exports_and_names_it_k6() {
     );
 }
 
-/// A project with no `Warn` finding writes no header line.
-#[test]
-fn a_clean_job_writes_no_warning_line_k6() {
+/// The K6 project with only `Inverted` enabled, its heights at the default
+/// order, and the op generated again. With `apply_suggest` the op first
+/// takes the speeds of the session's own Suggest through the apply door
+/// (`Command::ApplyFeeds`, no pick): the feed, the plunge, the RPM and the
+/// ramp feed. The export reads an empty load report.
+fn only_inverted_exported(apply_suggest: bool) -> (ProjectSession, ExportedGcode) {
     let mut session = k6_project::generated_and_simulated();
     // Keep only the gouge-free, plunge-free, ordered op: disable the rest.
     for index in [
@@ -283,6 +286,17 @@ fn a_clean_job_writes_no_warning_line_k6() {
             },
         ))
         .expect("the default heights are in order");
+    if apply_suggest {
+        let _ = session
+            .apply(rs_cam_core::session::Command::ApplyFeeds(
+                rs_cam_core::session::ApplyFeedsArgs {
+                    index: k6_project::INVERTED,
+                    pick: None,
+                    explored: None,
+                },
+            ))
+            .expect("Suggest serves the 6 mm end mill in the stock material");
+    }
     session
         .generate_toolpath(
             k6_project::INVERTED,
@@ -295,6 +309,60 @@ fn a_clean_job_writes_no_warning_line_k6() {
     let exported = session
         .export_gcode_with_report(&report)
         .expect("the export runs");
+    (session, exported)
+}
+
+/// A project with no `Warn` finding writes no header line.
+///
+/// The op keeps its ramp entry and takes the speeds of the session's own
+/// Suggest, so no stated row exceeds with the gating tone. Without the
+/// apply the ramp rubs ([`a_ramp_that_rubs_writes_the_stated_cut_warning_k6`]).
+#[test]
+fn a_clean_job_writes_no_warning_line_k6() {
+    let (session, exported) = only_inverted_exported(true);
+    // Non-vacuity: the op still ramps, at a stated ramp feed.
+    let tc = session
+        .toolpath_configs()
+        .get(k6_project::INVERTED)
+        .expect("the op exists");
+    assert!(
+        matches!(
+            tc.dressups.entry_style,
+            rs_cam_core::compute::config::DressupEntryStyle::Ramp
+        ),
+        "the op keeps its ramp entry: {:?}",
+        tc.dressups.entry_style
+    );
+    assert!(
+        tc.operation.ramp_feed_rate().is_some(),
+        "the apply states a ramp feed"
+    );
     assert!(exported.warnings.is_empty(), "{:?}", exported.warnings);
     assert!(!exported.gcode.contains("WARNING"), "{}", exported.gcode);
+}
+
+/// The mirror of [`a_clean_job_writes_no_warning_line_k6`]: the same op
+/// with the speeds of the fixture. It states no ramp feed, so the ramp
+/// runs at the plunge rate, 500 mm/min at 18000 rpm on two flutes: a chip
+/// of 500 / (18000 x 2) = 0.0139 mm, 44 % under the 0.025 mm rubbing
+/// floor. A ramp chip row is exact, so it keeps the gating tone (review
+/// 2026-11-15 R2), and the export warns for every stated row with that
+/// tone (R4, R8).
+#[test]
+fn a_ramp_that_rubs_writes_the_stated_cut_warning_k6() {
+    let (_, exported) = only_inverted_exported(false);
+    assert_eq!(exported.warnings.len(), 1, "{:?}", exported.warnings);
+    let warning = exported.warnings.first().expect("one warning");
+    assert_eq!(warning.id, "export.stated_cut_over_limit");
+    assert_eq!(warning.toolpath, "Inverted");
+    for words in ["ramp entry", "rubbing 44 % under floor"] {
+        assert!(warning.detail.contains(words), "{}", warning.detail);
+    }
+    assert!(
+        exported
+            .gcode
+            .lines()
+            .any(|line| line.contains("WARNING") && line.contains("export.stated_cut_over_limit")),
+        "the header names the warning"
+    );
 }
