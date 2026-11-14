@@ -1033,3 +1033,29 @@ before. Keep 11-9, or hold it until the operator sees the corrected question.
   `_litmatrix_rubbing_floor_clamp::ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4` is red
   on its vendor row match (`amana-compression-wood-pocket-6350-2f` against the pinned
   `amana-flat-hardwood-pocket-6000-2f-spektra`), which runs before Step 9b; not run at HEAD.
+
+### 12.6 Commit 11-7: efficiency through the cut (prediction)
+
+Written on the 11-9 tree, before the code. Today `feeds::efficiency::cut_efficiency` lifts the
+advance at the NOMINAL diameter (`lift(full_feed_width(ae, D), D)`) and the force headroom is
+`1 - predicted / 200 um` (`EXCEEDS_BOUND_MM`) for every cut. The change (lead ruling O4, display
+only): the lift is the lift of Step 5, at the engaged diameter `FeedsResult::effective_diameter_mm`;
+the headroom is `1 - predicted / limit`, the limit `deflection::exceeds_limit` of the body cut's
+leave (`min(leave, 200 um)`). The row `U-efficiency` and its marker go: pins 35 / 24 / 35. No
+proposal reads `cut_efficiency` (the Suggest card and the explore chart read it).
+
+Predicted on the four project files (the `EFF` line of the row dump, both modulation passes):
+no card number moves.
+
+- The leave: a probe of the body facts (`cuts().body_facts().leave_after_mm()`) gives
+  `Leave::None` on all 44 toolpaths (only a Bore states a radial leave,
+  `OperationConfig::radial_stock_to_leave_mm`), so the limit stays 200 um and no headroom moves.
+- The lift: the verdict holds a band only on operator and `nz_wanaka_21` idx 5, 9, 17 and rivmap idx
+  3; idx 5, 9 and rivmap idx 3 are finish passes (no thinning, lift 1 at any diameter), and idx 17
+  (Profile, 6 mm flat) has the engaged diameter equal to the nominal one. Every other `EFF` line is
+  `NoBand` (the verdict reads no lift) and the other numbers of the card do not read the lift.
+- FM1 holds no efficiency column: no cell moves.
+
+The claims move on synthetic cuts: a sentry claim in `cut_efficiency_is_closed_form_g_specenergy`
+holds both sides (a Pocket advance that is in the band at an engaged diameter of 0.75 D and thin at
+the nominal diameter; a Bore that leaves 0.1 mm doubles the used share `1 - headroom`).
