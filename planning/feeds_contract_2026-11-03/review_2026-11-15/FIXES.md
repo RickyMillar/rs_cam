@@ -37,3 +37,31 @@ below its top.
 - FM1 (`feeds_matrix_instrument_fm1`): no cell moves (the matrix holds no
   fold ramp).
 - The other three project files: not generated (each op takes minutes).
+
+### Tests
+
+- `--lib dressup::tests::a_fold_ramp_never_runs_over_a_tab_review_f1`: the
+  reviewer's reproduction. Red at HEAD (a ramp point at x 14.29 over the
+  tab span x 3 to 20), green with the fix.
+- `--lib dressup::tests::no_fold_ramp_point_is_below_the_followed_cut_review_f1`:
+  400 generated cuts with lines, arcs and tabs (vertical and sloped lifts,
+  traverses on a line or an arc), four angles, three tool radii, with and
+  without the lap cap. Each emitted ramp segment is sampled at 41 points
+  against the cut at that XY (arcs sampled from their own centre and
+  angles). Red at HEAD (case 0: a sample at z -1.243 against the cut at
+  -1.204 at that XY), green with the fix.
+
+### Results
+
+- Operator file: 0 of 12 ops move (all 12 dumps byte-equal to HEAD). As
+  predicted.
+- Op golden: only the known 46 rows. As predicted. No re-bless.
+- FM1: 2 passed, no cell moves. As predicted.
+- Gates: the 72 test binaries whose names hold entry, ramp, tab, clip,
+  isoclip, boundary, dressup, helix or plunge pass, one at a time. Core
+  `--lib`: 2820 passed, 1 failed (`the_envelope_meets_its_time_budget`, the
+  known timing red of a parallel run).
+- Not verified: the other three project files (no generation). The property
+  test reads the lowest cut Z within 0.03 mm of a sample, so where a
+  generated cut crosses itself, a floor segment can hide a tab top at the
+  crossing.

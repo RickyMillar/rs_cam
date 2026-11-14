@@ -2809,3 +2809,273 @@ fn a_fine_polyline_and_one_arc_give_the_same_entry_p29_8e() {
         assert_eq!(plunges, 0, "polyline {polyline}: no straight plunge stays");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Review 2026-11-15 F1: a fold ramp never goes below the cut it follows
+// ---------------------------------------------------------------------------
+
+/// The XY distance from `(x, y)` to the segment `a`-`b`, and the Z of the
+/// segment at the nearest point.
+fn fold_ref_nearest(a: P3, b: P3, x: f64, y: f64) -> (f64, f64) {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 <= 0.0 {
+        0.0
+    } else {
+        (((x - a.x) * dx + (y - a.y) * dy) / len2).clamp(0.0, 1.0)
+    };
+    let (px, py) = (a.x + dx * t, a.y + dy * t);
+    (
+        ((x - px).powi(2) + (y - py).powi(2)).sqrt(),
+        a.z + (b.z - a.z) * t,
+    )
+}
+
+/// Every sample of every `EntryRamp` move of `out` that is below the cut
+/// `reference` at its XY: `(x, y, z, cut z)`. The cut Z at an XY is the
+/// LOWEST Z of the reference segments within `tol` of it (at a tab foot
+/// the cut stands at both Z values); a sample with no segment within
+/// `tol` is off the cut and is reported with a cut Z of infinity.
+/// `reference` holds only the segments that have XY length: a vertical
+/// lift or drop is at every Z between its ends.
+fn fold_samples_below_the_cut(
+    out: &Toolpath,
+    reference: &[(P3, P3)],
+    tol: f64,
+) -> Vec<(f64, f64, f64, f64)> {
+    let mut low = Vec::new();
+    for w in out.moves.windows(2) {
+        if w[1].intent != MoveIntent::EntryRamp {
+            continue;
+        }
+        let (a, b) = (w[0].target, w[1].target);
+        for s in 0..=40 {
+            let t = f64::from(s) / 40.0;
+            let (x, y, z) = (
+                a.x + t * (b.x - a.x),
+                a.y + t * (b.y - a.y),
+                a.z + t * (b.z - a.z),
+            );
+            let cut_z = reference
+                .iter()
+                .map(|&(p, q)| fold_ref_nearest(p, q, x, y))
+                .filter(|&(d, _)| d <= tol)
+                .map(|(_, cz)| cz)
+                .fold(f64::INFINITY, f64::min);
+            if z < cut_z - 1e-9 {
+                low.push((x, y, z, cut_z));
+            }
+        }
+    }
+    low
+}
+
+/// The reviewer's reproduction (REVIEW.md F1, `zz_review_fold_over_a_tab`):
+/// a plunge to z -2 at the origin, a cut to x 3, a tab lift to z -0.5, a
+/// traverse to x 20, a drop to -2 and a cut to x 40. Before the fix the
+/// return chord crossed the tab span at z -1.676 (19 samples under the tab
+/// top). The run before the tab is 3 mm, too short for the fold.
+#[test]
+fn a_fold_ramp_never_runs_over_a_tab_review_f1() {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+    tp.feed_to_with_intent(P3::new(0.0, 0.0, -2.0), 500.0, MoveIntent::EntryPlunge);
+    tp.feed_to_with_intent(P3::new(3.0, 0.0, -2.0), 1000.0, MoveIntent::ClearingCut);
+    tp.feed_to_with_intent(P3::new(3.0, 0.0, -0.5), 800.0, MoveIntent::ClearingCut);
+    tp.feed_to_with_intent(P3::new(20.0, 0.0, -0.5), 1000.0, MoveIntent::ClearingCut);
+    tp.feed_to_with_intent(P3::new(20.0, 0.0, -2.0), 500.0, MoveIntent::ClearingCut);
+    tp.feed_to_with_intent(P3::new(40.0, 0.0, -2.0), 1000.0, MoveIntent::ClearingCut);
+    tp.rapid_to(P3::new(40.0, 0.0, 10.0));
+    let out = without_provenance(apply_entry(
+        AnnotatedToolpath::new(tp),
+        EntryStyle::Ramp { max_angle_deg: 5.0 },
+        500.0,
+        no_probe(0.0),
+        3.0,
+    ))
+    .toolpath;
+    let ramp: Vec<P3> = out
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryRamp)
+        .map(|m| m.target)
+        .collect();
+    // The tab descent at x 20 is a plunge too: its ramp folds forward on
+    // the cut after the tab (x 20 to 40). No ramp point is over the tab.
+    for p in &ramp {
+        assert!(
+            p.x <= 3.0 + 1e-9 || p.x >= 20.0 - 1e-9,
+            "a ramp point is over the tab span x 3 to 20: {p:?}"
+        );
+    }
+    // The run before the tab is 3 mm. The lap cap (3 laps) admits a run of
+    // at least 2 x 14.29 / 3 = 9.5 mm (half length 2.5 mm / tan 5 deg / 2),
+    // so the first entry takes the stated plunge at the origin.
+    assert!(
+        out.moves.iter().any(|m| m.intent == MoveIntent::EntryPlunge
+            && m.target.x.abs() < 1e-9
+            && (m.target.z + 2.0).abs() < 1e-9),
+        "the first entry falls back to the plunge at (0, 0, -2)"
+    );
+    let reference = [
+        (P3::new(0.0, 0.0, -2.0), P3::new(3.0, 0.0, -2.0)),
+        (P3::new(3.0, 0.0, -0.5), P3::new(20.0, 0.0, -0.5)),
+        (P3::new(20.0, 0.0, -2.0), P3::new(40.0, 0.0, -2.0)),
+    ];
+    let low = fold_samples_below_the_cut(&out, &reference, 1e-6);
+    assert!(low.is_empty(), "ramp samples below the cut: {low:?}");
+}
+
+/// A small deterministic generator (xorshift64) for the property test.
+struct FoldRng(u64);
+
+impl FoldRng {
+    fn next(&mut self) -> f64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        // 53 bits of the state, in [0, 1).
+        (self.0 >> 11) as f64 / (1_u64 << 53) as f64
+    }
+
+    fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + (hi - lo) * self.next()
+    }
+}
+
+/// One generated cut: a plunge to the floor at the origin, then lines,
+/// arcs and tabs (a lift, a level traverse on a line or an arc, a drop).
+/// Returns the toolpath and the reference segments of the cut, with each
+/// arc sampled by its own centre and angles (not by the product's arc
+/// linearisation).
+fn fold_generated_cut(rng: &mut FoldRng) -> (Toolpath, Vec<(P3, P3)>) {
+    let floor = -rng.range(1.0, 4.0);
+    let mut tp = Toolpath::new();
+    let mut reference = Vec::new();
+    tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+    tp.feed_to_with_intent(P3::new(0.0, 0.0, floor), 500.0, MoveIntent::EntryPlunge);
+    let mut at = P3::new(0.0, 0.0, floor);
+    let mut heading = rng.range(0.0, std::f64::consts::TAU);
+    // 3 to 9 pieces, with no float to integer cast (F195).
+    let pieces = 3 + (0..6).filter(|_| rng.next() < 0.5).count();
+    for _ in 0..pieces {
+        let kind = rng.next();
+        let tab = kind > 0.6;
+        let z = if tab {
+            floor + rng.range(0.2, -floor + 0.5)
+        } else {
+            floor
+        };
+        if tab {
+            // The lift: vertical, or a short slope.
+            let slope = if rng.next() > 0.5 {
+                rng.range(0.1, 1.0)
+            } else {
+                0.0
+            };
+            let top = P3::new(
+                at.x + heading.cos() * slope,
+                at.y + heading.sin() * slope,
+                z,
+            );
+            tp.feed_to_with_intent(top, 800.0, MoveIntent::ClearingCut);
+            if slope > 0.0 {
+                reference.push((at, top));
+            }
+            at = top;
+        }
+        if rng.next() > 0.5 {
+            // A line.
+            heading += rng.range(-1.6, 1.6);
+            let len = rng.range(1.0, 8.0);
+            let to = P3::new(at.x + heading.cos() * len, at.y + heading.sin() * len, z);
+            tp.feed_to_with_intent(to, 1000.0, MoveIntent::ClearingCut);
+            reference.push((at, to));
+            at = to;
+        } else {
+            // A tangent arc.
+            let r = rng.range(3.0, 8.0);
+            let cw = rng.next() > 0.5;
+            let side = if cw { -1.0 } else { 1.0 };
+            let normal = heading + side * std::f64::consts::FRAC_PI_2;
+            let (cx, cy) = (at.x + r * normal.cos(), at.y + r * normal.sin());
+            let a0 = (at.y - cy).atan2(at.x - cx);
+            let sweep = rng.range(0.5, 3.0);
+            let a1 = a0 + side * sweep;
+            let to = P3::new(cx + r * a1.cos(), cy + r * a1.sin(), z);
+            if cw {
+                tp.arc_cw_to_with_intent(to, cx - at.x, cy - at.y, 1000.0, MoveIntent::ClearingCut);
+            } else {
+                tp.arc_ccw_to_with_intent(
+                    to,
+                    cx - at.x,
+                    cy - at.y,
+                    1000.0,
+                    MoveIntent::ClearingCut,
+                );
+            }
+            let n = 200;
+            let mut prev = at;
+            for k in 1..=n {
+                let a = a0 + side * sweep * f64::from(k) / f64::from(n);
+                let p = P3::new(cx + r * a.cos(), cy + r * a.sin(), z);
+                reference.push((prev, p));
+                prev = p;
+            }
+            heading += side * sweep;
+            at = to;
+        }
+        if tab {
+            let down = P3::new(at.x, at.y, floor);
+            tp.feed_to_with_intent(down, 500.0, MoveIntent::ClearingCut);
+            at = down;
+        }
+    }
+    tp.rapid_to(P3::new(at.x, at.y, 10.0));
+    (tp, reference)
+}
+
+/// Review 2026-11-15 F1, rule (b): over generated cuts with tabs and arcs,
+/// every sample of every emitted fold segment (not only its ends) is at or
+/// above the cut that the fold follows, at that XY, and on the cut. The
+/// tolerance 0.03 mm covers the chord of a linearised arc: the product
+/// samples an arc at most 0.5 mm apart, and a 0.5 mm chord on the
+/// smallest radius here (3 mm) is 0.0104 mm off the arc (s^2 / 8r).
+#[test]
+fn no_fold_ramp_point_is_below_the_followed_cut_review_f1() {
+    let mut rng = FoldRng(0x9E37_79B9_7F4A_7C15);
+    let mut folds = 0;
+    for case in 0..400 {
+        let (tp, reference) = fold_generated_cut(&mut rng);
+        let angle = [3.0, 5.0, 10.0, 20.0][case % 4];
+        let radius = [1.0, 2.0, 3.0][case % 3];
+        let out = without_provenance(apply_entry(
+            AnnotatedToolpath::new(tp),
+            EntryStyle::Ramp {
+                max_angle_deg: angle,
+            },
+            500.0,
+            EntrySafety {
+                fold_lap_cap: if case % 2 == 0 {
+                    Some(super::entry_descent::RAMP_FOLD_MAX_LAPS)
+                } else {
+                    None
+                },
+                ..no_probe(0.0)
+            },
+            radius,
+        ))
+        .toolpath;
+        if out.moves.iter().any(|m| m.intent == MoveIntent::EntryRamp) {
+            folds += 1;
+        }
+        let low = fold_samples_below_the_cut(&out, &reference, 0.03);
+        assert!(
+            low.is_empty(),
+            "case {case} (angle {angle}, radius {radius}): ramp samples below or off the cut: {:?}",
+            &low[..low.len().min(5)]
+        );
+    }
+    // The generator must exercise the fold, not only its plunge fallback.
+    assert!(folds >= 100, "only {folds} of 400 cases folded");
+}

@@ -139,11 +139,22 @@ pub(super) fn fold_walk_length(max_angle_deg: f64, min_run_mm: f64) -> f64 {
 /// Sample spacing (mm) used to linearise an arc in the following cut.
 const FOLD_ARC_SPACING_MM: f64 = 0.5;
 
+/// The Z rise (mm) over which a move of the following cut ends the fold
+/// run: the tolerance of [`fold_ramp_points`] on the walked length, so a
+/// level move with float noise in its Z does not end the run.
+const FOLD_RISE_EPS_MM: f64 = 1e-6;
+
 /// Collect the fed cut moves that follow the plunge at `from_idx`.
 ///
 /// The walk starts AT the plunge target and stops at the first rapid, the
-/// first following plunge, or once it has `want` mm of XY in hand — the
-/// most a fold can consume. Arc moves are linearised.
+/// first following plunge, the first rise, or once it has `want` mm of XY
+/// in hand — the most a fold can consume. Arc moves are linearised.
+///
+/// Review 2026-11-15 F1: a rise is any move of the cut whose end is higher
+/// than its start (a tab lift, a lead-out, a link). The run ends before
+/// it, so a fold never runs over a tab: the walk drops a vertical lift (it
+/// has no XY length), and a return chord to the low vertex then crossed
+/// the tab below its top.
 #[expect(
     clippy::indexing_slicing,
     reason = "bounded indexing in algorithmic code"
@@ -157,6 +168,9 @@ pub(super) fn collect_following_cut(moves: &[Move], from_idx: usize, want: f64) 
     let mut prev = moves[from_idx].target;
     for idx in from_idx + 1..moves.len() {
         let n = &moves[idx];
+        if !matches!(n.move_type, MoveType::Rapid) && n.target.z > prev.z + FOLD_RISE_EPS_MM {
+            break;
+        }
         match n.move_type {
             MoveType::Rapid => break,
             MoveType::Linear { .. } => {
@@ -227,7 +241,8 @@ pub(crate) const ENTRY_CLEARANCE: f64 = 2.0;
 pub(crate) struct RampFold<'a> {
     /// The fed cut moves that follow the plunge, in emission order,
     /// starting AT the plunge target. Arc moves are already linearised.
-    /// The walk stops at the next rapid or the next plunge.
+    /// The walk stops at the next rapid, the next plunge or the next rise
+    /// (review 2026-11-15 F1: a tab lift ends the run).
     pub follow: &'a [P3],
     /// True where `follow` closes back onto the plunge target in XY, so
     /// the walk laps the ring rather than bouncing off its far end.
@@ -312,6 +327,11 @@ fn extend_fold_path(base: &[P3], closed: bool, want: f64) -> Vec<P3> {
 /// That is not harmless — the same Z drop over less XY is a STEEPER ramp
 /// than the angle dial asked for — so [`fold_ramp_points`] checks the
 /// walked length and degrades to a plunge rather than emit it.
+///
+/// Review 2026-11-15 F1: a segment with no XY length adds no vertex, but
+/// the vertex at that XY takes the higher Z of the two. The fold holds its
+/// points at or above the walked Z, so a chord to that vertex stays at or
+/// above the cut on both sides of it.
 #[expect(
     clippy::indexing_slicing,
     reason = "`windows(2)` yields slices of exactly two elements."
@@ -329,6 +349,9 @@ fn walk_fold_path(path: &[P3], want: f64) -> Vec<P3> {
         let dy = b.y - a.y;
         let seg = (dx * dx + dy * dy).sqrt();
         if seg <= 1e-12 {
+            if let Some(last) = walked.last_mut() {
+                last.z = last.z.max(b.z);
+            }
             continue;
         }
         if acc + seg >= want {
