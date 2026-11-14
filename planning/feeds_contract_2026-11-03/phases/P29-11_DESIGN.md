@@ -1165,3 +1165,110 @@ of `EXEMPTIONS` holds that gap (`limits/CLAUDE.md` says so).
 - M4-A against M4-A1 (section 3.5), after a modulated run of the 6 mm working file with and without.
 - O5, corrected: the rubbing warning of Suggest now tests the peak chip, which is at or UNDER the
   feed per tooth, so it warns on the same cuts or more, not fewer (section 11.6.5). It only warns.
+
+## 13. Lead rulings after round 2b
+
+Lead rulings of 2026-11-14, after round 2b, at HEAD `3b14bcbe6`. The closing patch of P29 builds
+them. The operator is still away; M4-A waits for the operator.
+
+1. **11-8 is not built in P29.** The three limits that have a planned row and no sample gate (the
+   vendor depth table, the rubbing floor and the plunge rate) get ONE named row of `EXEMPTIONS`:
+   `S-NoSampleGate`, class needs-a-ruling. Its `where_` names the files of the three planned checks
+   (`src/feeds/planned.rs`: `VendorDepthTablePlanned`, `RubbingFloorPlanned`,
+   `VerticalRatePlanned`) and of the empty arm of `tool_load::groups::gate_of`
+   (`src/tool_load/groups.rs`). Its text holds the facts of 11.6.4: the plunge rate needs the
+   Suggest vertical-rate limit (`VerticalRateLimit::limit_at`) in the gate context, which holds no
+   Suggest result, and a ramp or a helix sample has no vertical-rate field. `closes_in`: "the
+   modulation design step, option D-1 of P29-11_DESIGN.md 11.6.4 first". A gap with a name is
+   better than a gap that only a folder file states. `limits/CLAUDE.md` names the row. The sentry
+   `every_limit_judges_every_declared_cut_p29_7` (claim 1) holds the link: a limit that the scope
+   judges and that has no gate is a limit of `S-NoSampleGate`, and each limit of the row has no
+   gate (a new gate closes the row or the test fails).
+2. **`U-efficiency` does not close; it narrows.** Commit `ac1f933f5` closed it, but two numbers of
+   the efficiency card still read the nominal tool: the specific energy with its immersion angle
+   (`specific_energy` and `force::immersion_angle(ae, D / 2)` at the nominal diameter
+   `tool.diameter`, also in the wear ratio), and the deflection chip ceiling
+   (`deflection_chipload_ceiling_mm`, which holds the flat 200 um `EXCEEDS_BOUND_MM`, not the
+   deflection limit of the cut). The GUI card also reads `applied_cut`
+   (`rs_cam_viz/src/ui/feeds/shared.rs`): a stated depth with the engaged diameter of the
+   recommendation. The row comes back with a text that names exactly these, `where_`
+   `src/feeds/efficiency.rs`, and a marker `EXEMPT(U-efficiency)` at each of the two code sites.
+   The viz site has no scanned marker (the sentry scans only `rs_cam_core/src`); the row text
+   names it.
+3. **Pins.** With rulings 1 and 2: `ROWS` 37, `MAX_NEEDS_RULING` 26, `ROWS_WITH_A_FILE` 37 (HEAD:
+   35 / 24 / 35). The list grows by one row against 36 / 25 / 36, because ruling 1 names a gap that
+   existed with no row. This is a lead ruling, not a silent rise: the comment beside the pins
+   says so, with the date and this section.
+4. **The headline drill rows.** The headline rows of a drill op that come through `of_criterion`
+   show `NotApplicable` with no exemption, power included, although `P28-10` needs a ruling. They go
+   through `limits::scope_cell_state` as every other scope cell does: one function, three callers
+   (the envelope cell, the gate cell of a group, and now the gate cell of the headline group). The
+   power row then names `P28-10` with its class. The verdict does not change
+   (`gcode::warning_unmodeled` and FM1 read `NotApplicableForOp`); only the row projection
+   `limits::rows_of_verdict` changes. Claim 4b of `one_record_on_every_surface_p29_10` gets a drill
+   case (the drill session of claim 8), and claim 2 says that the headline row is `of_criterion`
+   only where the scope judges the headline group.
+5. **11-9 stays.** The corrected fact for the operator: the peak chip of a cut is at or UNDER the
+   advance per tooth, so the rubbing warning fires on the same cuts or more, never fewer. Measured
+   (11.6.5): no FM1 cell moves, and on the four project files only the basis of the rubbing-floor
+   rows moves (no state, value or bound).
+6. **M4-A waits for the operator** (unchanged from section 10, O1).
+
+### 13.1 Ruling 4: predicted rows
+
+Written before the code, from the HEAD dumps of the two probes of 11.6 (`zz_probe_rows_p29_11c`,
+`zz_probe_gates_p29_11c`; copies in the session scratchpad folder `p29_end/`). The HEAD dumps
+equal the L-5 dumps of round 2b byte for byte (`cmp`).
+
+The change: in `gate_rows` (`limits/row.rs`) the `GroupCell::Headline` arm asks
+`limits::scope_of_all` with the limits of the gate on the headline group. When the scope does not
+judge the group, the row is built as the `NotJudged` arm builds it (`empty_row`): the state
+`scope_cell_state(row)`, the row id as the exemption, the clause of the cell as the extra text.
+The subject stays `headline: true`, `samples: null`. When the scope judges the group, nothing
+changes.
+
+The rows that move (the verdict rows with no trace of the row probe, `V` lines):
+
+| Dump | Toolpaths | Rows that move |
+|---|---|---|
+| operator | idx 3, idx 4 (the two drill ops) | 8: chip max, power, deflection, force budget of the headline drill group of each |
+| `nz_wanaka_21` | idx 3 | 4 |
+| rivmap100, rivmap100_live | none (no drill op) | 0 |
+| the five kind fixtures | none (no drill op) | 0 |
+
+How each row moves:
+
+| Limit | Row | State | Tone and face | Exemption | Caveats | Detail |
+|---|---|---|---|---|---|---|
+| chip max | `P28-20` (physical) | `NotApplicable(NoRadialEngagement)`, no change | no change ("drill · chip max no side cut") | `null` to `P28-20` | `sample_depth` (removed layer) goes | "drill: chip band maximum (not applicable); the cut has no radial engagement; exemption row P28-20; drill cycle — no continuous engagement" |
+| deflection | `P28-17` (physical) | no change | no change ("drill · deflection no side cut") | `null` to `P28-17` | `sample_depth` (engaged edge) goes | the same form, "exemption row P28-17" |
+| force budget | `P28-04` (physical) | no change | no change ("drill · depth no side cut") | `null` to `P28-04` | `sample_depth` (engaged edge) goes | the same form, "exemption row P28-04" |
+| power | `P28-10` (needs a ruling) | `NotApplicable(NoRadialEngagement)` to `NoNumber(NotJudgedHere)` | `not_applicable` to `no_number`; "drill · power no side cut" to "drill · power not judged here" | `null` to `P28-10` | `sample_depth` (removed layer) goes | "drill: spindle power (no number); this limit is not judged on this cut; exemption row P28-10; drill cycle — no continuous engagement" |
+
+Each moved row then equals the row of the same limit in the drill group of a milling op, but for
+`headline: true` and `samples: null`. The detail loses "the sample depth read is …" and the prefix
+"not applicable to this operation — " of the verdict text.
+
+Not moved:
+
+- The gantry-push row of a drill op (`NotApplicable`, no exemption). `GantryPush` is not a scope
+  cell: `limits::scope` gives `NotACutLimit(MachineOrRpm)`, so no row of `EXEMPTIONS` holds it.
+- The three drill gate rows, every envelope row, every RPM row, the profile lines, the `EFF` and
+  `FACE` lines, the narration.
+- FM1 (it holds no row text) and the op golden (it holds no row).
+- `rows_without_a_verdict` (a disabled toolpath): it states the body group as the headline on
+  every op and has no scope cell; it does not change.
+
+What the operator sees (reasoned from the viz code, not run): `CheckRow::in_default_view` keeps a
+headline `NoNumber` row and drops a `NotApplicable` row. So the power row of a drill op enters the
+default view: the "Limits" table of the simulation inspector shows "drill · power not judged
+here" for a drill op. The op-list flags do not move (`NotJudgedHere` is not open, not vacuous and
+does not exceed). The Readiness page takes the worst row of each limit by `CheckRow::worse_than`;
+a row with no margin ranks after every row with a margin, so the power line of Readiness moves only
+on a project whose first power row has no margin. The cut-metric "other limits" list leaves the
+row out (a headline row of a gate that has a card).
+
+The explainer: the tool-load report (`P29-10_explainer/data/mcp_tool_load_report_operator.json`)
+holds the 8 operator rows; they are replaced by their rows of the after dump, after a check that
+each old row equals its HEAD dump row (with no trace) in every field but the predicted ones. No
+claim of `assert_claims.py` reads them.
