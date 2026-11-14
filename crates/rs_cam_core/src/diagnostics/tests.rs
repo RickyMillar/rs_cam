@@ -966,6 +966,7 @@ fn no_adapter_detail_carries_developer_text_w4() {
     ] {
         warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
             commanded: 0.01,
+            peak_chip: 0.01,
             floor: 0.025,
             source,
             band_min: None,

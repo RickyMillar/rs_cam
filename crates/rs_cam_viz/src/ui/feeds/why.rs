@@ -858,13 +858,13 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         // The face line names the consequence and the two levers, because
         // the operator now owns the fix.
         FeedsWarning::ChiploadBelowRubbingFloor {
-            commanded,
+            peak_chip,
             floor,
             source,
             ..
         } => (
             format!(
-                "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
+                "Peak chip below the rubbing floor: {peak_chip:.4} mm/tooth \
                  (floor {floor:.4}, {}). The feed is not raised. The tool can \
                  rub and burn the work: raise the feed or lower the RPM.",
                 source.describe()

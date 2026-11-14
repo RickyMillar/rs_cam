@@ -1002,3 +1002,34 @@ Predicted:
   dump holds the profile warnings), so none holds it after; no proposed feed, RPM or depth moves
   (Step 9b writes no number).
 - The text of the warning (the diagnostic message and the Suggest card face) names the peak chip.
+
+Measured (11-9): the prediction is WRONG in its direction. The peak chip of a cut is the advance per
+tooth OVER the lift (`planned::peak_chip`: `UnliftedFeed::over_lift(fz, lift)`, `fz sin psi`), and
+the lift is at least 1, so the peak chip is at or UNDER the commanded advance: the warning fires on
+the same cuts or MORE, never on fewer. Section 1 item 12 ("fewer: the peak chip is at or above the
+advance") and operator question O5 ("It warns on fewer cuts") state the same error.
+
+- FM1: no cell moves (a bless run on this tree, compared with the 11-6 CSVs, then the files
+  restored): the warning is in no cell before or after.
+- The four project files: no Suggest warning, proposal, card number (`EFF`), face line or gate row
+  moves. The envelope speeds map now has grid points whose peak chip is under the floor
+  (`SpeedsPoint::rubbing`), so the envelope lists its per-point `RubbingFloor` limit, and the
+  rubbing-floor rows take that limit's basis (the repo rule `feeds.RUBBING_FLOOR_MM_TOOTH`; the
+  detail gains "the tool sets the bound"): operator and `nz_wanaka_21` idx 11 (Face clamp pads,
+  20 rows each), rivmap100 and rivmap100_live idx 1 (36 rows each). The state, value and bound of
+  every row do not move. `SpeedsPoint::rubbing` has no other reader (`rg`).
+- The fixture dump: no change. The warning gains the field `peak_chip` (wire); its diagnostic
+  message and the Suggest card face name the peak chip.
+
+A decision for the lead: O5 was put to the operator as "fewer warnings". The warning only warns
+(`rubbing_floor_warns_and_never_lifts` holds), but on a light stepover it fires where it did not
+before. Keep 11-9, or hold it until the operator sees the corrected question.
+- Gates: the eleven named core sentries, `rubbing_floor_warns_and_never_lifts`,
+  `rubbing_floor_envelope_band_p1`, `chipload_boundary_g_chip_ulp`,
+  `suggests_own_recipe_is_not_above_the_band_p11b2` and
+  `radial_chip_thinning_lifts_a_light_stepover_p11b`: pass. Core `--lib`: only the known timing red
+  (alone three times: pass). MCP, CLI, viz `--lib`, the ten viz binaries and the three viz tests that
+  name the warning: pass. FM1: pass. Op golden: the known 46 rows. Clippy: clean. Outside the list:
+  `_litmatrix_rubbing_floor_clamp::ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4` is red
+  on its vendor row match (`amana-compression-wood-pocket-6350-2f` against the pinned
+  `amana-flat-hardwood-pocket-6000-2f-spektra`), which runs before Step 9b; not run at HEAD.

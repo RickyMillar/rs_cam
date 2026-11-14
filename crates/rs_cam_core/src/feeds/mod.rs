@@ -1421,6 +1421,12 @@ pub enum FeedsWarning {
         /// The commanded advance per tooth (mm/tooth). The engine ships it
         /// unchanged.
         commanded: f64,
+        /// P29-11 11-9 (lead ruling O5): the PEAK chip of the body cut
+        /// (mm/tooth), the value of the body `RubbingFloor` row
+        /// (`planned::RubbingFloorPlanned`). The warning fires when it is
+        /// under `floor`; it is at or above `commanded` (the lift is at
+        /// least 1).
+        peak_chip: f64,
         /// The floor that the test used (mm/tooth). See [`rubbing_floor`].
         floor: f64,
         /// The bound that set `floor`.

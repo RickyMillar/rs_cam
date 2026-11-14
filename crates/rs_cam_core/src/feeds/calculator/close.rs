@@ -127,7 +127,10 @@ pub(super) fn step8_plunge(s: &CalcState) -> Entry {
     }
 }
 
-/// Step 9b: the rubbing-floor warning on the final feed.
+/// Step 9b: the rubbing-floor warning on the final feed. P29-11 11-9 (lead
+/// ruling O5): one rubbing rule. The step reads the body `RubbingFloor` row
+/// (the PEAK chip of the body cut, `planned::RubbingFloorPlanned`, the
+/// judge of the envelope rows), not the commanded advance per tooth.
 pub(super) fn step9b_rubbing_floor(s: &mut CalcState) {
     // --- Step 9b: Rubbing-floor warning on the final feed ---
     //
@@ -177,10 +180,13 @@ pub(super) fn step9b_rubbing_floor(s: &mut CalcState) {
         let (floor, source) = s.chip.rubbing_floor();
         // P16 (D8): the last power rung can ship the floor feed itself; the
         // relative margin keeps a rounding step under the floor from
-        // warning.
-        if commanded_fpt > 0.0 && commanded_fpt < floor * (1.0 - 1e-9) {
+        // warning. P29-11 11-9: the test reads the peak chip of the body
+        // row; a body with no chip reading (no width) gives no warning.
+        let peak_chip = body_rubbing_chip(s, commanded_fpt, floor);
+        if let Some(peak_chip) = peak_chip.filter(|p| *p > 0.0 && *p < floor * (1.0 - 1e-9)) {
             s.warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
                 commanded: commanded_fpt,
+                peak_chip,
                 floor,
                 source,
                 band_min: floor_band.map(|b| b.min_mm_per_tooth).filter(|m| *m > 0.0),
@@ -188,6 +194,40 @@ pub(super) fn step9b_rubbing_floor(s: &mut CalcState) {
             });
         }
     }
+}
+
+/// P29-11 11-9: the peak chip (mm/tooth) of the body `RubbingFloor` row at
+/// the shipped cut: the one driver (`planned::judge_declared_cuts`) on the
+/// declared cuts, at the body width and the commanded advance, through the
+/// engaged diameter of Step 5. `None` when the op declares no body cut with
+/// a chip reading (a drill cycle: `limits::scope` does not judge it, row
+/// `P28-20`).
+fn body_rubbing_chip(s: &CalcState, commanded_fpt: f64, floor: f64) -> Option<f64> {
+    use crate::feeds::planned::{
+        BodyColumn, ChipEnv, PlannedCell, RubbingFloorPlanned, judge_declared_cuts,
+    };
+    let cells = judge_declared_cuts::<RubbingFloorPlanned>(
+        &s.input.cuts,
+        BodyColumn {
+            ae_mm: s.cut.ae,
+            chip_mm: Some(commanded_fpt),
+            stored: None,
+        },
+        &ChipEnv {
+            thinning: s.input.cuts.thinning(),
+            d_eng_mm: s.feed.effective_d.mm(),
+            bound_mm: floor,
+        },
+    );
+    cells
+        .iter()
+        .find(|e| e.kind == crate::limits::CutKind::Body)
+        .and_then(|e| match &e.value {
+            PlannedCell::Judged(Some(reading)) => Some(reading.peak_mm),
+            PlannedCell::Judged(None)
+            | PlannedCell::NotJudged(_)
+            | PlannedCell::NotACutLimit(_) => None,
+        })
 }
 
 /// Step 9c: a drill cycle keeps its feed in the material plunge envelope

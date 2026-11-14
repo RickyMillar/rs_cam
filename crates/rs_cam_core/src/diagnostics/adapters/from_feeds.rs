@@ -306,6 +306,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
         // the feed. The message names the consequence and the two levers.
         FeedsWarning::ChiploadBelowRubbingFloor {
             commanded,
+            peak_chip,
             floor,
             source,
             ..
@@ -320,8 +321,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             message: format!(
-                "The feed per tooth is {commanded:.4} mm, below the rubbing limit of \
-                 {floor:.4} mm ({}). The calculator does not raise the feed rate. The tool \
+                "The peak chip of the cut is {peak_chip:.4} mm (feed per tooth \
+                 {commanded:.4} mm), below the rubbing limit of {floor:.4} mm ({}). The calculator does not raise the feed rate. The tool \
                  can rub and burn the wood: raise the feed rate or lower the spindle speed.",
                 source.describe()
             ),

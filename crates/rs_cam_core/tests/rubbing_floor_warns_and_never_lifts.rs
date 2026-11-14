@@ -247,6 +247,7 @@ fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_l
     let warning = result.warnings.iter().find_map(|w| match w {
         FeedsWarning::ChiploadBelowRubbingFloor {
             commanded,
+            peak_chip: _,
             floor,
             source,
             band_min,
