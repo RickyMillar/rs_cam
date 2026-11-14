@@ -719,3 +719,48 @@ Written from the HEAD fixture dump (`base_b`) and the FM1 sim CSV, before any co
 - **11-3, `NotModelled` for a body with no depth before the simulation** (a Project Curve with no
   lower bound: operator and `nz_wanaka_21` idx 5): the existing reason of the deflection row of
   the same cut, not a new reason.
+
+## 12. Round 2b: predicted and measured
+
+Round 2b, written 2026-11-14 at HEAD `9c0bf936c`. The same two probes as round 2a, with two more
+lines: the row probe writes `EFF`, the Suggest efficiency numbers (`feeds::efficiency::
+cut_efficiency` on the stored op and the Suggest result of the profile) of each toolpath; the
+gate probe writes `NARR`, the narration of each kind fixture. The HEAD dumps equal the round 2a
+dumps `a113` and `base_b` byte for byte (`cmp`). Copies are in the session scratchpad folder
+`p29_11c/`.
+
+### 12.1 Commit 11-2b: a gate scope cell takes the class of its row (prediction)
+
+Lead ruling: the rule of 11-2 holds for the gate rows (`rows_of_verdict`) through the same
+function as the envelope rows. The function is `limits::scope_cell_state(row)`: a `Physical(g)`
+row gives `NotApplicable(g)`, any other class gives `NoNumber(NotJudgedHere)`. The envelope cell
+(`CutRow::of_cell`) and the gate cell (`GroupCell::NotJudged` in `gate_rows`) both call it.
+
+The rows of a drill-group cell in `EXEMPTIONS`: `P28-20` (chip max), `P28-17` (deflection) and
+`P28-04` (force budget) are `Physical(NoRadialEngagement)`; `P28-10` (power) needs a ruling.
+
+Predicted, from the HEAD dumps (the verdict rows with no trace of the row probe, and the verdict
+rows of the gate probe):
+
+| Dump | Rows that move: `NoNumber(NotJudgedHere)` to `NotApplicable(NoRadialEngagement)` | `P28-10` rows, no change |
+|---|---|---|
+| operator | 48: the drill group of the 16 toolpaths that are not drill cycles, chip max, deflection, force budget | 16 |
+| `nz_wanaka_21` | 24 (8 toolpaths) | 8 |
+| rivmap100, rivmap100_live | 12 each (4 toolpaths) | 4 each |
+| the five kind fixtures | 15 (one drill group each, three rows) | 5 |
+
+A moved row changes its `state`, `tone` (`not_applicable`), `face` ("drill · chip max no side
+cut") and `detail` (the clause "the cut has no radial engagement" replaces "this limit is not
+judged on this cut"); the `exemption` (the row id) and the extra clause "drill cycle — no
+continuous engagement" stay. No value, bound, envelope row, profile line or face line moves. No
+FM1 cell moves (FM1 holds no row text).
+
+Not moved, and a decision for the lead: the HEADLINE drill rows of a drill op (operator idx 3
+and 4) come from `of_criterion` on the verdict `Unmodeled(NotApplicableForOp)`. They read
+`NotApplicable(NoRadialEngagement)` with no exemption row, the power row too, although `P28-10`
+needs a ruling. The headline verdict does not hold the row id, and `gcode::warning_unmodeled`
+keys on `NotApplicableForOp`. 11-2b does not change them.
+
+The explainer: the CLI records of operator idx 3 and 4 hold 12 envelope rows each from before
+11-2 (`P28-20`, `NoNumber(NotJudgedHere)`); the tool-load report holds 48 gate rows that 11-2b
+moves. Both are refreshed from the probe dumps.
