@@ -210,3 +210,14 @@ deflection) have a sample gate that judges the cut after a simulation.
 - Rows: as predicted (all four files: only `worst_case` drops, on 208
   rows; 10 tones move to `exceeds`; no tone softens). Explainer data
   regenerated; `assert_claims.py` 11 of 11 PASS.
+
+### R3 results
+
+- Cause: `Caveat::softens` listed `LowerBound`.
+- Fix: `LowerBound` softens nothing; it stays on the row to explain the
+  value.
+- Proof: `every_limit_judges_every_declared_cut_p29_7` claim 7b, a Project
+  Curve on a 2 mm end mill (stickout 50 mm) whose lower-bound depth is over
+  the deflection root: `Exceeds`, caveat `LowerBound`, tone `Exceeds`. Red
+  with the R2 `row.rs` (tone `ExceedsAdvisory`), green with R3.
+- Rows: no change on the four files, as predicted.

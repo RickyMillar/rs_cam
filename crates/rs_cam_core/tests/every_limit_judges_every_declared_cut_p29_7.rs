@@ -984,8 +984,24 @@ fn project_curve_rows(
     direction: rs_cam_core::compute::operation_configs::ProjectCurveDirection,
     flipped: Option<bool>,
 ) -> Vec<CheckRow> {
+    project_curve_rows_of(
+        depth,
+        direction,
+        flipped,
+        LimitId::ForceBudget,
+        &fm1_tool(ToolType::EndMill, 6.0),
+    )
+}
+
+/// The planned body rows of `limit` of a Project Curve at `depth`.
+fn project_curve_rows_of(
+    depth: f64,
+    direction: rs_cam_core::compute::operation_configs::ProjectCurveDirection,
+    flipped: Option<bool>,
+    limit: LimitId,
+    tool: &ToolConfig,
+) -> Vec<CheckRow> {
     let machine = MachineProfile::default();
-    let tool = fm1_tool(ToolType::EndMill, 6.0);
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::ProjectCurve);
     if let OperationConfig::ProjectCurve(c) = &mut op {
         c.depth = Some(depth);
@@ -993,7 +1009,7 @@ fn project_curve_rows(
     }
     SafeEnvelope::for_cut(EnvelopeInput {
         operation: &op,
-        tool: &tool,
+        tool,
         machine: &machine,
         material: &hardwood(),
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
@@ -1007,11 +1023,52 @@ fn project_curve_rows(
     .expect("the Project Curve envelope builds")
     .rows()
     .iter()
-    .filter(|r| {
-        r.is_planned() && cut(r) == CutKind::Body && r.check().limit == LimitId::ForceBudget
-    })
+    .filter(|r| r.is_planned() && cut(r) == CutKind::Body && r.check().limit == limit)
     .cloned()
     .collect()
+}
+
+/// Review 2026-11-15 F3: a row that exceeds at a lower bound exceeds for
+/// certain (the real cut is at least as deep), so `Caveat::LowerBound`
+/// softens nothing: a Project Curve whose lower-bound depth is over the
+/// deflection root is `Exceeds` with the gating tone.
+#[test]
+fn claim_7b_an_exceeding_lower_bound_keeps_the_gating_tone_review_f3() {
+    use rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromAbove;
+    use rs_cam_core::limits::{Caveat, CheckState, NoNumberReason, Tone};
+    let one = |depth: f64| {
+        // A 2 mm end mill with a 50 mm stickout: its deflection root lies
+        // in the searched span.
+        let mut tool = fm1_tool(ToolType::EndMill, 2.0);
+        tool.set_stickout(ToolFact::Stated(50.0));
+        let rows = project_curve_rows_of(depth, FromAbove, None, LimitId::ToolDeflection, &tool);
+        assert_eq!(rows.len(), 1, "one body deflection row: {rows:?}");
+        rows.into_iter().next().expect("the row")
+    };
+    // 0.2 mm into the material: inside the root, so the bound proves
+    // nothing.
+    let shallow = one(0.2);
+    let root = shallow.check().bound.expect("a deflection root");
+    assert!(root > 0.2, "non-vacuity: the root {root} is over 0.2 mm");
+    assert_eq!(
+        shallow.check().state,
+        CheckState::NoNumber(NoNumberReason::OnlyALowerBound)
+    );
+    // Over the root: certain.
+    let deep = ((root + 0.1) * 10.0).ceil() / 10.0;
+    let row = one(deep);
+    assert_eq!(row.check().value, Some(deep));
+    assert_eq!(
+        row.check().state,
+        CheckState::Exceeds,
+        "{deep} mm over {root}"
+    );
+    assert!(
+        row.caveats().contains(&Caveat::LowerBound),
+        "the row says the value is a lower bound: {}",
+        row.face()
+    );
+    assert_eq!(row.tone(), Tone::Exceeds, "{}", row.face());
 }
 
 #[test]

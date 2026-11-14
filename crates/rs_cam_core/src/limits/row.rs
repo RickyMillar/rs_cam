@@ -361,13 +361,16 @@ impl Caveat {
         match self {
             Self::BeforeModulation
             | Self::WorstCase
-            | Self::LowerBound
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
             | Self::MayOccur { .. } => true,
             // P30-2: the export carries the stated feed, so the row keeps
-            // its gating tone.
-            Self::UntilModulated { .. }
+            // its gating tone. Review 2026-11-15 F3: a value that exceeds
+            // at a lower bound of the cut exceeds for certain (the real cut
+            // is at least as deep); the caveat explains a check that proves
+            // nothing inside its limit (`NoNumber(OnlyALowerBound)`).
+            Self::LowerBound
+            | Self::UntilModulated { .. }
             | Self::Advisory
             | Self::NoSamples
             | Self::SampleDepth { .. }
@@ -535,8 +538,9 @@ pub enum Tone {
 impl Tone {
     /// THE tone rule. `Exceeds` softens to [`Self::ExceedsAdvisory`] when
     /// the bound does not gate an export or a caveat among
-    /// `BeforeModulation`, `WorstCase`, `LowerBound`, `StoredFeed`,
-    /// `AdvisoryFloor`, `MayOccur` holds. No threshold: a caveat
+    /// `BeforeModulation`, `WorstCase`, `StoredFeed`, `AdvisoryFloor`,
+    /// `MayOccur` holds (review 2026-11-15 F3: `LowerBound` softens
+    /// nothing). No threshold: a caveat
     /// is a fact of the record. No tone refuses (K6).
     #[must_use]
     pub fn of(check: &Check, caveats: &[Caveat]) -> Self {
