@@ -1454,8 +1454,8 @@ enabled = true
 clearance = 1.0
 [setups.obstacles.geometry]
 kind = "box"
-min = [-38.5, 124.8333, 0.0]
-max = [-8.5, 164.8333, 29.5]
+min = [-20.0, 133.3333, 0.0]
+max = [10.0, 173.3333, 29.5]
 
 [[setups.obstacles]]
 id = 1
@@ -1464,8 +1464,8 @@ enabled = true
 clearance = 1.0
 [setups.obstacles.geometry]
 kind = "box"
-min = [366.5, 124.8333, 0.0]
-max = [396.5, 164.8333, 29.5]
+min = [385.0, 133.3333, 0.0]
+max = [415.0, 173.3333, 29.5]
 
 [[setups.obstacles]]
 id = 2
@@ -1474,8 +1474,8 @@ enabled = true
 clearance = 1.0
 [setups.obstacles.geometry]
 kind = "box"
-min = [-38.5, 278.1667, 0.0]
-max = [-8.5, 318.1667, 29.5]
+min = [-20.0, 286.6667, 0.0]
+max = [10.0, 326.6667, 29.5]
 
 [[setups.obstacles]]
 id = 3
@@ -1484,8 +1484,8 @@ enabled = true
 clearance = 1.0
 [setups.obstacles.geometry]
 kind = "box"
-min = [366.5, 278.1667, 0.0]
-max = [396.5, 318.1667, 29.5]
+min = [385.0, 286.6667, 0.0]
+max = [415.0, 326.6667, 29.5]
 
 
 # Face the front from T1 25.5 to T 25.0 (block.json cam.face_front).
