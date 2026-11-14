@@ -110,7 +110,8 @@ pub use diagnostics_types::{
     VerdictSeverity,
 };
 pub use emitted_feeds::{
-    CuttingFeeds, EmittedFeeds, EntryFeeds, NamedEmittedFeeds, StatedFeeds, emitted_feeds_report,
+    CuttingFeeds, EmittedFeeds, EntryFeeds, FeedClass, NamedEmittedFeeds, StatedFeeds,
+    emitted_feeds_report,
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};

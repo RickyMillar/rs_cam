@@ -25,12 +25,17 @@
 //!
 //! # The classes
 //!
-//! No new classifier: the move intents of the cut kinds
-//! (`dressup::feed_modulation::intents_of`). A cutting move is a fed move
-//! with an intent of `CutKind::Body`; a plunge entry one of
-//! `CutKind::Entry(Plunge)`; a ramp entry one of `Entry(Ramp)` or
-//! `Entry(Helix)`. A link, a lead, a retract, an approach and a drill move
-//! are in no class.
+//! Review 2026-11-15 F8: every fed move is in exactly one class,
+//! [`FeedClass::of`] its intent (one match that names every intent, no
+//! wildcard). The classes follow the move intents of the cut kinds
+//! (`dressup::feed_modulation::intents_of`; the lib test
+//! `every_feed_class_is_the_class_of_its_cut_kinds_review_f8` holds the two
+//! against each other): a cutting move has an intent of `CutKind::Body`; a
+//! plunge entry one of `CutKind::Entry(Plunge)`; a ramp entry one of
+//! `Entry(Ramp)` or `Entry(Helix)`; a drill move one of `CutKind::Drill`; an
+//! air lead one of `CutKind::EntryApproach`; a lead one of `LeadIn` or
+//! `LeadOut`; a link one of `CutKind::Link` (a link, a retract, an obstacle
+//! clearance).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
@@ -38,7 +43,6 @@ use std::sync::{Arc, Mutex, Weak};
 use serde::Serialize;
 
 use super::{FeedStage, ProjectSession};
-use crate::limits::{CutKind, EntryKind};
 use crate::toolpath::{MoveIntent, Toolpath};
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 
@@ -81,13 +85,67 @@ pub struct CuttingFeeds {
     pub above_stated: usize,
 }
 
-/// The entry moves of one class, as the F words state them.
+/// The fed moves of one class other than the cutting moves, as the F words
+/// state them.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct EntryFeeds {
     /// The largest emitted feed of the class (mm/min).
     pub max_mm_min: f64,
-    /// The stated feed of the class, as the F word states it.
+    /// The stated feed of the class, as the F word states it; `None` for a
+    /// class with no stated feed of its own (a lead, a link).
     pub stated_mm_min: Option<f64>,
+    /// The count of fed moves of the class (review 2026-11-15 F8).
+    pub moves: usize,
+}
+
+/// Review 2026-11-15 F8: the class of a fed move. Every fed move is in
+/// exactly one class: [`Self::of`] names every move intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedClass {
+    /// A cut of the body (`CutKind::Body` intents).
+    Cutting,
+    /// A plunge entry.
+    PlungeEntry,
+    /// A ramp or helix entry.
+    RampEntry,
+    /// A drill move.
+    Drill,
+    /// The air lead above an entry (`MoveIntent::EntryApproach`, K4).
+    Approach,
+    /// A lead into or out of the cut.
+    Lead,
+    /// A link, a retract or an obstacle clearance.
+    Link,
+}
+
+impl FeedClass {
+    /// Every class.
+    pub const ALL: [Self; 7] = [
+        Self::Cutting,
+        Self::PlungeEntry,
+        Self::RampEntry,
+        Self::Drill,
+        Self::Approach,
+        Self::Lead,
+        Self::Link,
+    ];
+
+    /// The class of a fed move with `intent`.
+    #[must_use]
+    pub const fn of(intent: MoveIntent) -> Self {
+        match intent {
+            MoveIntent::ClearingCut | MoveIntent::FinishingCut | MoveIntent::Unknown => {
+                Self::Cutting
+            }
+            MoveIntent::EntryPlunge => Self::PlungeEntry,
+            MoveIntent::EntryRamp | MoveIntent::EntryHelix => Self::RampEntry,
+            MoveIntent::Drilling => Self::Drill,
+            MoveIntent::EntryApproach => Self::Approach,
+            MoveIntent::LeadIn | MoveIntent::LeadOut => Self::Lead,
+            MoveIntent::Linking | MoveIntent::Retract | MoveIntent::ObstacleClearance => Self::Link,
+        }
+    }
 }
 
 impl EntryFeeds {
@@ -105,6 +163,10 @@ struct Figures {
     cutting: Option<CuttingFeeds>,
     plunge: Option<EntryFeeds>,
     ramp: Option<EntryFeeds>,
+    drill: Option<EntryFeeds>,
+    approach: Option<EntryFeeds>,
+    lead: Option<EntryFeeds>,
+    link: Option<EntryFeeds>,
 }
 
 /// **P30-1: THE record of the feeds that an export of one toolpath emits
@@ -129,6 +191,16 @@ pub struct EmittedFeeds {
     pub plunge: Option<EntryFeeds>,
     /// The ramp and helix entries; `None` with none.
     pub ramp: Option<EntryFeeds>,
+    /// Review 2026-11-15 F8: the drill moves (against the stated cutting
+    /// feed, the feed of a drill cycle); `None` with none.
+    pub drill: Option<EntryFeeds>,
+    /// The air leads above an entry (against the stated plunge feed, the
+    /// rule of the entry emitters, P29-8 8c); `None` with none.
+    pub approach: Option<EntryFeeds>,
+    /// The leads into and out of the cut; `None` with none.
+    pub lead: Option<EntryFeeds>,
+    /// The fed links, retracts and obstacle clearances; `None` with none.
+    pub link: Option<EntryFeeds>,
 }
 
 impl EmittedFeeds {
@@ -138,6 +210,10 @@ impl EmittedFeeds {
             cutting,
             plunge,
             ramp,
+            drill,
+            approach,
+            lead,
+            link,
         } = figures;
         Self {
             stage,
@@ -146,7 +222,31 @@ impl EmittedFeeds {
             cutting,
             plunge,
             ramp,
+            drill,
+            approach,
+            lead,
+            link,
         }
+    }
+
+    /// Review 2026-11-15 F8: the count of fed moves in each class, summed.
+    /// It equals the count of fed moves of the toolpath: every fed move is
+    /// in one class.
+    #[must_use]
+    pub fn fed_moves(&self) -> usize {
+        self.cutting.map_or(0, |c| c.moves)
+            + [
+                self.plunge,
+                self.ramp,
+                self.drill,
+                self.approach,
+                self.lead,
+                self.link,
+            ]
+            .iter()
+            .flatten()
+            .map(|e| e.moves)
+            .sum::<usize>()
     }
 
     /// `true` when a cutting move runs above the stated feed. The GUI
@@ -216,14 +316,16 @@ impl EmittedFeeds {
         format!("{} · {}", self.numbers_line(), self.stage_words())
     }
 
-    /// The entry clauses: one per entry class whose largest emitted feed is
-    /// not the stated one. The header and the hover print them.
+    /// The entry clauses: one per entry class (the plunge and ramp entries
+    /// and, review 2026-11-15 F8, the air leads) whose largest emitted feed
+    /// is not the stated one. The header and the hover print them.
     #[must_use]
     pub fn entry_lines(&self) -> Vec<String> {
         let mut out = Vec::new();
         for (class, stated_name, entry) in [
             ("plunge entries", "plunge feed", self.plunge),
             ("ramp entries", "ramp feed", self.ramp),
+            ("air leads", "plunge feed", self.approach),
         ] {
             let Some(entry) = entry.filter(EntryFeeds::differs) else {
                 continue;
@@ -242,9 +344,31 @@ impl EmittedFeeds {
         out
     }
 
+    /// Review 2026-11-15 F8: the drill line, for a toolpath with drill
+    /// moves: the largest emitted drill feed against the stated feed.
+    #[must_use]
+    pub fn drill_line(&self) -> Option<String> {
+        let drill = self.drill?;
+        Some(match drill.stated_mm_min {
+            Some(stated) if stated == drill.max_mm_min => {
+                format!("drill feeds run {stated} mm/min, the stated feed")
+            }
+            Some(stated) => format!(
+                "drill feeds run up to {} mm/min, the stated feed is {stated} mm/min",
+                drill.max_mm_min
+            ),
+            None => format!(
+                "drill feeds run up to {} mm/min, the op states no feed",
+                drill.max_mm_min
+            ),
+        })
+    }
+
     /// The G-code header lines of the phase, after its label: the feed
-    /// stage ([`FeedStage::statement`]), the cutting line, then the entry
-    /// lines. No line holds a parenthesis: a G-code comment cannot nest one.
+    /// stage ([`FeedStage::statement`]), the cutting line, the drill line
+    /// (review 2026-11-15 F8: a drill phase prints its feeds), then the
+    /// entry lines. No line holds a parenthesis: a G-code comment cannot
+    /// nest one.
     #[must_use]
     pub fn header_lines(&self) -> Vec<String> {
         let mut out = vec![self.stage.statement()];
@@ -262,6 +386,7 @@ impl EmittedFeeds {
             }
             out.push(line);
         }
+        out.extend(self.drill_line());
         out.extend(self.entry_lines());
         out
     }
@@ -278,6 +403,7 @@ impl EmittedFeeds {
             ));
         }
         parts.push(self.stage.statement());
+        parts.extend(self.drill_line());
         parts.extend(self.entry_lines());
         parts.join("\n")
     }
@@ -304,18 +430,16 @@ pub fn emitted_feeds_report(rows: &[NamedEmittedFeeds]) -> Option<String> {
     let mut report = "Feeds that run:".to_owned();
     for row in rows {
         report.push_str(&format!("\n  '{}': {}", row.toolpath, row.feeds.line()));
-        for entry in row.feeds.entry_lines() {
+        for entry in row
+            .feeds
+            .drill_line()
+            .into_iter()
+            .chain(row.feeds.entry_lines())
+        {
             report.push_str(&format!("\n    {entry}"));
         }
     }
     Some(report)
-}
-
-/// The intents of one class (the cut-kind table of the modulator).
-fn in_class(intent: MoveIntent, kinds: &[CutKind]) -> bool {
-    kinds
-        .iter()
-        .any(|kind| crate::dressup::feed_modulation::intents_of(*kind).contains(&intent))
 }
 
 fn figures_of(
@@ -324,54 +448,64 @@ fn figures_of(
     post: &crate::gcode::PostDefinition,
 ) -> Figures {
     let stated_cut = stated.cut.map(|f| post.emitted_feed(f));
+    let stated_plunge = stated.plunge.map(|f| post.emitted_feed(f));
     let mut cutting: Option<CuttingFeeds> = None;
-    let mut plunge: Option<f64> = None;
-    let mut ramp: Option<f64> = None;
-    let fold = |acc: Option<f64>, f: f64| Some(acc.map_or(f, |a| a.max(f)));
+    let mut plunge: Option<(f64, usize)> = None;
+    let mut ramp: Option<(f64, usize)> = None;
+    let mut drill: Option<(f64, usize)> = None;
+    let mut approach: Option<(f64, usize)> = None;
+    let mut lead: Option<(f64, usize)> = None;
+    let mut link: Option<(f64, usize)> = None;
+    let fold = |acc: &mut Option<(f64, usize)>, f: f64| {
+        *acc = Some(acc.map_or((f, 1), |(a, n)| (a.max(f), n + 1)));
+    };
     for m in &toolpath.moves {
         let Some(feed) = m.move_type.feed_rate() else {
             continue;
         };
-        if in_class(m.intent, &[CutKind::Body]) {
-            let f = post.emitted_feed(feed);
-            let above = usize::from(stated_cut.is_some_and(|s| f > s));
-            cutting = Some(match cutting {
-                None => CuttingFeeds {
-                    min_mm_min: f,
-                    max_mm_min: f,
-                    moves: 1,
-                    above_stated: above,
-                },
-                Some(c) => CuttingFeeds {
-                    min_mm_min: c.min_mm_min.min(f),
-                    max_mm_min: c.max_mm_min.max(f),
-                    moves: c.moves + 1,
-                    above_stated: c.above_stated + above,
-                },
-            });
-        } else if in_class(m.intent, &[CutKind::Entry(EntryKind::Plunge)]) {
-            plunge = fold(plunge, post.emitted_feed(feed));
-        } else if in_class(
-            m.intent,
-            &[
-                CutKind::Entry(EntryKind::Ramp),
-                CutKind::Entry(EntryKind::Helix),
-            ],
-        ) {
-            ramp = fold(ramp, post.emitted_feed(feed));
+        let f = post.emitted_feed(feed);
+        match FeedClass::of(m.intent) {
+            FeedClass::Cutting => {
+                let above = usize::from(stated_cut.is_some_and(|s| f > s));
+                cutting = Some(match cutting {
+                    None => CuttingFeeds {
+                        min_mm_min: f,
+                        max_mm_min: f,
+                        moves: 1,
+                        above_stated: above,
+                    },
+                    Some(c) => CuttingFeeds {
+                        min_mm_min: c.min_mm_min.min(f),
+                        max_mm_min: c.max_mm_min.max(f),
+                        moves: c.moves + 1,
+                        above_stated: c.above_stated + above,
+                    },
+                });
+            }
+            FeedClass::PlungeEntry => fold(&mut plunge, f),
+            FeedClass::RampEntry => fold(&mut ramp, f),
+            FeedClass::Drill => fold(&mut drill, f),
+            FeedClass::Approach => fold(&mut approach, f),
+            FeedClass::Lead => fold(&mut lead, f),
+            FeedClass::Link => fold(&mut link, f),
         }
     }
+    let class = |acc: Option<(f64, usize)>, stated_mm_min: Option<f64>| {
+        acc.map(|(max_mm_min, moves)| EntryFeeds {
+            max_mm_min,
+            stated_mm_min,
+            moves,
+        })
+    };
     Figures {
         stated_mm_min: stated_cut,
         cutting,
-        plunge: plunge.map(|max_mm_min| EntryFeeds {
-            max_mm_min,
-            stated_mm_min: stated.plunge.map(|f| post.emitted_feed(f)),
-        }),
-        ramp: ramp.map(|max_mm_min| EntryFeeds {
-            max_mm_min,
-            stated_mm_min: stated.ramp.map(|f| post.emitted_feed(f)),
-        }),
+        plunge: class(plunge, stated_plunge),
+        ramp: class(ramp, stated.ramp.map(|f| post.emitted_feed(f))),
+        drill: class(drill, stated_cut),
+        approach: class(approach, stated_plunge),
+        lead: class(lead, None),
+        link: class(link, None),
     }
 }
 
@@ -477,5 +611,42 @@ impl ProjectSession {
             stage,
             Self::feed_optimisation_ran(tc),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FeedClass;
+    use crate::dressup::feed_modulation::intents_of;
+    use crate::limits::{CutKind, EntryKind};
+    use crate::toolpath::MoveIntent;
+
+    /// Review 2026-11-15 F8: the class of each intent of a cut kind is the
+    /// class of that kind (a literal table), so the record and the
+    /// modulator read one cut-kind table.
+    #[test]
+    fn every_feed_class_is_the_class_of_its_cut_kinds_review_f8() {
+        let table: [(CutKind, FeedClass); 12] = [
+            (CutKind::Body, FeedClass::Cutting),
+            (CutKind::SpringPass, FeedClass::Cutting),
+            (CutKind::WallFinish, FeedClass::Cutting),
+            (CutKind::SlotRing, FeedClass::Cutting),
+            (CutKind::DressupRelief, FeedClass::Cutting),
+            (CutKind::Entry(EntryKind::Plunge), FeedClass::PlungeEntry),
+            (CutKind::Entry(EntryKind::Ramp), FeedClass::RampEntry),
+            (CutKind::Entry(EntryKind::Helix), FeedClass::RampEntry),
+            (CutKind::EntryApproach, FeedClass::Approach),
+            (CutKind::LeadIn, FeedClass::Lead),
+            (CutKind::Link, FeedClass::Link),
+            (CutKind::Drill, FeedClass::Drill),
+        ];
+        for (kind, class) in table {
+            let intents = intents_of(kind);
+            assert!(!intents.is_empty(), "{kind:?}: non-vacuity");
+            for intent in intents {
+                assert_eq!(FeedClass::of(*intent), class, "{kind:?} {intent:?}");
+            }
+        }
+        assert_eq!(FeedClass::of(MoveIntent::LeadOut), FeedClass::Lead);
     }
 }

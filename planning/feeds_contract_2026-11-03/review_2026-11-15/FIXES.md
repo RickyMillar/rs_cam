@@ -318,3 +318,20 @@ deflection) have a sample gate that judges the cut after a simulation.
   header lines, `(drill feeds run 1000 mm/min, the stated feed)`, under idx
   3 and idx 4.
 - FM1: no cell moves (FM1 reads no export header).
+
+### R6 results
+
+- Cause: `figures_of` counted only the moves of three cut-kind classes; a
+  drill move, an air lead, a lead and a link were in no class.
+- Fix: `session::FeedClass::of` (one match over every `MoveIntent`, no
+  wildcard) puts every fed move in one class; `EmittedFeeds` holds `drill`,
+  `approach`, `lead` and `link` with `EntryFeeds::moves`, and `fed_moves`
+  sums them. A drill phase prints `drill_line`; an air-lead line shows
+  where its feed is not the stated plunge feed.
+- Proof: `every_fed_move_is_in_a_feed_class_review_f8` (every op kind on the
+  standard fixture: the class counts sum to the fed moves of the result; a
+  drill op's header prints "drill feeds run"); lib test
+  `every_feed_class_is_the_class_of_its_cut_kinds_review_f8` (the classes
+  against `intents_of`, a literal table).
+- Golden: the 5 predicted drill rows. Operator export: the two predicted
+  drill lines; every other line equal (below).
