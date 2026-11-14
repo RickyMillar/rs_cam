@@ -92,9 +92,7 @@ use rs_cam_core::feeds::planned::{
     TableEnv, VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
 };
 use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
-use rs_cam_core::limits::{
-    CheckRow, CutGroup, CutKind, DepthLimit, LimitId, NoEngagementModel, Scope, scope,
-};
+use rs_cam_core::limits::{CheckRow, CutGroup, CutKind, LimitId, NoEngagementModel, Scope, scope};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::tool_load::groups::{Gate, gate_of};
@@ -249,11 +247,9 @@ fn envelope(
 }
 
 fn budget_n(machine: &MachineProfile) -> f64 {
-    machine
-        .rigidity
-        .depth_cap_of(DepthLimit::ForceBudget)
-        .expect("the default machine has a force budget")
-        .budget_n
+    // P29-11 L-5: the budget of a cut under the force budget is the
+    // machine field (`RigidityProfile::force_budget_of` reads it).
+    machine.rigidity.force_budget_n
 }
 
 /// The state of a cell, for claim 1.

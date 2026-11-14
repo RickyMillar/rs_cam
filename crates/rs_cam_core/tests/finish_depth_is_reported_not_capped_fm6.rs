@@ -7,7 +7,7 @@
 //!
 //! - (a) a one-sided finishing or semi-finishing pass gets no axial
 //!   ceiling. Suggest ships its depth with no depth clamp warning, and the
-//!   profile's rule `RigidityProfile::depth_cap_of` returns `None` for it
+//!   profile's rule `RigidityProfile::force_budget_of` returns `Err` for it
 //!   (P29-5, ruling R3: a slot or a groove reads the force budget);
 //! - (b) a roughing pass keeps the cap, at the producer's own cap (feeds
 //!   contract P5: as the envelope's rigidity ceiling, which "Apply all"
@@ -295,7 +295,17 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
         let (_, pass_role) = s.operation.feeds_style();
         assert_eq!(pass_role, role, "{op:?}: the registry role moved");
         assert!(
-            m.rigidity.depth_cap_of(op.body_depth_limit()).is_none(),
+            m.rigidity
+                .force_budget_of(
+                    s.operation
+                        .cuts(
+                            &rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(
+                                &s.operation
+                            )
+                        )
+                        .body_facts()
+                )
+                .is_err(),
             "{op:?}: a {role:?} pass must carry no axial cap (R2)"
         );
         let dpp = s

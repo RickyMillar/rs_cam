@@ -250,7 +250,7 @@ impl RigidityDepthCap {
 }
 
 /// The rule of the rigidity depth cap of one body cut
-/// ([`RigidityProfile::depth_cap_of`]): the machine force budget. Every
+/// ([`RigidityProfile::force_budget_of`]): the machine force budget. Every
 /// cut whose depth limit is `DepthLimit::ForceBudget` reads it (P29-4,
 /// ruling Q4: one named field; P29-5, ruling R3: a slot or a groove too).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -260,25 +260,13 @@ pub struct DepthCapRule {
 }
 
 impl RigidityProfile {
-    /// P29-3: the rule of the axial depth cap for the depth limit of a cut
-    /// (`limits::CutFacts::depth_rule`), with this machine's numbers.
-    /// `None` when the cut has no depth limit.
-    #[must_use]
-    pub const fn depth_cap_of(&self, limit: crate::limits::DepthLimit) -> Option<DepthCapRule> {
-        use crate::limits::{DepthLimit, NoDepthLimit};
-        match limit {
-            DepthLimit::ForceBudget => Some(DepthCapRule {
-                budget_n: self.force_budget_n,
-            }),
-            DepthLimit::NoLimit(NoDepthLimit::DrillCycle | NoDepthLimit::FinishPass) => None,
-        }
-    }
-
     /// P29-11 S10: THE door from the facts of one cut to the force budget
     /// that limits its depth. The caller names the cut: a declared cut of
     /// the envelope, or the facts of a sample group
-    /// (`ToolpathLoadContext::group_facts`). `Err` names why the cut has
-    /// no depth limit (a drill cycle, a finish pass on one side).
+    /// (`ToolpathLoadContext::group_facts`), or the body facts of an op (the
+    /// modulator, `session::compute`). `Err` names why the cut has no depth
+    /// limit (a drill cycle, a finish pass on one side). P29-11 L-5: the one
+    /// door; `depth_cap_of(DepthLimit)` is folded into it.
     ///
     /// # Errors
     ///

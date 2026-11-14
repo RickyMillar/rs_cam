@@ -703,7 +703,7 @@ Written from the HEAD fixture dump (`base_b`) and the FM1 sim CSV, before any co
   the modulator reads its own caps).
 
   **Correction (round 2b, before the code of 11-5).** A throwaway build of 11-5 (the code of
-  12.2, applied, measured with `RS_CAM_UPDATE_FEEDS_MATRIX=1`, then `depth.rs` and the three FM1
+  11.6.2, applied, measured with `RS_CAM_UPDATE_FEEDS_MATRIX=1`, then `depth.rs` and the three FM1
   files restored with `cp -p` and `touch`) gives the exact list. The main CSV
   (`matrix_2026-09-23.csv`) does not move. In the sim CSV exactly 4 cells and exactly 4 fields
   move:
@@ -737,7 +737,7 @@ Written from the HEAD fixture dump (`base_b`) and the FM1 sim CSV, before any co
   lower bound: operator and `nz_wanaka_21` idx 5): the existing reason of the deflection row of
   the same cut, not a new reason.
 
-## 12. Round 2b: predicted and measured
+### 11.6 Round 2b: predicted and measured
 
 Round 2b, written 2026-11-14 at HEAD `9c0bf936c`. The same two probes as round 2a, with two more
 lines: the row probe writes `EFF`, the Suggest efficiency numbers (`feeds::efficiency::
@@ -746,7 +746,7 @@ gate probe writes `NARR`, the narration of each kind fixture. The HEAD dumps equ
 dumps `a113` and `base_b` byte for byte (`cmp`). Copies are in the session scratchpad folder
 `p29_11c/`.
 
-### 12.1 Commit 11-2b: a gate scope cell takes the class of its row (prediction)
+#### 11.6.1 Commit 11-2b: a gate scope cell takes the class of its row (prediction)
 
 Lead ruling: the rule of 11-2 holds for the gate rows (`rows_of_verdict`) through the same
 function as the envelope rows. The function is `limits::scope_cell_state(row)`: a `Physical(g)`
@@ -797,7 +797,7 @@ but the state, the tone, the face and the detail (`p29_11c/tools/regen_112b.py`)
 change; `assert_claims.py`: 11 of 11. Wire: the `state`, `tone`, `face` and `detail` of those gate
 rows; no key is added or removed.
 
-### 12.2 Commit 11-5: F6-a, the depth row is the one force-budget record
+#### 11.6.2 Commit 11-5: F6-a, the depth row is the one force-budget record
 
 The prediction is section 11.4, with its correction (the exact FM1 list), written before this
 code. The change, all in `tool_load/depth.rs`:
@@ -880,7 +880,7 @@ Measured, against 11.4:
   viz binaries: pass. FM1: pass on the re-blessed CSV. Op golden: only the known 46 rows. Full
   clippy: clean. The fixture dump after 2b is byte-equal to the dump before 2b.
 
-### 12.3 Commit 11-6: the narration reads the depth row (prediction)
+#### 11.6.3 Commit 11-6: the narration reads the depth row (prediction)
 
 Written on the 11-5 tree, before the code. Today `append_peak_doc_anomaly` (`trace/narrate.rs`)
 takes the sample with the largest `axial_doc_mm` (the time-mean depth of M4) and writes `⚠` when
@@ -930,7 +930,7 @@ dump line or FM1 cell moves; the op golden shows only its known 46 rows. Claim 8
 side. `DEEP_DOC_MULTIPLIER` is deleted. Wire: the text of the MCP `narrate_toolpath` reply (the
 peak line); no key.
 
-### 12.4 Commit 11-8: sample gates for three limits (not built in round 2b)
+#### 11.6.4 Commit 11-8: sample gates for three limits (not built in round 2b)
 
 Lead ruling O2 asks for three sample gates (`VendorDepthTable`, `RubbingFloor`, `PlungeRate`)
 through `limits::scope` and `groups::judge_by_group`, each with the bound of the planned row of
@@ -980,7 +980,7 @@ Decisions for the lead:
 The predictions of 11-8 (the new findings on the five fixtures, the FM1 cells and fields that
 move) depend on the choice and are not written.
 
-### 12.5 Commit 11-9: one rubbing rule (prediction)
+#### 11.6.5 Commit 11-9: one rubbing rule (prediction)
 
 Written on the 11-6 tree, before the code. Today Step 9b (`calculator/close.rs`) warns
 `ChiploadBelowRubbingFloor` when the COMMANDED advance per tooth `feed / (rpm x Z)` is under the
@@ -1034,7 +1034,7 @@ before. Keep 11-9, or hold it until the operator sees the corrected question.
   on its vendor row match (`amana-compression-wood-pocket-6350-2f` against the pinned
   `amana-flat-hardwood-pocket-6000-2f-spektra`), which runs before Step 9b; not run at HEAD.
 
-### 12.6 Commit 11-7: efficiency through the cut (prediction)
+#### 11.6.6 Commit 11-7: efficiency through the cut (prediction)
 
 Written on the 11-9 tree, before the code. Today `feeds::efficiency::cut_efficiency` lifts the
 advance at the NOMINAL diameter (`lift(full_feed_width(ae, D), D)`) and the force headroom is
@@ -1076,3 +1076,92 @@ not changed here. Wire: none (the card numbers keep their fields).
   `suggests_own_recipe_is_not_above_the_band_p11b2`: pass. Core `--lib`: only the known timing red
   (alone three times: pass). MCP, CLI, viz `--lib` and the ten viz binaries: pass. FM1: pass. Op
   golden: the known 46 rows. Clippy: clean.
+
+#### 11.6.7 Commit L-5: the guard is the final rule (no number moves)
+
+- The X entries of the guard: no read of round 2b closes an X entry, so the counts and `X_TOTAL`
+  (86) are already the counts of the final state (the guard fails on a count above or under its
+  entry). The list is in section 12.
+- `feeds::support::calculator_formula_source` had no caller (`rg`): it and its class V entry go.
+- `RigidityProfile::depth_cap_of(DepthLimit)` is folded into `force_budget_of(CutFacts)`: the one
+  caller in product code (the modulator's force-budget cap, `session/compute.rs`) reads
+  `force_budget_of(body facts).ok()`; the tests that called it with `OperationType::body_depth_limit`
+  read the body facts of a default op (`the_depth_that_cut_is_a_measured_load_g_s3depth` 3 sites,
+  `the_cut_force_is_the_deflection_force_p17` 2, `finish_depth_is_reported_not_capped_fm6`,
+  `the_modulator_reads_the_depth_gate_force_budget_rule_p16`,
+  `the_session_modulator_binds_on_the_force_budget_p16`, viz `the_sim_chart_seeks_on_a_dot_p17` and
+  `p17_visual_snapshots`); `every_limit_judges_every_declared_cut_p29_7` reads the machine field
+  `force_budget_n`. The mapping is the same match, so no number moves: the five dumps, FM1 and the
+  op golden do not move. The token `depth_cap_of` stays in the guard pattern
+  (`tests/common/op_type_scan.rs`), so it cannot come back in a guarded file.
+- The folder files of `limits/`, `feeds/` and `tool_load/` state that the guard and the types are
+  the rule.
+- Gates: the eleven named core sentries, `the_cut_force_is_the_deflection_force_p17` and the two
+  modulator sentries of P16: pass. Core `--lib`: only the known timing red (alone three times:
+  pass). MCP, CLI, viz `--lib`, the ten viz binaries and the two viz P17 tests (the snapshot test
+  holds three ignored tests: it compiles): pass. FM1: pass. Op golden: the known 46 rows. Clippy:
+  clean after one fix (`.ok().expect()` in the viz P17 test, now `.expect()` on the `Result`). The
+  five dumps are byte-equal to the 11-7 dumps.
+
+## 12. End state of P29
+
+Written 2026-11-14 at the end of round 2b. Section 11.6 (round 2b) was first written as a section
+12; L-5 moves it into section 11 as the brief asks, with no change of text.
+
+**Pins** (`the_exemption_list_only_shrinks_p29_3`): `ROWS` 35, `MAX_NEEDS_RULING` 24,
+`ROWS_WITH_A_FILE` 35 (`PHYSICAL` 8). They are final only if 11-8 is built: if the lead keeps 11-8
+out of P29, the gap of the three sample gates gets its own row (+1 each, section 7). Today NO row
+of `EXEMPTIONS` holds that gap (`limits/CLAUDE.md` says so).
+
+**What P29 leaves open, and why** (section 7, corrected to what landed: 11-3 and 11-7 closed
+`S-NotJudgedHere` and `U-efficiency`; `M4` stays open by lead ruling O1):
+
+| Rows | Count | Why it stays | Owner |
+|---|---|---|---|
+| `P28-04`, `P28-07`, `P28-17`, `P28-20`, `P28-24`, `P28-26`, `P28-30p`, `M9` | 8 | Physical: no radial engagement, not an offset ring, no vertical feed | stays |
+| `P28-02`, `P28-18`, `S-NoBound` | 3 | Operator rulings (R2 2026-09-23; P11 L1/L2) | stays |
+| `M4` | 1 | Two sample depths; M4-A can lower an exported feed where the spindle power binds | the operator (section 3.5, lead ruling O1) |
+| `P28-16`, `P28-21`, `P28-29`, `P28-30` | 4 | The feed modulator's own caps and finding | the modulation design step |
+| `P28-05`, `P28-06`, `P28-08`, `P28-13`, `P28-14`, `F-OffsetRing` | 6 | No printed width rule | P27 |
+| `P28-09`, `P28-19`, `P28-25`, `P28-27`, `P28-28`, `P28-31`, `P28-33`, `M6`, `M10`, `F-ThinsChip` | 10 | A model or a source does not exist (move model, ball axial thinning, vendor axial bound, tip plunge cap, plunge deflection, default cut, V-bit tip, row by op kind, planner floor, finish thinning) | P25 / P27 |
+| `U-PerimeterSweep`, `U-EntryFallback` | 2 | Generation facts (the grow refuses; a helix with no room ramps) | a generator change, outside P29 |
+| `P28-10` | 1 | Drill power as a limit: no end-cut force source | P27 |
+
+35 rows: 8 physical, 3 ruled, 24 that need a ruling.
+
+**The X list of the guard** (`no_limit_reads_the_op_type_p29_last`, `X_TOTAL` 86):
+
+| File | Function | Rows | Count |
+|---|---|---|---|
+| `feeds/envelope.rs` | `for_cut` | `P28-05` | 2 |
+| `feeds/mod.rs` | `default_engagement` | `P28-31`, `P28-08` | 16 |
+| `feeds/mod.rs` | `default_profile_of` | `P28-31` | 1 |
+| `feeds/mod.rs` | `operation_default_profile` | `P28-31` | 45 |
+| `feeds/predict.rs` | `predict_peak_deflection_um` | `P28-17`, `P28-08` | 9 |
+| `feeds/ramp.rs` | `entry_notes` | `P28-28` | 3 |
+| `feeds/suggest/adaptive_entry.rs` | `check_plunge_entry_stability` | `P28-28` | 7 |
+| `feeds/suggest/invariants.rs` | `enforce_invariants_at_fixed_geometry` | `P28-28` | 3 |
+
+**Not done in P29, and why:**
+
+- 11-4 (M4-A): held by lead ruling O1 for the operator.
+- 11-8 (three sample gates): not built in round 2b (section 11.6.4: the decisions D-1 to D-3).
+- The S11 drill test of `predict.rs` (`P28-17`, X count 9) is not changed (11-7 changed only the
+  efficiency card).
+- `U-efficiency` is closed as the brief says, but two numbers of the efficiency card still read
+  the nominal tool: the specific energy and its immersion angle (`specific_energy`,
+  `force::immersion_angle(ae, D / 2)`), and the deflection chip ceiling
+  (`deflection_chipload_ceiling_mm`, the flat 200 um). The lead decides whether they need a row.
+- The 11-7 measure ("no card number moves") is a measure of `cut_efficiency` on the stored op and
+  the Suggest result. The GUI card calls it on `applied_cut` (`ui/feeds/shared.rs`), which keeps a
+  stated depth but not the engaged diameter of that depth: on a ball or a tapered tool whose kept
+  depth differs from the recommendation, the lift reads the recommendation's engaged diameter. Not
+  measured; not changed.
+- The table above is not copied into `phases/P27_BRIEF.md` (lead ruling "End state"): the lead
+  does it with the last commit.
+
+**What waits for the operator:**
+
+- M4-A against M4-A1 (section 3.5), after a modulated run of the 6 mm working file with and without.
+- O5, corrected: the rubbing warning of Suggest now tests the peak chip, which is at or UNDER the
+  feed per tooth, so it warns on the same cuts or more, not fewer (section 11.6.5). It only warns.

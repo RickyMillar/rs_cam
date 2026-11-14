@@ -4,7 +4,7 @@
 //! # The claim
 //!
 //! The depth gate applies the force budget only where
-//! `RigidityProfile::depth_cap_of(kind.body_depth_limit())` is
+//! `RigidityProfile::force_budget_of(facts)` (the facts of the body cut) is
 //! `Some(DepthCapRule { .. })`. The session builds the modulator's
 //! force-budget inputs through `ForceBudgetScope::of` from that same rule.
 //!
@@ -132,7 +132,16 @@ fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
 #[test]
 fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
     let machine = MachineProfile::default();
-    let rule_of = |op: OperationType| machine.rigidity.depth_cap_of(op.body_depth_limit());
+    let rule_of = |kind: OperationType| {
+        machine
+            .rigidity
+            .force_budget_of({
+                let op = rs_cam_core::compute::catalog::OperationConfig::new_default(kind);
+                op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                    .body_facts()
+            })
+            .ok()
+    };
     let pocket_rule = rule_of(OperationType::Pocket);
     let adaptive_rule = rule_of(OperationType::Adaptive);
     // P29-5 (ruling R3): a Trace is a slot and reads the budget, so the

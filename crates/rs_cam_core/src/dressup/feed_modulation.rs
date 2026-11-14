@@ -548,7 +548,7 @@ pub const LOAD_CAP_BELOW_CHIP_FLOOR_NOTE: &str = "load cap below the chip floor:
 /// `Engagement::edge_force`.
 ///
 /// Build it only through [`ForceBudgetScope::of`], so the modulator and the
-/// depth gate read the one rule (`RigidityProfile::depth_cap_of` of the
+/// depth gate read the one rule (`RigidityProfile::force_budget_of` of the
 /// body depth limit, `OperationType::body_depth_limit`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ForceBudgetLimitInputs {
@@ -579,7 +579,7 @@ pub enum ForceBudgetScope {
 impl ForceBudgetScope {
     /// **The one scope rule.** The limit applies only where
     /// `rule == Some(DepthCapRule { budget_n })`, the rule the depth
-    /// gate reads (`RigidityProfile::depth_cap_of(kind.body_depth_limit())`).
+    /// gate reads (`RigidityProfile::force_budget_of`, the facts of the cut).
     #[must_use]
     pub fn of(
         rule: Option<crate::machine::DepthCapRule>,

@@ -65,11 +65,10 @@ fn fixture() -> (SafeEnvelope, f64, f64) {
     let (config, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
     let DepthCapRule { budget_n: budget } = MachineProfile::default()
         .rigidity
-        .depth_cap_of(
+        .force_budget_of(
             config
                 .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
-                .body_facts()
-                .depth_rule(),
+                .body_facts(),
         )
         .expect("a Pocket has a depth-cap rule");
     let diameter = env

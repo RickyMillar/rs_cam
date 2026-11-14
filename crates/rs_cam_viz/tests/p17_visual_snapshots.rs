@@ -310,12 +310,12 @@ fn sim_set() -> CutMetricSet {
         .expect("the default material has a force line");
     let budget = machine
         .rigidity
-        .depth_cap_of(
+        .force_budget_of(
             config
                 .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
-                .body_facts()
-                .depth_rule(),
+                .body_facts(),
         )
+        .ok()
         .map(|DepthCapRule { budget_n }| budget_n);
     let diameter = ae_ceiling(&env, LimitKind::Diameter).unwrap_or(tool_cfg.diameter);
     let corner = ae_ceiling(&env, LimitKind::CornerCoverage).unwrap_or(diameter);

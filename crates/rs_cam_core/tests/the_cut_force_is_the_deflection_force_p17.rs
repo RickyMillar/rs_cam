@@ -11,7 +11,7 @@
 //!    to 1e-9 mm. The card's peak is the reading's peak
 //!    (`ToolpathLoadVerdict::cut_force`), at the same sample.
 //! 2. Lead ruling 3 (2026-11-06). `cut_force::budget_line` is `Some` only
-//!    when `machine.rigidity.depth_cap_of(kind.body_depth_limit())` is
+//!    when `machine.rigidity.force_budget_of(facts)` (the facts of the body cut) is
 //!    `Some(DepthCapRule { .. })`: on a Pocket (a roughing Pocket
 //!    family) and on an Adaptive (P29-4, ruling R1: before P29-4 the
 //!    Factor rule gave `None`), `None` on a Scallop finish pass. The card's
@@ -244,14 +244,27 @@ fn the_budget_line_follows_the_depth_cap_of_the_body_cut() {
     // The rule, read from the machine, so the test types no number.
     let Some(DepthCapRule { budget_n }) = machine
         .rigidity
-        .depth_cap_of(OperationType::Pocket.body_depth_limit())
+        .force_budget_of({
+            let op =
+                rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket);
+            op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                .body_facts()
+        })
+        .ok()
     else {
         panic!("a roughing Pocket is under the force budget");
     };
     assert_eq!(
         machine
             .rigidity
-            .depth_cap_of(OperationType::Adaptive.body_depth_limit()),
+            .force_budget_of({
+                let op = rs_cam_core::compute::catalog::OperationConfig::new_default(
+                    OperationType::Adaptive,
+                );
+                op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                    .body_facts()
+            })
+            .ok(),
         Some(DepthCapRule { budget_n }),
         "P29-4: the Adaptive family is under the force budget"
     );

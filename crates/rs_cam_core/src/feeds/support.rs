@@ -478,18 +478,6 @@ pub(crate) fn recipe_row_lookup<'a>(input: &FeedsInput<'a>) -> RecipeRowLookup<'
     }
 }
 
-/// The formula source the calculator cites for an operation family when
-/// the input names no operation: the drill formula for `Drill`, the
-/// milling formula for every other family.
-#[must_use]
-pub fn calculator_formula_source(family: OperationFamily) -> &'static str {
-    if family == OperationFamily::Drill {
-        DRILL_FORMULA_SOURCE
-    } else {
-        MILLING_FORMULA_SOURCE
-    }
-}
-
 /// The static half of the declaration for this input.
 ///
 /// With an operation kind, this is the registry row's

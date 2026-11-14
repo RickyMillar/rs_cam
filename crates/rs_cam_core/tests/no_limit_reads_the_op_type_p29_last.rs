@@ -103,7 +103,6 @@ const ALLOW: &[Allow] = &[
     Allow { file: "feeds/row_key.rs", function: "lut_route", class: Class::V },
     Allow { file: "feeds/row_key.rs", function: "of_operation", class: Class::V },
     Allow { file: "feeds/row_key.rs", function: "op_type", class: Class::V },
-    Allow { file: "feeds/support.rs", function: "calculator_formula_source", class: Class::V },
     Allow { file: "feeds/support.rs", function: "formula_backing", class: Class::V },
     Allow { file: "feeds/support.rs", function: "formula_source_for_input", class: Class::V },
     Allow { file: "feeds/support.rs", function: "support_for_lookup", class: Class::V },

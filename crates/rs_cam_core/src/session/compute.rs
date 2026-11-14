@@ -2285,13 +2285,16 @@ fn modulate_annotated_against_trace(
     // Feeds contract P16 item 7 (D6): the force-budget limit applies only
     // where the depth gate applies the force budget. Both read the one rule:
     // P29-3, the depth limit of the op's body cut (`OperationConfig::cuts`),
-    // with the machine's numbers (`RigidityProfile::depth_cap_of`).
-    let depth_cap_rule = machine_profile.rigidity.depth_cap_of(
-        operation
-            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
-            .body_facts()
-            .depth_rule(),
-    );
+    // with the machine's numbers (`RigidityProfile::force_budget_of`, the one
+    // door from the facts of a cut to its force budget, P29-11 L-5).
+    let depth_cap_rule = machine_profile
+        .rigidity
+        .force_budget_of(
+            operation
+                .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+                .body_facts(),
+        )
+        .ok();
     // P16 item 7: set when a material in scope has no force line; the move
     // summary then states `FORCE_BUDGET_NO_FORCE_LINE_NOTE`.
     let force_budget_note: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);

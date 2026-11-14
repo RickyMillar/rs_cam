@@ -4,7 +4,7 @@
 //! `the_modulator_reads_the_depth_gate_force_budget_rule_p16` pins the rule
 //! and the solver on a synthetic context. This file holds the session
 //! wiring: `ProjectSession` builds the modulator's force-budget inputs from
-//! `RigidityProfile::depth_cap_of` (`session::compute`,
+//! `RigidityProfile::force_budget_of` (`session::compute`,
 //! `modulate_annotated_against_trace`), for the toolpath material and for
 //! each own material.
 //!
@@ -127,7 +127,13 @@ fn the_session_modulator_binds_on_the_force_budget_p16() {
     // The rule of the cell is the force budget on the session's machine.
     let rule = MachineProfile::default()
         .rigidity
-        .depth_cap_of(OperationType::Pocket.body_depth_limit());
+        .force_budget_of({
+            let op =
+                rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket);
+            op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                .body_facts()
+        })
+        .ok();
     assert!(
         matches!(rule, Some(DepthCapRule { .. })),
         "Pocket roughing on the default machine must carry the force-budget rule: {rule:?}"

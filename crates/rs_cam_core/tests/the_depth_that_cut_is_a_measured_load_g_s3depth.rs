@@ -380,8 +380,14 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     assert!(
         machine()
             .rigidity
-            .depth_cap_of(OperationType::Scallop.body_depth_limit())
-            .is_none(),
+            .force_budget_of({
+                let op = rs_cam_core::compute::catalog::OperationConfig::new_default(
+                    OperationType::Scallop,
+                );
+                op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                    .body_facts()
+            })
+            .is_err(),
         "a one-sided finishing pass must carry no axial cap"
     );
     let finish = depth_verdict_for(OperationType::Scallop, &trace);
@@ -788,7 +794,12 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     };
     let budget_n = machine
         .rigidity
-        .depth_cap_of(OperationType::Pocket.body_depth_limit())
+        .force_budget_of({
+            let op =
+                rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket);
+            op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                .body_facts()
+        })
         .expect("a pocket roughing pass reads the force budget")
         .budget_n;
     let env = ForceEnv {
@@ -874,7 +885,14 @@ fn a_drill_operation_has_no_depth_per_pass_for_the_clamp_to_read() {
     let m = machine();
     assert_eq!(
         m.rigidity
-            .depth_cap_of(OperationType::Drill.body_depth_limit()),
+            .force_budget_of({
+                let op = rs_cam_core::compute::catalog::OperationConfig::new_default(
+                    OperationType::Drill,
+                );
+                op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                    .body_facts()
+            })
+            .ok(),
         None,
         "a drill cycle has no axial cap"
     );

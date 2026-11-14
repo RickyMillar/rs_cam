@@ -86,7 +86,7 @@ pub enum BindingConstraint {
     /// feed: at a higher feed the PEAK engaged-edge force of the move's one
     /// engagement would exceed `RigidityProfile::force_budget_n`. Only an op
     /// whose depth cap rule is the force budget
-    /// (`RigidityProfile::depth_cap_of`) carries this limit. With the edge
+    /// (`RigidityProfile::force_budget_of`) carries this limit. With the edge
     /// term alone over the budget, the move pins to the chipload-min floor
     /// with this tag.
     ForceBudget,
@@ -2428,7 +2428,7 @@ pub enum DepthVerdict {
     },
     /// **The measured depth, with no bound.** Feeds matrix R2
     /// (2026-09-23). The operation's body cut has no axial cap
-    /// ([`crate::machine::RigidityProfile::depth_cap_of`] returns `None`
+    /// ([`crate::machine::RigidityProfile::force_budget_of`] returns `Err`
     /// for a one-sided finishing or semi-finishing pass), so the gate reports the
     /// peak and judges nothing. The state is `Within`: a reading with no
     /// bound cannot exceed. The criterion row carries `bound: None`.

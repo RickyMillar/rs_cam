@@ -645,7 +645,7 @@ impl super::OperationType {
     /// only the registry row (the family, the pass role and the material
     /// sides of the radial rule), so a reader with the op kind and no
     /// config reads the same limit as the cut list.
-    /// `RigidityProfile::depth_cap_of` adds the machine's numbers. P29-11
+    /// `RigidityProfile::force_budget_of` adds the machine's numbers. P29-11
     /// L-1 (S4) moved the rule here from `machine/mod.rs`: a cut fact is
     /// declared in this file.
     #[must_use]
