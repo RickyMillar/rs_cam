@@ -299,3 +299,169 @@ shows the truth and moves no feed:
 - **For the operator, first:** question 1 of section 6 (may a move run faster than the typed
   feed?). On the operator file the stored report gives idx 8 a median feed 508.8 % over the stated
   feed after modulation.
+
+## P30-1 and P30-2: predicted and measured
+
+Written 2026-11-14 at HEAD `03a042a04`, before the code. "Predicted" is the output of a probe on
+HEAD plus a script that applies the rules below. The probes and the script are in the agent
+scratchpad (`p30b/zz_probe_rows_p30.rs`, `p30b/zz_probe_p30_feeds.rs`, `p30b/predict.py`).
+
+### P30-1: the rules as they will be built
+
+- **One record per toolpath: `session::EmittedFeeds`.** The door is
+  `ProjectSession::emitted_feeds(index)`. It reads the moves of the result slot, the moves that the
+  export door gives the program builder (the export datum shift moves X and Y only). The program
+  builder takes the record on `GcodePhase` in place of the feed-stage text, so the header and the
+  F words come from one slot. The GUI, MCP and the CLI read the same door.
+- **The fields.** The feed stage (`FeedStage`); `feed_optimised` (the feed optimisation dressup ran:
+  the option is on and `feed_optimization_unavailable_reason` gives no reason, the predicate of the
+  step itself); the stated cutting feed; the cutting moves (smallest and largest feed, the count, the
+  count above the stated feed); the plunge entries and the ramp and helix entries (largest feed and
+  the stated plunge or ramp feed).
+- **The classes.** No new classifier: the move intents of the cut kinds
+  (`dressup::feed_modulation::intents_of`, the table that the modulator and the limit rows read).
+  A cutting move is a fed move with an intent of `CutKind::Body` (`ClearingCut`, `FinishingCut`,
+  `Unknown`). A plunge entry is `CutKind::Entry(Plunge)` (`EntryPlunge`). A ramp entry is
+  `Entry(Ramp)` or `Entry(Helix)`. A link, a lead, a retract, an approach and a drill move are in no
+  class. The stated ramp feed is `entry_feed_rate()`, else the plunge rate (the rule of the entry
+  emitters).
+- **The numbers are the F words.** Each feed goes through the post of the session: the clamp at
+  `limits.max_feed`, then the round at `decimals.feed`. The stated feed goes through the same
+  function. A move is "above the stated feed" when its F word is larger than the F word of the
+  stated feed. Not in the record: the rapid rewrite (`high_feedrate_mode` writes rapids as `G1`
+  moves; they are not cutting moves) and the native drill cycles (drill moves are in no class).
+- **The text, one writer in core.**
+  - G-code header, after the label and the feed-stage line (the stage line does not change):
+    `(feeds run 943 to 3000 mm/min, 32 of 40 cutting moves above the stated 1000 mm/min)`. With
+    feed optimisation the line ends `, set by feed optimisation`. A second line only when the
+    largest entry feed is not the stated one: `(ramp entries run up to 1523 mm/min, the stated
+    ramp feed is 500 mm/min)`.
+  - GUI and the CLI: `runs 943 to 3000 mm/min · 32 of 40 moves above the stated 1000 · modulated
+    by simulation 2`. The stage words: `as stated`, `feed optimisation`, `modulated by simulation
+    n`, `modulated by simulation n, not current`. The GUI shows the caution colour only when a move
+    runs above the stated feed.
+- **Surfaces.** The G-code header; MCP `export_gcode` (one line per emitted op in the reply text);
+  MCP `get_tool_load_report` (a field `emitted_feeds` on each toolpath record); the CLI `project`
+  report (one line per op); the GUI Passes tab (one line under the Limits drawer) and the simulation
+  inspector (the same line on the op row).
+
+### P30-1: predicted numbers on the four sentry fixtures
+
+The post of the fixtures rounds the feed to 0 decimals. "Before" is the fixture state (a
+simulation with modulation off, stage `Planned`). "After" is a second simulation with modulation
+on (`SimulationOptions::default()`).
+
+| Fixture | Stated | Cutting moves | Before: min / max, above | After: min / max, above | Entry, largest before / after |
+|---|---|---|---|---|---|
+| Pocket, ramp | 1000 | 40 | 943 / 1033, 6 | 943 / 3000, 32 | ramp 1000 / 1523 (stated 500) |
+| Profile, tabs, leads | 1000 | 33 | 900 / 1003, 3 | 900 / 3000, 31 | plunge 500 / 500 (stated 500: no line) |
+| 2D Adaptive, helix | 1500 | 534 | 1339 / 1847, 405 | 735 / 3000, 300 | helix 3000 / 3000 (stated 500) |
+| Shelf 3D rough | 1500 | 754 | 522 / 1500, 0 | 500 / 3000, 375 | ramp 500 / 2622 (stated 500) |
+
+The note of section 2.1 counted every fed move with a 0.5 mm/min tolerance (Pocket: 48 of 63). The
+record counts cutting moves only, at the F word, so it gives other numbers. The flat fixtures have
+feed optimisation on and it runs, so "before" already holds feeds above the stated feed. On the
+shelf (a 3D op) the step does not run, so `feed_optimised` is false although the option is on.
+
+Predicted header of the Pocket after the simulation:
+
+```
+(pocket)
+(feeds: modulated from simulation run 2)
+(feeds run 943 to 3000 mm/min, 32 of 40 cutting moves above the stated 1000 mm/min)
+(ramp entries run up to 1523 mm/min, the stated ramp feed is 500 mm/min)
+```
+
+### P30-2: the rules as they will be built
+
+- **The fact.** `RunModulation` has three values, and core builds them per toolpath with one
+  constructor, `ProjectSession::run_modulation_of(index)`:
+  - `Off`: no caveat. A disabled toolpath, and every reader with no session (FM1, a rule, a unit
+    test, the CLI job file).
+  - `Current { strategy, feed_scale }`: the result holds a current modulated result
+    (`FeedStage::ModulatedCurrent`). The strategy and the scale come from the result:
+    `ResultProvenance::Modulated` records them when the run rewrites the slot. The caveat softens.
+  - `NotRun { export }`: an enabled toolpath with no current modulated result (no result, a
+    `Planned` result, a superseded result). `export` says what an export carries now: the stated
+    feed, or the feeds of an older simulation. The caveat does not soften.
+- **The doors take no modulation argument.** `ProjectSession::limit_rows`, `safe_envelope` and
+  `cutter_op_profile` read `run_modulation_of` themselves, so no surface can pass a constant. The
+  GUI and MCP constant `run_modulation()` goes; `FEED_MODULATION` stays for the adopt step. The GUI
+  feeds memo reads the value of the session (a field of `FeedsInputs`, in its key).
+- **The caveat.** `Caveat::BeforeModulation` (softens) stays for `Current`. A new
+  `Caveat::UntilModulated { export }` (does not soften) is for `NotRun`. The two have rank 0 and one
+  of them at most is on a row. The face word is `until modulated` (15 characters; `before
+  modulation` has 17, so every face that fits today fits). As for `before modulation`, the drawer
+  row (`face_in_group`) does not carry it. The clause (the hover): "until modulated: a simulation
+  with feed modulation re-times the moves of this cut and caps them at this bound; an export now
+  carries the stated feed" (or "the feeds of an older simulation").
+- **The list of capped limits for `NotRun`** is the list of a default run (`ConstrainedMax`, scale
+  1: `ChipMax`), the run of the GUI, MCP and the CLI with no flag.
+- **The export warning.** A new gate `Gate::UnmodulatedOverLimit` and the id
+  `export.stated_feed_over_limit` (`Warn(Danger::Tool)`). It raises one warning per emitted op
+  whose feed stage is `Planned` and which has a stated row with tone `Exceeds` and the caveat
+  `UntilModulated`. The text names the face of the worst such row. A superseded op gets no second
+  warning: the feeds caution of W2.5 names it. A warning, never a refusal. The session memoises the
+  rows that it reads, because the pre-flight modal and the readiness panel read the warnings on each
+  frame.
+
+### P30-2: predicted rows with no simulation
+
+The rule changes only the rows that carry `before_modulation` on HEAD (the run constant of the
+GUI). Each takes `until_modulated` and the tone of the same row under `RunModulation::Off`.
+`rank_cmp` and the face builder do not read the modulation caveat, so the face line is the face line
+of the `Off` column with the word.
+
+| File | Rows with the caveat (changed word) | Tone changes (caution to danger) |
+|---|---|---|
+| `nz_wanaka_21_operator.toml` | 112 | 9: idx 1 body and planner cap; idx 2, 14, 15 planner cap; idx 7 and 8 body and slot ring (all stated cut rows, chip max) |
+| `nz_wanaka_21.toml` | 64 | 1: idx 16 body (stated cut, chip max) |
+| `rivmap100.toml` | 24 | 2: idx 1 planner cap and first slot (proposal rows, chip max) |
+| `rivmap100_live_0925.toml` | 16 | 2: idx 1 planner cap and first slot (proposal rows, chip max) |
+
+14 tone changes in all: the 14 rows that P29-10z softened (section 14 of `P29-10i_DESIGN.md`) go
+back. No state, value, bound or margin moves. The RPM rows and the gate rows (readiness, verdict) do
+not read the modulation and do not move.
+
+The face line of the 18 operator ops (the Passes card):
+
+| idx | HEAD | After P30-2 (predicted) |
+|---|---|---|
+| 0, 3, 4, 5, 9, 10, 12, 13 | none | none |
+| 1 | caution: planner cap · depth 387 % over force cap | **danger: planner cap · chip max 24 % over limit · until modulated** |
+| 2 | caution: ramp entry · depth 100 % over force cap · worst case | **danger: planner cap · chip max 2.9 % over limit · until modulated** |
+| 6 | caution: ramp entry · chip min 76 % under floor · worst case | the same |
+| 7 | caution: body · chip max 27 % over limit · before modulation | **danger: body · chip max 27 % over limit · until modulated** |
+| 8 | caution: body · chip max 27 % over limit · before modulation | **danger: body · chip max 27 % over limit · until modulated** |
+| 11 | caution: ramp entry · chip min 66 % under floor · worst case | the same |
+| 14 | caution: ramp entry · depth 78 % over force cap · worst case | **danger: planner cap · chip max 3.4 % over limit · until modulated** |
+| 15 | caution: ramp entry · depth 84 % over force cap · worst case | **danger: planner cap · chip max 3.1 % over limit · until modulated** |
+| 16 | caution: body · chip min 16 % under floor | the same |
+| 17 | caution: plunge entry · plunge rate 17 % over limit · may not occur | the same |
+
+The face lines of idx 1, 2, 14 and 15 move from the depth row to the chip row: a danger row ranks
+before every caution row. On idx 1 the planner cap row (24 %) ranks before the body row (21 %)
+because the two have the same tone and the planner cap has the lower margin.
+
+The other files: `nz_wanaka_21.toml` idx 16 goes from "caution: body · chip max 50 % over limit ·
+before modulation" to "danger: body · chip max 50 % over limit · until modulated"; every other face
+line of the three files stays (the rivmap tone changes are proposal rows, not on the face).
+
+### P30-2: predicted for the export, Readiness, FM1 and the op golden
+
+- **Export warning.** On the operator file, each of idx 1, 2, 7, 8, 14 and 15 that holds a
+  `Planned` result gets one `export.stated_feed_over_limit` warning (a header line and a row of the
+  warning list). No other op of the four files has a stated danger row with the caveat.
+- **Readiness.** No check state changes. The readiness checks read the gate rows (no modulation
+  caveat) and, from the export warnings, the rapid-collision rows only. The pre-flight `Tool` chip
+  counts the new warnings. The Export button style does not change (it reads `Machine` warnings).
+- **FM1.** Byte-equal: FM1 states `RunModulation::Off` and prints no header.
+- **The op golden.** It hashes the program that `export_gcode_checked(None)` writes, header
+  included (`gcode_hash`). The P30-1 header line moves `gcode_hash` of every arm whose toolpath has a
+  cutting move; no other field moves. That is the STOP of the brief: the agent does not re-bless, and
+  it gives the list of arms and the header-only proof (`RS_CAM_OPGOLDEN_DUMP_GCODE`, a diff with the
+  comment lines filtered).
+- **The fixtures of the export tests.** The new header lines are comment lines. Every program stays
+  byte-equal when the comment lines are filtered. A test that counts or orders header lines
+  (`export_states_the_feed_stage_w2_5` reads the line after the label: no change) is read before the
+  code changes.
