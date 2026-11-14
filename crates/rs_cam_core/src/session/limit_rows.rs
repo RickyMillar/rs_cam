@@ -80,6 +80,33 @@ impl LimitRows<'_> {
 }
 
 impl ProjectSession {
+    /// P29-11 11-6: **the depth rows that a narration reads**: the
+    /// force-budget row of each cut group of the toolpath at `index`, from
+    /// the one door (`limit_rows(..).verdict()`, the memo of the load
+    /// report on `trace`; the gate rows do not read the run modulation).
+    /// Both narration doors (the core `narrate_toolpath` and the GUI MCP
+    /// door) call it, so the narration judges no depth of its own. Empty
+    /// when no toolpath has the index.
+    #[must_use]
+    pub fn narration_depth_rows(
+        &self,
+        index: usize,
+        trace: Option<&Arc<SimulationCutTrace>>,
+    ) -> Vec<CheckRow> {
+        self.limit_rows(
+            index,
+            trace,
+            crate::dressup::feed_modulation::RunModulation::Off,
+        )
+        .map(|rows| {
+            rows.verdict()
+                .into_iter()
+                .filter(|row| row.check().limit == crate::limits::LimitId::ForceBudget)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
     /// **THE door to the force plane of the toolpath at `index`** (P29-10
     /// 10g, lead rulings O4, R1, R9): the force field of its body cut at
     /// its steady feed over its effective spindle speed (the project

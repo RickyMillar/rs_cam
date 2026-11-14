@@ -169,7 +169,9 @@ fn narration_air_cut_line_names_its_denominators() {
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::geo::P3;
     use rs_cam_core::toolpath::Toolpath;
-    use rs_cam_core::trace::narrate::{ToolpathNarrationContext, narrate_toolpath_with_context};
+    use rs_cam_core::trace::narrate::{
+        DepthRows, ToolpathNarrationContext, narrate_toolpath_with_context,
+    };
     use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
     let mut toolpath = Toolpath::new();
@@ -234,6 +236,7 @@ fn narration_air_cut_line_names_its_denominators() {
         None,
         &tool,
         &context,
+        DepthRows::NoVerdict,
     );
 
     let line = report

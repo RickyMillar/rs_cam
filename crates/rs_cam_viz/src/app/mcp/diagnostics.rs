@@ -161,6 +161,16 @@ impl RsCamApp {
             _ => rs_cam_core::session::FeedStage::Planned,
         });
 
+        // P29-11 11-6: the depth rows, from core's one producer, on the
+        // trace this door narrates.
+        let depth_rows = state.session().narration_depth_rows(
+            index,
+            state
+                .simulation
+                .results
+                .as_ref()
+                .and_then(|sim| sim.cut_trace.as_ref()),
+        );
         let mut narration = rs_cam_core::trace::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
             semantic_trace,
@@ -168,6 +178,7 @@ impl RsCamApp {
             debug_trace,
             &tool,
             &context,
+            rs_cam_core::trace::narrate::DepthRows::Rows(&depth_rows),
         );
         // Phase 4 — the two-sided kinematic sentence.
         //

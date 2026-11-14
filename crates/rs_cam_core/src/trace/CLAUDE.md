@@ -25,7 +25,9 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
   (`ToolpathNarrationContext::feed_stage`). The GUI narrates the worker copy.
 - The narration reads an op's DOC basis, air-cut hint, air-cut bar, relink dial,
   `plans_bands` and `ramp_descent` from `OperationType::capabilities()` (W2.4, C2).
-  Do not add a `match` on the op type here.
+  Do not add a `match` on the op type here. P29-11 11-6: the peak-depth line
+  has no depth threshold; its severity is the worst depth row (`DepthRows`, a
+  required argument, from `ProjectSession::narration_depth_rows`).
 
 ## Sentries
 
@@ -34,7 +36,4 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - `cargo test -p rs_cam_core -q --test exporter_span_classifier_x1`
 - `cargo test -p rs_cam_core -q --test narrate_regions_closed_c8`
 
-## Do not
-
-- Do not confuse this folder with `ops/trace_path.rs`, the follow-path
-  operation.
+Do not confuse this folder with `ops/trace_path.rs`, the follow-path operation.

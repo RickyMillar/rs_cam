@@ -919,3 +919,13 @@ FM1 cell or golden row moves (FM1 holds no narration text). The `⚠` side has n
 sentry claim narrates the Pocket fixture with the rows of its verdict on the machine with half
 its body force peak as the budget (claim 8 of `no_removing_sample_is_outside_the_gates_p29_6`):
 `⚠` and the face of the exceeding row; with the rows of the real machine: `ℹ`.
+
+Measured (11-6): as predicted. The five fixture lines keep `ℹ`, read "peak axial DOC 1.50mm (engaged
+depth)", 1.50, 2.00, 2.00 and 5.50 mm, and name the predicted rows: "entry · depth 8.3 % of force
+cap" (Pocket and Pocket with dogbones), "entry · depth 11 % of force cap" (Profile), "body · depth
+9.7 % of force cap" (2D Adaptive), "body · depth 32 % of force cap" (shelf). The sample of four
+lines does not move; the shelf line moves from sample 6730 (move 628) to sample 10666 (move 967),
+another sample at 5.50 mm (the prediction left the location open). No other narration line, row,
+dump line or FM1 cell moves; the op golden shows only its known 46 rows. Claim 8b holds the `⚠`
+side. `DEEP_DOC_MULTIPLIER` is deleted. Wire: the text of the MCP `narrate_toolpath` reply (the
+peak line); no key.

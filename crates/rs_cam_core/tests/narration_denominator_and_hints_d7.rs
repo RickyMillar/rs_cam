@@ -23,7 +23,9 @@ use rs_cam_core::stock::sim_measurability::{MeasurabilityReport, SimMetric};
 use rs_cam_core::stock::simulation_cut::{Engagement, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::trace::narrate::{ToolpathNarrationContext, narrate_toolpath_with_context};
+use rs_cam_core::trace::narrate::{
+    DepthRows, ToolpathNarrationContext, narrate_toolpath_with_context,
+};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// A trace whose air cut is a majority of CUTTING time but a minority of
@@ -89,7 +91,15 @@ fn tool() -> ToolDefinition {
 
 fn narrate(context: &ToolpathNarrationContext<'_>) -> String {
     let trace = split_denominator_trace();
-    narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), context)
+    narrate_toolpath_with_context(
+        &annotated(),
+        None,
+        Some(&trace),
+        None,
+        &tool(),
+        context,
+        DepthRows::NoVerdict,
+    )
 }
 
 /// The air-cut line, isolated.
@@ -147,8 +157,15 @@ fn a_genuinely_high_total_runtime_reading_still_warns() {
         operation_kind: Some(OperationType::Pocket),
         ..Default::default()
     };
-    let text =
-        narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), &context);
+    let text = narrate_toolpath_with_context(
+        &annotated(),
+        None,
+        Some(&trace),
+        None,
+        &tool(),
+        &context,
+        DepthRows::NoVerdict,
+    );
     assert!(
         air_cut_line(&text).contains('⚠'),
         "90% air of TOTAL runtime must still warn; got: {}",
@@ -192,8 +209,15 @@ fn narration_withholds_the_air_cut_percentage_when_it_is_not_a_measurement() {
         measurability: Some(&report),
         ..Default::default()
     };
-    let text =
-        narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), &context);
+    let text = narrate_toolpath_with_context(
+        &annotated(),
+        None,
+        Some(&trace),
+        None,
+        &tool(),
+        &context,
+        DepthRows::NoVerdict,
+    );
     let line = air_cut_line(&text);
     assert!(
         line.contains("NOT MEASURED"),
@@ -260,8 +284,15 @@ fn air_cut_line_for(op: Option<OperationType>, air_samples: usize) -> String {
         operation_kind: op,
         ..Default::default()
     };
-    let text =
-        narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), &context);
+    let text = narrate_toolpath_with_context(
+        &annotated(),
+        None,
+        Some(&trace),
+        None,
+        &tool(),
+        &context,
+        DepthRows::NoVerdict,
+    );
     air_cut_line(&text)
 }
 

@@ -47,11 +47,25 @@ pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 /// 45-%-air pocket the gate flagged). This constant survives only for the
 /// two cases where there is no band to read.
 const AIR_CUT_WARNING_FALLBACK_PERCENT: f64 = 50.0;
-const DEEP_DOC_MULTIPLIER: f64 = 1.5;
 const MAX_LEVEL_LINES: usize = 8;
 /// Distinct region LABELS listed by `append_region_mix` before it elides.
 const MAX_REGION_MIX_GROUPS: usize = 8;
 const MAX_ANOMALY_LINES: usize = 8;
+
+/// P29-11 11-6: the depth rows a narration reads. Every narration door
+/// states them (a required argument of [`narrate_toolpath_with_context`]),
+/// so a new door cannot forget them: the peak-depth line takes its
+/// severity from the worst row, and the narration has no depth threshold
+/// of its own.
+#[derive(Debug, Clone, Copy)]
+pub enum DepthRows<'a> {
+    /// The force-budget row of each cut group of the toolpath, from the one
+    /// producer `ProjectSession::narration_depth_rows`.
+    Rows(&'a [crate::limits::CheckRow]),
+    /// The caller holds no verdict (no project): the line is `ℹ` and names
+    /// no row.
+    NoVerdict,
+}
 
 /// Optional metadata that lets narration tie raw traces back to the project.
 #[derive(Debug, Clone, Default)]
@@ -496,6 +510,7 @@ pub fn narrate_toolpath(
         debug_trace,
         tool,
         &ToolpathNarrationContext::default(),
+        DepthRows::NoVerdict,
     )
 }
 
@@ -515,6 +530,7 @@ pub fn narrate_toolpath_with_context(
     debug_trace: Option<&ToolpathDebugTrace>,
     tool: &ToolDefinition,
     context: &ToolpathNarrationContext<'_>,
+    depth_rows: DepthRows<'_>,
 ) -> String {
     let toolpath = &annotated.toolpath;
     let title = context
@@ -627,7 +643,7 @@ pub fn narrate_toolpath_with_context(
 
     append_engagement_histogram(&mut output, cut_trace, context);
 
-    let anomalies = collect_anomalies(toolpath, cut_trace, tool, context);
+    let anomalies = collect_anomalies(toolpath, cut_trace, tool, context, depth_rows);
     output.push_str("\nAnomalies (most surprising first):\n");
     if anomalies.is_empty() {
         output.push_str("  No high-priority anomalies found by v0.1 heuristics.\n");
@@ -1750,11 +1766,12 @@ fn collect_anomalies(
     cut_trace: Option<&SimulationCutTrace>,
     tool: &ToolDefinition,
     context: &ToolpathNarrationContext<'_>,
+    depth_rows: DepthRows<'_>,
 ) -> Vec<String> {
     let mut anomalies = Vec::new();
     append_large_arc_anomalies(&mut anomalies, toolpath, tool);
     if let Some(trace) = cut_trace {
-        append_peak_doc_anomaly(&mut anomalies, toolpath, trace, context);
+        append_peak_doc_anomaly(&mut anomalies, toolpath, trace, context, depth_rows);
         append_air_cut_anomaly(&mut anomalies, trace, context);
     } else {
         anomalies.push("ℹ no simulation cut trace available, so axial DOC and air-cut heuristics were skipped.".to_owned());
@@ -1842,6 +1859,7 @@ fn append_peak_doc_anomaly(
     toolpath: &Toolpath,
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
+    depth_rows: DepthRows<'_>,
 ) {
     // Drill cycles cut on Z-only moves; the per-segment cutting-sample
     // stream is empty by design (analytical removal — see Step 3 PR1).
@@ -1850,6 +1868,8 @@ fn append_peak_doc_anomaly(
     if context.is_drill_cycle {
         return;
     }
+    // P29-11 11-6: the peak is the ENGAGED depth (`axial_engagement_mm`),
+    // the depth the depth gate judges, not the time-mean depth of M4.
     let peak = trace
         .samples
         .iter()
@@ -1860,8 +1880,8 @@ fn append_peak_doc_anomaly(
                 .is_none_or(|id| sample.toolpath_id == id)
         })
         .max_by(|a, b| {
-            a.axial_doc_mm
-                .partial_cmp(&b.axial_doc_mm)
+            a.axial_engagement_mm
+                .partial_cmp(&b.axial_engagement_mm)
                 .unwrap_or(Ordering::Equal)
         });
 
@@ -1913,13 +1933,29 @@ fn append_peak_doc_anomaly(
         },
         |depth| format!("commanded depth_per_pass = {:.2}mm", depth),
     );
-    let severity = context.depth_per_pass_mm.map_or("ℹ", |depth| {
-        if sample.axial_doc_mm > depth * DEEP_DOC_MULTIPLIER {
-            "⚠"
-        } else {
-            "ℹ"
-        }
-    });
+    // P29-11 11-6: the depth row judges the depth; the narration repeats
+    // its verdict. The worst row that holds a number, by the core rank:
+    // `⚠` exactly when it exceeds.
+    let rows: &[crate::limits::CheckRow] = match depth_rows {
+        DepthRows::Rows(rows) => rows,
+        DepthRows::NoVerdict => &[],
+    };
+    let worst_row = rows
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.check().state,
+                crate::limits::CheckState::Within | crate::limits::CheckState::Exceeds
+            )
+        })
+        .min_by(|a, b| a.rank_cmp(b));
+    let severity = if worst_row.is_some_and(|row| row.tone().exceeds()) {
+        "⚠"
+    } else {
+        "ℹ"
+    };
+    let row_clause =
+        worst_row.map_or_else(String::new, |row| format!(" Depth row: {}.", row.face()));
     // R-13 (census §8.2, §6.5): the advice below used to end with "an exact
     // multiple of the step means that many steps of stock were standing
     // there" on EVERY op — including the ones that have no step. Naming the
@@ -1946,8 +1982,8 @@ fn append_peak_doc_anomaly(
         // reads an exact multiple of the step, at any depth and any pass
         // index. Standing stock is therefore named FIRST, and the reader
         // is told what is being measured before being offered a cause.
-        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. This is the height of material removed at one column, not a commanded step: {advice}.",
-        sample.axial_doc_mm,
+        "{severity} peak axial DOC {:.2}mm (engaged depth) at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}.{row_clause} This is the height of material removed at one column, not a commanded step: {advice}.",
+        sample.axial_engagement_mm,
         sample.sample_index,
         sample.move_index,
         z,
@@ -2352,6 +2388,7 @@ mod tests {
             None,
             &tool,
             &context,
+            DepthRows::NoVerdict,
         );
 
         assert!(report.contains("perimeter sweep"));

@@ -805,6 +805,13 @@ impl ProjectSession {
         // export emits.
         context.feed_stage = Some(self.feed_stage_of(index, &result.provenance));
 
+        // P29-11 11-6: the depth rows, from the one producer.
+        let depth_rows = self.narration_depth_rows(
+            index,
+            self.simulation
+                .as_ref()
+                .and_then(|sim| sim.cut_trace.as_ref()),
+        );
         Ok(crate::trace::narrate::narrate_toolpath_with_context(
             result.annotated(),
             result.semantic_trace.as_deref(),
@@ -812,6 +819,7 @@ impl ProjectSession {
             result.debug_trace.as_ref(),
             &tool_def,
             &context,
+            crate::trace::narrate::DepthRows::Rows(&depth_rows),
         ))
     }
 

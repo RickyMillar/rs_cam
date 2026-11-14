@@ -39,6 +39,8 @@
 //!   Both sides: the five fixtures hold only `Within` groups; the Pocket
 //!   judged on a machine whose force budget is half its measured body
 //!   force peak holds an `Exceeds` group (`the_depth_row_is_the_force_record`).
+//!   Claim 8b (P29-11 11-6): the narration's peak-depth line is `⚠` exactly
+//!   when a depth row exceeds, and it names the row.
 //!
 //! `cargo test -p rs_cam_core -q --test no_removing_sample_is_outside_the_gates_p29_6`
 
@@ -53,12 +55,17 @@ mod common;
 use common::kind_fixtures::{adaptive_session, pocket_session, profile_session, shelf_session};
 
 use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::limits::{ByGroup, CapTable, CutGroup, CutKind, EntryKind, SampleContext};
+use rs_cam_core::limits::{
+    ByGroup, CapTable, CheckRow, CutGroup, CutKind, EntryKind, LimitId, SampleContext,
+};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::GroupCell;
 use rs_cam_core::tool_load::locality::judged_group;
 use rs_cam_core::tool_load::verdict::{
     DepthVerdict, GatePopulation, LoadState, ToolpathLoadVerdict,
+};
+use rs_cam_core::trace::narrate::{
+    DepthRows, ToolpathNarrationContext, narrate_toolpath_with_context,
 };
 
 /// What one fixture gives.
@@ -461,6 +468,58 @@ fn the_depth_row_is_the_force_record() {
         low.depth
     );
     assert!(low.depth.is_exceeded(), "the body depth row exceeds");
+    // Claim 8b (P29-11 11-6): the narration repeats the depth row. With the
+    // rows of the half-budget verdict the peak-depth line is `⚠` and names
+    // the worst exceeding row; with the rows of the real machine it is `ℹ`.
+    let tc = session.toolpath_config_at(0).expect("the op");
+    let tool = build_cutter(
+        session
+            .tool_by_id(tc.tool_id.expect("a tool"))
+            .expect("the tool"),
+    )
+    .expect("the cutter builds");
+    let result = session.result_at(0).expect("a result");
+    let narrate = |verdict: &ToolpathLoadVerdict| {
+        let rows: Vec<CheckRow> = rs_cam_core::limits::rows_of_verdict(verdict)
+            .into_iter()
+            .filter(|r| r.check().limit == LimitId::ForceBudget)
+            .collect();
+        let text = narrate_toolpath_with_context(
+            result.annotated(),
+            None,
+            Some(trace),
+            None,
+            &tool,
+            &ToolpathNarrationContext {
+                toolpath_id: Some(tc.id),
+                depth_per_pass_mm: tc.operation.depth_per_pass(),
+                ..Default::default()
+            },
+            DepthRows::Rows(&rows),
+        );
+        let line = text
+            .lines()
+            .find(|l| l.contains("peak axial DOC"))
+            .unwrap_or_default()
+            .to_owned();
+        (line, rows)
+    };
+    let (low_line, low_rows) = narrate(&low);
+    let worst = low_rows
+        .iter()
+        .filter(|r| r.tone().exceeds())
+        .min_by(|a, b| a.rank_cmp(b))
+        .expect("an exceeding depth row");
+    assert!(
+        low_line.contains('\u{26a0}') && low_line.contains(worst.face()),
+        "the line repeats the exceeding row {}: {low_line}",
+        worst.face()
+    );
+    let (base_line, _) = narrate(&base);
+    assert!(
+        base_line.contains('\u{2139}') && !base_line.contains('\u{26a0}'),
+        "no row exceeds: {base_line}"
+    );
 }
 
 /// Claim 6: a synthetic trace with one body sample and one waterline
