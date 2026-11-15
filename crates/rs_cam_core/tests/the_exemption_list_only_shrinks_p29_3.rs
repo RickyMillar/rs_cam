@@ -54,10 +54,11 @@ use rs_cam_core::limits::{
 /// `U-efficiency` comes back narrowed (11-7 did not close it), and the new
 /// row `S-NoSampleGate` names a gap that existed with no row (commit 11-8
 /// is not built in P29). Against the 36 / 25 / 36 before 11-7 the list
-/// grows by that one row. It is not a silent rise.
-const MAX_NEEDS_RULING: usize = 26;
+/// grows by that one row. It is not a silent rise. M4-A (2026-11-15) closed
+/// the row `M4`: 36 / 25 / 36.
+const MAX_NEEDS_RULING: usize = 25;
 /// Every row (see [`MAX_NEEDS_RULING`] for the rise of 2026-11-14).
-const ROWS: usize = 37;
+const ROWS: usize = 36;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -113,7 +114,12 @@ const RULED: usize = 3;
 /// file (`src/feeds/efficiency.rs`), and adds the row `S-NoSampleGate` with
 /// two files (`src/feeds/planned.rs`, `src/tool_load/groups.rs`): ROWS 37,
 /// need a ruling 26.
-const ROWS_WITH_A_FILE: usize = 37;
+/// M4-A (operator ruling 2026-11-15, "Full fix after a run";
+/// `P34_M4A_2026-11-15.md`) closed the row `M4` with two files
+/// (`src/feeds/engagement.rs`, `src/tool_load/deflection.rs`): one sample
+/// has one depth for every gate and for the feed modulator. ROWS 36, need a
+/// ruling 25.
+const ROWS_WITH_A_FILE: usize = 36;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -153,6 +159,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("P28-15", "P29-7"),
     ("P28-32", "P29-9"),
     ("P28-11", "P29-9"),
+    ("M4", "M4-A"),
 ];
 
 /// The marker text before the ids.

@@ -155,11 +155,19 @@ pub struct SimulationCutSample {
     pub feed_rate_mm_min: f64,
     pub spindle_rpm: u32,
     pub flute_count: u32,
-    /// Legacy wire name for axial cutting engagement. Pure-vertical plunges
-    /// now report `0.0` here; read `plunge_descent_mm` for Z-only descent.
+    /// The time MEAN of the axial engagement over the sample. It equals
+    /// `axial_engagement_mm` on a sample that the simulation did not fold;
+    /// on a folded sample of a move that descends or climbs
+    /// (`dexel_stock::sample_coalesce`) it is below it. M4-A (operator
+    /// ruling 2026-11-15): no gate and no cap reads it. Its one reader is
+    /// the per-move mean of the feed modulator
+    /// (`PerMoveEngagement::mean_axial_mm`). Pure-vertical plunges report
+    /// `0.0` here; read `plunge_descent_mm` for Z-only descent.
     pub axial_doc_mm: f64,
     /// Maximum material height engaged by lateral/arc/helix cutting at this
-    /// sample. Deflection and chip-geometry gates consume this axis.
+    /// sample. M4-A: THE depth of a sample for every gate (power, chip,
+    /// deflection, depth, force), for the K7 envelope placement and for the
+    /// load caps of the feed modulator.
     #[serde(default)]
     pub axial_engagement_mm: f64,
     /// Z descent represented by a pure-vertical plunge sample. Lateral/arc

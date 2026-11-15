@@ -202,7 +202,7 @@ fn modulate(mut tp: Toolpath) -> Toolpath {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
-                    axial_doc_mm: TOP_Z - FLOOR_Z,
+                    mean_axial_mm: TOP_Z - FLOOR_Z,
                     thinning_lift: None,
                 }
             } else {

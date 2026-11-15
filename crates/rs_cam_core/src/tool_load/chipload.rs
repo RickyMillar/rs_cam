@@ -346,7 +346,7 @@ fn judge(
 
     // 4. Look up the vendor envelope. If no row matches, refuse.
     //
-    // The row key reads the peak removed-layer depth of the BODY group
+    // The row key reads the peak engaged depth of the BODY group (M4-A)
     // (`groups::ToolpathSamples::row_key_depth_mm`), so every group reads
     // the body row (P11b2: the band no longer moves with the depth; F5: the
     // key reads no depth).
@@ -1694,15 +1694,20 @@ mod tests {
         // lands inside the LUT band.
         let mut healthy_a = sample(0, 0, 0.04, 0.5);
         healthy_a.axial_doc_mm = 4.0;
+        healthy_a.axial_engagement_mm = 4.0;
         let mut healthy_b = sample(0, 1, 0.04, 0.5);
         healthy_b.axial_doc_mm = 4.0;
+        healthy_b.axial_engagement_mm = 4.0;
         // Phantom transit sample: lift-bridge over uncleared stock, the
         // dexel reads 30 mm "axial DOC" though the cutter isn't actually
         // engaged that deeply. Pre-fix this drove lookup_axial_doc_mm to
         // 30 → ratio ~4.7 → scale 0.5 → bounds halve → healthy_a/b's
         // 0.04 chipload now sits above the 0.5× max ≈ 0.0275 → Exceeds.
         let mut phantom = sample(0, 2, 0.04, 0.5);
+        // M4-A: the row key reads the engaged depth, so the phantom sets
+        // both depths.
         phantom.axial_doc_mm = 30.0;
+        phantom.axial_engagement_mm = 30.0;
         phantom.in_transit_span = true;
         let t = trace(vec![healthy_a, healthy_b, phantom]);
         let v = evaluate_args(

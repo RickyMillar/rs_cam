@@ -156,7 +156,7 @@ fn the_modulator_keeps_the_lifted_feed_at_the_suggest_engagement_p11b2() {
                     PerMoveEngagement {
                         radial_woc_fraction: AE_MM / D_MM,
                         axial_doc_fraction: AP_MM / 25.0,
-                        axial_doc_mm: AP_MM,
+                        mean_axial_mm: AP_MM,
                         thinning_lift: measured,
                     }
                 }

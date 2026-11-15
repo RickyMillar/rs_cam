@@ -287,7 +287,7 @@ pub fn chip_target_for_toolpath(
     }
     // F029: no chip target for a tool outside its domain.
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
-    // The row key depth: the peak removed layer of the body group, the
+    // The row key depth: the peak engaged depth of the body group (M4-A), the
     // depth the gate keys its row with (`groups::ToolpathSamples::
     // row_key_depth_mm`). No spans and no cap table reach this door, so the
     // group comes from the intent; the key reads no depth (finding F5).
@@ -309,7 +309,7 @@ pub fn chip_target_for_toolpath(
                         && locality::judged_group(s, &sample_ctx)
                             == Some(crate::limits::CutGroup::Body)
                 })
-                .map(|s| s.axial_doc_mm.max(0.0))
+                .map(|s| s.axial_engagement_mm.max(0.0))
                 .fold(0.0_f64, f64::max)
         })
         .unwrap_or(0.0);

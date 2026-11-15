@@ -224,12 +224,14 @@ impl Engagement {
     /// the sample's own reading; the width is `r (1 - cos psi)` with psi
     /// clamped to a full slot (D-W).
     ///
-    /// M4 (open item of P29, named in P29-1 and not changed): the depth is
-    /// `axial_doc_mm`, the depth of the layer the sample removes (the
-    /// section of the power model). The deflection gate's door,
-    /// `tool_load::deflection::sample_engagement`, reads
-    /// `axial_engagement_mm` (the engaged edge length). The power gate, the
-    /// chip gate and the depth gate read this door.
+    /// M4-A (operator ruling 2026-11-15, `P34_M4A_2026-11-15.md`): the
+    /// depth is `axial_engagement_mm`, the largest height of stock that the
+    /// cutter stands in during the sample. It is the depth of the deflection
+    /// gate's door, `tool_load::deflection::sample_engagement`: one sample
+    /// has one depth for every gate and for the feed modulator. The power
+    /// gate, the chip lift, the cut of a sample, the K7 envelope placement
+    /// and the modulator's power cap read this door. `axial_doc_mm` (the
+    /// time mean of a folded group) is not a depth of a gate.
     #[must_use]
     pub fn from_sample(
         sample: &crate::stock::simulation_cut::SimulationCutSample,
@@ -239,8 +241,7 @@ impl Engagement {
             return None;
         }
         let arc = sample.arc_engagement_radians?;
-        // EXEMPT(M4)
-        let ap_mm = sample.axial_doc_mm;
+        let ap_mm = sample.axial_engagement_mm;
         let r = EngagedDiameter::of_tool(tool, ap_mm).mm() / 2.0;
         let psi = arc.clamp(0.0, std::f64::consts::PI);
         let ae_mm = r * (1.0 - psi.cos());

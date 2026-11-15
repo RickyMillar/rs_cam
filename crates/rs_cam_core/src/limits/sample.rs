@@ -22,7 +22,6 @@ use crate::trace::toolpath_spans::{Span, SpanKind};
 
 use super::{
     CleanupKind, Cut, CutEngagement, CutFacts, CutKind, CutSource, EntryKind, NoEngagementModel,
-    SampleDepth,
 };
 
 /// The feed cap of one move.
@@ -274,7 +273,7 @@ impl Cut {
     ///
     /// - The kind: [`CutKind::of_sample`].
     /// - The engagement: the door of the gates, `Engagement::from_sample`
-    ///   (the removed layer, `SampleDepth::RemovedLayer`). A sample with no
+    ///   (M4-A: the engaged depth `axial_engagement_mm`). A sample with no
     ///   measured arc has no model ([`NoEngagementModel::NoMeasuredArc`]).
     /// - The point: `None`. Each gate builds its own point from the sample
     ///   and its feed (`feeds::cut_load::OperatingPoint`, one door each).
@@ -295,7 +294,6 @@ impl Cut {
             source: CutSource::Measured {
                 sample_index: u32::try_from(sample.sample_index).unwrap_or(u32::MAX),
                 move_index: u32::try_from(sample.move_index).unwrap_or(u32::MAX),
-                depth: SampleDepth::RemovedLayer,
             },
             facts: ctx.facts,
         })

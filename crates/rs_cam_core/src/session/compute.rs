@@ -2138,7 +2138,10 @@ fn modulate_annotated_against_trace(
             // there, `0.0` legitimately means "air" (see its doc).
             axial_num[sample.move_index] +=
                 sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
-            // T-11: the absolute reading, same time weighting.
+            // T-11: the absolute reading, same time weighting. M4-A: this
+            // is the ONE reader of the mean depth of a sample
+            // (`axial_doc_mm`); every gate and every load cap reads
+            // `axial_engagement_mm`.
             axial_mm_num[sample.move_index] += sample.axial_doc_mm.max(0.0) * w;
             weight_sum[sample.move_index] += w;
         }
@@ -2188,7 +2191,7 @@ fn modulate_annotated_against_trace(
             PerMoveEngagement {
                 radial_woc_fraction: radial,
                 axial_doc_fraction: axial,
-                axial_doc_mm: axial_mm,
+                mean_axial_mm: axial_mm,
                 thinning_lift: None,
             }
         })

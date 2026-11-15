@@ -342,19 +342,6 @@ impl CutEngagement {
     }
 }
 
-/// Which depth of a simulation sample a cut reads (open item M4: one
-/// sample has two depths).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SampleDepth {
-    /// `axial_doc_mm`, the depth of the layer the sample removes
-    /// (`Engagement::from_sample`).
-    RemovedLayer,
-    /// `axial_engagement_mm`, the engaged edge length
-    /// (`tool_load::deflection::sample_engagement`).
-    EngagedEdge,
-}
-
 /// Where a cut comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CutSource {
@@ -366,8 +353,6 @@ pub enum CutSource {
         sample_index: u32,
         /// The index of the move of the sample.
         move_index: u32,
-        /// The depth of the sample that the cut reads.
-        depth: SampleDepth,
     },
 }
 

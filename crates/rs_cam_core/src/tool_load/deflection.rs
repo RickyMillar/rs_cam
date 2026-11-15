@@ -166,15 +166,13 @@ pub fn deflection_limit_um(leave: Leave) -> f64 {
 /// `cut_force::sample_peak_force_n` both read it (P17): one engagement,
 /// one force.
 ///
-/// M4 (open item of P29, named in P29-1 and not changed): this door reads
+/// M4-A (operator ruling 2026-11-15): this door reads
 /// `axial_engagement_mm`, the depth of the stock the cutter stands in at
 /// the sample (the engaged edge length that the force sum and the beam's
-/// load point read). [`Engagement::from_sample`] reads `axial_doc_mm`, the
-/// depth of the layer the sample removes (the section the power model
-/// reads). One sample so gives two engagements; `feeds::cut_load::CutLoad`
-/// takes the one its caller built.
+/// load point read). [`Engagement::from_sample`] reads the same depth, so
+/// one sample gives one cut on both doors (sentry
+/// `tests/one_sample_depth_for_every_door_m4.rs`).
 #[must_use]
-// EXEMPT(M4)
 pub fn sample_engagement(
     tool: &ToolDefinition,
     sample: &SimulationCutSample,

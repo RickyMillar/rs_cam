@@ -47,7 +47,7 @@ pub struct ToolpathSamples {
     /// the power and deflection gates say `ArcEngagementNotCaptured`. A
     /// property of the trace, not of a group.
     pub arc_captured: bool,
-    /// The largest removed-layer depth (`axial_doc_mm`) of the body group:
+    /// The largest engaged depth (`axial_engagement_mm`, M4-A) of the body group:
     /// the depth of the chip gate's vendor row key
     /// (`geometry::lut_key_diameter_for_cutter`, which reads no depth
     /// today, finding F5). Every group reads the body row (the vendor row
@@ -124,7 +124,9 @@ pub fn populations<'t>(
         };
         toolpath.removing_samples += 1;
         if group == CutGroup::Body {
-            toolpath.row_key_depth_mm = toolpath.row_key_depth_mm.max(s.axial_doc_mm.max(0.0));
+            toolpath.row_key_depth_mm = toolpath
+                .row_key_depth_mm
+                .max(s.axial_engagement_mm.max(0.0));
         }
         groups.get_mut(group).push((i, s));
     }

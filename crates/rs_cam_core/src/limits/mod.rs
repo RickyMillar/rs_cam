@@ -38,7 +38,7 @@ mod scope;
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
 pub use cut::{
     BodySides, ByGroup, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource,
-    DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
+    DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel,
 };
 pub use exemptions::{
     EXEMPTIONS, Exemption, ExemptionClass, Who, physical_geometry_of, scope_cell_state,

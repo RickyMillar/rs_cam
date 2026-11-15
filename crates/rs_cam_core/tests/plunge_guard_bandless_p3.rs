@@ -86,7 +86,7 @@ fn engaged() -> PerMoveEngagement {
     PerMoveEngagement {
         radial_woc_fraction: 1.0,
         axial_doc_fraction: 1.0,
-        axial_doc_mm: 0.0,
+        mean_axial_mm: 0.0,
         thinning_lift: None,
     }
 }

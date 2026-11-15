@@ -156,7 +156,7 @@ fn a_bandless_move_is_capped_at_its_reach_p18() {
     let engaged = PerMoveEngagement {
         radial_woc_fraction: 1.0,
         axial_doc_fraction: 1.0,
-        axial_doc_mm: 2.0,
+        mean_axial_mm: 2.0,
         thinning_lift: None,
     };
     let engagements: Vec<PerMoveEngagement> = tp
@@ -232,7 +232,7 @@ fn the_cap_moves_no_engaged_move_p18() {
     let engaged = PerMoveEngagement {
         radial_woc_fraction: 0.5,
         axial_doc_fraction: 1.0,
-        axial_doc_mm: 2.0,
+        mean_axial_mm: 2.0,
         thinning_lift: None,
     };
     // Every third fed move has no engagement.

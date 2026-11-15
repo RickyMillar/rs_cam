@@ -22,9 +22,10 @@
 //!
 //! ## The quantity: `axial_engagement_mm`, not `axial_doc_mm`
 //!
-//! [`SimulationCutSample`] carries both. `axial_doc_mm` is the LEGACY
-//! wire name and reads `0.0` on a pure-vertical plunge, where the
-//! descent goes to `plunge_descent_mm` instead.
+//! [`SimulationCutSample`] carries both. `axial_doc_mm` is the time mean
+//! of a folded sample (M4-A: no gate reads it) and reads `0.0` on a
+//! pure-vertical plunge, where the descent goes to `plunge_descent_mm`
+//! instead.
 //! [`SimulationCutSample::axial_engagement_mm`] is the axis the emitter
 //! documents as "maximum material height engaged by lateral/arc/helix
 //! cutting at this sample", and it is the axis the deflection and

@@ -547,7 +547,7 @@ pub struct PerMoveEngagement {
     /// the zero-engagement short-circuits, which only test it against
     /// zero. **Do not multiply it by a depth**; T-11 did exactly that and
     /// read every cut about ten times too shallow. Use
-    /// [`Self::axial_doc_mm`] for the depth.
+    /// [`Self::mean_axial_mm`] for the depth.
     pub axial_doc_fraction: f64,
     /// T-11 (2026-09-16) — mean axial engagement in MILLIMETRES across
     /// the move's cutting samples, straight off `CutSample::axial_doc_mm`.
@@ -555,7 +555,13 @@ pub struct PerMoveEngagement {
     /// The dexel measures this directly, so nothing needs to re-derive it.
     /// `0.0` means the move had no measured cutting engagement, which the
     /// solver treats the same way it treats an air move.
-    pub axial_doc_mm: f64,
+    ///
+    /// M4-A (operator ruling 2026-11-15): it is the one reader of the mean
+    /// depth of a sample. It feeds the zero test, the planner floor
+    /// (`MoveSampleEngagements::mean_binds`) and the fallback of a move
+    /// with no sample engagement. The load caps of a move with samples
+    /// read the engaged depth of each sample ([`SampleEngagement`]).
+    pub mean_axial_mm: f64,
     /// Feeds contract P11b2: the radial chip-thinning lift of the move, the
     /// MINIMUM over its cutting samples of
     /// `tool_load::display::sample_thinning_lift` (the lift the post-sim gate
@@ -574,8 +580,9 @@ pub struct PerMoveEngagement {
 /// engagement (lead ruling 1, 2026-11-09).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SampleEngagement {
-    /// The power gate's engagement (`Engagement::from_sample`, depth
-    /// `axial_doc_mm`); the power cap reads it.
+    /// The power gate's engagement (`Engagement::from_sample`); the power
+    /// cap reads it. M4-A: its depth is `axial_engagement_mm`, the depth of
+    /// [`Self::force`].
     pub power: Option<Engagement>,
     /// The deflection gate's engagement
     /// (`tool_load::deflection::sample_engagement`, depth
@@ -1645,7 +1652,7 @@ fn move_thinning_lift(
 /// what `Engagement::axial_doc_fraction`'s own doc comment directs a caller
 /// to do.
 fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>) -> f64 {
-    let measured = engagement.axial_doc_mm;
+    let measured = engagement.mean_axial_mm;
     if measured > 0.0 {
         return measured;
     }
@@ -2198,7 +2205,7 @@ mod tests {
         let engaged = PerMoveEngagement {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: 0.1,
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: None,
         };
         let run = |materials: &[MoveMaterial]| {
@@ -2333,7 +2340,7 @@ mod tests {
             axial_doc_fraction: 1.0,
             // T-11: the depth is now read in mm, not derived from the
             // fraction. 2.0 is what `nominal x fraction` meant here.
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: None,
         };
         // Large kinematic cap so deflection is the binding constraint.
@@ -2425,7 +2432,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2433,7 +2440,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2441,7 +2448,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
         ];
@@ -2465,7 +2472,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2473,7 +2480,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2481,7 +2488,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
         ];
@@ -2541,7 +2548,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2549,7 +2556,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
         ];
@@ -2584,7 +2591,7 @@ mod tests {
             axial_doc_fraction: 1.0,
             // T-11: the depth is now read in mm, not derived from the
             // fraction. 2.0 is what `nominal x fraction` meant here.
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: None,
         };
         // Light engagement inflates the chip-thinning target well past
@@ -2620,7 +2627,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2628,7 +2635,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
         ];
@@ -2655,7 +2662,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2663,7 +2670,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
             PerMoveEngagement {
@@ -2671,7 +2678,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             },
         ];
@@ -2700,7 +2707,7 @@ mod tests {
                 axial_doc_fraction: 1.0,
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
-                axial_doc_mm: 2.0,
+                mean_axial_mm: 2.0,
                 thinning_lift: None,
             })
             .collect();
@@ -2747,7 +2754,7 @@ mod tests {
                             axial_doc_fraction: 1.0,
                             // T-11: the depth is now read in mm, not derived from the
                             // fraction. 2.0 is what `nominal x fraction` meant here.
-                            axial_doc_mm: 2.0,
+                            mean_axial_mm: 2.0,
                             thinning_lift: None,
                         }
                     } else {
@@ -2756,7 +2763,7 @@ mod tests {
                             axial_doc_fraction: 1.0,
                             // T-11: the depth is now read in mm, not derived from the
                             // fraction. 2.0 is what `nominal x fraction` meant here.
-                            axial_doc_mm: 2.0,
+                            mean_axial_mm: 2.0,
                             thinning_lift: None,
                         }
                     }
@@ -2787,7 +2794,7 @@ mod tests {
         PerMoveEngagement {
             radial_woc_fraction: 1.0,
             axial_doc_fraction: 1.0,
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: None,
         }
     }
@@ -3072,7 +3079,7 @@ mod tests {
         let engaged = PerMoveEngagement {
             radial_woc_fraction: 0.2,
             axial_doc_fraction: 0.1,
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: Some(lift),
         };
         let teeth_per_min = 18_000.0 * 2.0;

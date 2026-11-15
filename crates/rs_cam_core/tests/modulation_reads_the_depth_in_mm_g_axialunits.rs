@@ -140,7 +140,7 @@ fn feed_at(depth_mm: f64, fraction: f64, available_kw: f64) -> f64 {
         .map(|_| PerMoveEngagement {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: fraction,
-            axial_doc_mm: depth_mm,
+            mean_axial_mm: depth_mm,
             thinning_lift: None,
         })
         .collect();

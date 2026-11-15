@@ -63,7 +63,7 @@ use rs_cam_core::compute::operation_configs::ProfileConfig;
 use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::limits::{
     CapTable, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource, EntryKind,
-    NoEngagementModel, SampleContext, SampleDepth,
+    NoEngagementModel, SampleContext,
 };
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::simulation_cut::{Engagement as SampleEngagement, SimulationCutSample};
@@ -372,7 +372,6 @@ fn check_cut(
     let source = CutSource::Measured {
         sample_index: u32::try_from(s.sample_index).expect("a small trace"),
         move_index: u32::try_from(s.move_index).expect("a small toolpath"),
-        depth: SampleDepth::RemovedLayer,
     };
     if cut.kind != kind
         || cut.engagement != engagement

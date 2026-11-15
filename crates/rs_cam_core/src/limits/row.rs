@@ -17,7 +17,7 @@ use serde::Serialize;
 
 use super::{
     BoundSide, Check, CheckState, CutGroup, CutKind, EXEMPTIONS, Geometry, LimitId, NoNumberReason,
-    SampleDepth, of_criterion, of_rpm_choice,
+    of_criterion, of_rpm_choice,
 };
 use crate::feeds::RpmChoice;
 use crate::tool_load::groups::Gate;
@@ -274,11 +274,6 @@ pub enum Caveat {
     Advisory,
     /// The gate stated an empty population (X-VAC).
     NoSamples,
-    /// M4: the sample depth that the row reads.
-    SampleDepth {
-        /// The depth.
-        depth: SampleDepth,
-    },
     /// A finish pass judged at the earlier op's leave
     /// (`BodyDepth::EarlierLeave`).
     AtEarlierLeave,
@@ -300,9 +295,8 @@ impl Caveat {
             Self::MayOccur { .. } => 5,
             Self::Advisory => 6,
             Self::NoSamples => 7,
-            Self::SampleDepth { .. } => 8,
-            Self::AtEarlierLeave => 9,
-            Self::AtSuggestedChip => 10,
+            Self::AtEarlierLeave => 8,
+            Self::AtSuggestedChip => 9,
         }
     }
 
@@ -328,7 +322,6 @@ impl Caveat {
             Self::AdvisoryFloor { .. }
             | Self::Advisory
             | Self::NoSamples
-            | Self::SampleDepth { .. }
             | Self::AtEarlierLeave
             | Self::AtSuggestedChip => None,
         }
@@ -349,7 +342,6 @@ impl Caveat {
             | Self::AdvisoryFloor { .. }
             | Self::Advisory
             | Self::NoSamples
-            | Self::SampleDepth { .. }
             | Self::AtEarlierLeave
             | Self::AtSuggestedChip => false,
         }
@@ -373,7 +365,6 @@ impl Caveat {
             | Self::UntilModulated { .. }
             | Self::Advisory
             | Self::NoSamples
-            | Self::SampleDepth { .. }
             | Self::AtEarlierLeave
             | Self::AtSuggestedChip => false,
         }
@@ -394,7 +385,6 @@ impl Caveat {
             | Self::MayOccur { .. }
             | Self::Advisory
             | Self::NoSamples
-            | Self::SampleDepth { .. }
             | Self::AtEarlierLeave
             | Self::AtSuggestedChip => self.face_word(),
         }
@@ -436,12 +426,6 @@ impl Caveat {
             Self::MayOccur { row } => format!("the plan may not cut it (row {row})"),
             Self::Advisory => "the bound does not gate an export".to_owned(),
             Self::NoSamples => "the gate read no sample".to_owned(),
-            Self::SampleDepth {
-                depth: SampleDepth::RemovedLayer,
-            } => "the sample depth read is the removed layer depth".to_owned(),
-            Self::SampleDepth {
-                depth: SampleDepth::EngagedEdge,
-            } => "the sample depth read is the engaged edge depth".to_owned(),
             Self::AtEarlierLeave => "judged at the leave of the earlier op".to_owned(),
             Self::AtSuggestedChip => {
                 "the op states no feed or speed: the depth is judged at the suggested chip of \
@@ -957,7 +941,6 @@ impl CheckRow {
             | Caveat::AdvisoryFloor { .. }
             | Caveat::Advisory
             | Caveat::NoSamples
-            | Caveat::SampleDepth { .. }
             | Caveat::AtEarlierLeave
             | Caveat::AtSuggestedChip => None,
         })
@@ -1139,7 +1122,6 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
             | Caveat::AdvisoryFloor { .. }
             | Caveat::Advisory
             | Caveat::NoSamples
-            | Caveat::SampleDepth { .. }
             | Caveat::AtEarlierLeave
             | Caveat::AtSuggestedChip => None,
         })
@@ -1348,41 +1330,6 @@ fn detail_of(
     parts.join("; ")
 }
 
-/// The sample depth that a gate of `limit` reads (M4): the power and the
-/// chip read the removed layer, the deflection and the force the engaged
-/// edge (`tool_load/CLAUDE.md`).
-const fn sample_depth_of(limit: LimitId) -> Option<SampleDepth> {
-    match limit {
-        LimitId::SpindlePower | LimitId::ChipMax | LimitId::ChipMin => {
-            Some(SampleDepth::RemovedLayer)
-        }
-        LimitId::ToolDeflection | LimitId::ForceBudget => Some(SampleDepth::EngagedEdge),
-        LimitId::RubbingFloor
-        | LimitId::FluteGuard
-        | LimitId::CuttingLength
-        | LimitId::VendorAxial
-        | LimitId::VendorDepthTable
-        | LimitId::CornerCoverage
-        | LimitId::ScallopDepth
-        | LimitId::ToolDiameter
-        | LimitId::MoveBudget
-        | LimitId::EngagementFloor
-        | LimitId::CuttingFeedCap
-        | LimitId::PlannerFeedCap
-        | LimitId::KinematicReach
-        | LimitId::PlungeRate
-        | LimitId::SpindleMaxRpm
-        | LimitId::ZAxisRate
-        | LimitId::OperatorRpmCeiling
-        | LimitId::ChartRpm
-        | LimitId::VendorRpmMax
-        | LimitId::GantryPush
-        | LimitId::DrillChipWelding
-        | LimitId::DrillPeckAdequacy
-        | LimitId::DrillPlungeFeed => None,
-    }
-}
-
 /// The row of one gate row of the verdict.
 fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
     group_row_with(status, subject, of_criterion(status), Vec::new())
@@ -1395,10 +1342,7 @@ fn group_row_with(
     check: Check,
     mut extra: Vec<String>,
 ) -> CheckRow {
-    let mut caveats = Vec::new();
-    if let Some(depth) = sample_depth_of(check.limit) {
-        caveats.push(Caveat::SampleDepth { depth });
-    }
+    let caveats = Vec::new();
     // P29-10 10e: the detail carries what the old row hover said beside
     // the check: the source of the bound, the reason of an unmodelled
     // gate, the confidence of an approximate input and the remedy of a

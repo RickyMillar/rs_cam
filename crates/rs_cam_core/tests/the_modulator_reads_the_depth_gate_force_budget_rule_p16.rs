@@ -123,7 +123,7 @@ fn engagements(tp: &Toolpath, ap_mm: f64) -> Vec<PerMoveEngagement> {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: ap_mm / FLUTE_LENGTH_MM,
-                    axial_doc_mm: ap_mm,
+                    mean_axial_mm: ap_mm,
                     thinning_lift: None,
                 }
             }

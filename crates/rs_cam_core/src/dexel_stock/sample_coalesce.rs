@@ -32,13 +32,16 @@
 //!   (`session::compute` per-move engagement). Its per-move inputs, hence the
 //!   modulated feeds and the cycle time, are kept. Since feeds contract P20g
 //!   the means feed only the zero-engagement test, the planner floor and the
-//!   fallback of a move with no sample engagement.
+//!   fallback of a move with no sample engagement. M4-A (operator ruling
+//!   2026-11-15): the mean `axial_doc_mm` has no other reader; every gate and
+//!   every load cap reads the maximum `axial_engagement_mm`.
 //! * **Maxima** — `axial_engagement_mm` ("maximum material height engaged at
 //!   this sample"), `plunge_descent_mm`, the arc and the chip thicknesses: the
-//!   peaks the depth, deflection, chipload and power gates read. P20g: the
-//!   modulator's power, deflection and force-budget caps read the same peaks
-//!   per sample (`dressup::feed_modulation::SampleEngagement`). A peak is
-//!   kept exactly or over-stated, never under-stated.
+//!   peaks the depth, deflection, chipload and power gates read. P20g, M4-A:
+//!   the modulator's power, deflection and force-budget caps read the same
+//!   peaks per sample (`dressup::feed_modulation::SampleEngagement`; the
+//!   power cap read the mean depth before M4-A). A peak is kept exactly or
+//!   over-stated, never under-stated.
 //! * **Identity fields** (move, feed, spans, intent, kinematics) are equal
 //!   across a group; `position` is the time-weighted mean of the midpoints.
 //! * **Material** (S1) — `material_slot` is the slot with the most removed

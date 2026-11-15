@@ -87,7 +87,7 @@ fn engaged() -> PerMoveEngagement {
         // `power_inputs` are `None`), so the depth is never read. `0.0`
         // is what the pre-T-11 expression returned here, kept so this
         // plunge-guard test cannot shift on a depth it does not test.
-        axial_doc_mm: 0.0,
+        mean_axial_mm: 0.0,
         thinning_lift: None,
     }
 }

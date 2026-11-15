@@ -223,7 +223,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
                 PerMoveEngagement {
                     radial_woc_fraction: woc,
                     axial_doc_fraction: 1.0,
-                    axial_doc_mm: ap,
+                    mean_axial_mm: ap,
                     thinning_lift: None,
                 }
             }

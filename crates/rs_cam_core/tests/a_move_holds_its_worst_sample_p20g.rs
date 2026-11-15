@@ -152,7 +152,7 @@ fn mean_engagement(samples: &[SimulationCutSample], tool: &ToolDefinition) -> Pe
     PerMoveEngagement {
         radial_woc_fraction: woc,
         axial_doc_fraction: AP_MM / FLUTE_LENGTH_MM,
-        axial_doc_mm: AP_MM,
+        mean_axial_mm: AP_MM,
         thinning_lift: Some(lift),
     }
 }

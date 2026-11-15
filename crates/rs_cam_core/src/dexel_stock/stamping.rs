@@ -1634,7 +1634,9 @@ impl StampPartial {
     /// The depth is `max_penetration`, which is the same `f64` this function
     /// publishes as element 0 of the tuple and hence as
     /// `SimulationCutSample::axial_doc_mm`. That identity is what makes
-    /// `tool_load::power`'s `engagement_radius(s.axial_doc_mm) × (arc / π)`
+    /// `tool_load::power`'s `engagement_radius(depth) × (arc / π)` (M4-A: the
+    /// depth of the power door is `axial_engagement_mm`, the same value on a
+    /// sample that is not folded)
     /// self-consistent: after this fix the arc it multiplies is derived from a
     /// fraction taken over the same engaged width, so `power.rs` needs no
     /// change of its own.

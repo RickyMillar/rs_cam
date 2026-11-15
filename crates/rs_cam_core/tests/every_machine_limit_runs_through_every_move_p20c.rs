@@ -158,7 +158,7 @@ fn the_modulator_floor_does_not_lift_a_move_above_its_axis_rate_p20c() {
         .map(|_| PerMoveEngagement {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: 1.0,
-            axial_doc_mm: 2.0,
+            mean_axial_mm: 2.0,
             thinning_lift: None,
         })
         .collect();

@@ -123,7 +123,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 37] = [
+pub static EXEMPTIONS: [Exemption; 36] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -403,16 +403,6 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         closes_in: "- (also a rapid and a retract: no cut)",
     },
     // M: the findings that P28 missed.
-    Exemption {
-        id: "M4",
-        what: "the spindle power against the tool deflection",
-        limit: &[LimitId::SpindlePower, LimitId::ToolDeflection],
-        who: Who::Reader("one sample has two depths (axial_doc_mm, axial_engagement_mm)"),
-        class: NR,
-        where_: &["src/feeds/engagement.rs", "src/tool_load/deflection.rs"],
-        closes_in: "P29-11 (a probe: the share of samples where the two depths differ); \
-                    P29-10 states the depth of each row (Caveat::SampleDepth)",
-    },
     Exemption {
         id: "M6",
         what: "the chip band",

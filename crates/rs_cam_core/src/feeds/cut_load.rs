@@ -34,16 +34,16 @@
 //! [`NoNumber::NotModelled`]). The two plunge doors (the calculator and
 //! the operating-point figure) read it.
 //!
-//! # Open items of P29 (named here, not changed)
+//! # The closed items of P29
 //!
-//! - **M4, two depths for one sample.** `Engagement::from_sample` reads
-//!   `axial_doc_mm`; `tool_load::deflection::sample_engagement` reads
-//!   `axial_engagement_mm`. `CutLoad` takes the engagement that the caller
-//!   built.
-//!
-//! P29-11 commit 11-1 closed the open item "the operating point differs by
-//! door": every load door of a sample reads [`OperatingPoint::of_sample`],
-//! with the flute count of the tool.
+//! - **M4, two depths for one sample**: closed by M4-A (operator ruling
+//!   2026-11-15). `Engagement::from_sample` and
+//!   `tool_load::deflection::sample_engagement` both read
+//!   `axial_engagement_mm`, so the two sample doors give one cut (sentry
+//!   `tests/one_sample_depth_for_every_door_m4.rs`).
+//! - **The operating point differs by door**: closed by P29-11 commit
+//!   11-1. Every load door of a sample reads
+//!   [`OperatingPoint::of_sample`], with the flute count of the tool.
 //!
 //! The sentry is `tests/one_cut_gives_one_load_on_every_door_p29_1.rs`.
 

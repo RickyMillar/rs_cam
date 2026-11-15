@@ -438,7 +438,6 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
             for c in r.caveats() {
                 caveats.insert(match c {
                     Caveat::MayOccur { .. } => "MayOccur".to_owned(),
-                    Caveat::SampleDepth { .. } => "SampleDepth".to_owned(),
                     Caveat::AdvisoryFloor { .. } => "AdvisoryFloor".to_owned(),
                     Caveat::UntilModulated { .. } => "UntilModulated".to_owned(),
                     Caveat::BeforeModulation
@@ -1370,7 +1369,6 @@ fn advisory_floor(row: &CheckRow) -> Option<rs_cam_core::tool_load::verdict::Adv
         | Caveat::MayOccur { .. }
         | Caveat::Advisory
         | Caveat::NoSamples
-        | Caveat::SampleDepth { .. }
         | Caveat::AtEarlierLeave
         | Caveat::AtSuggestedChip => None,
     })
