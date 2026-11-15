@@ -2402,6 +2402,255 @@ fn advisor_modulates_candidate_feeds_before_timing() {
     );
 }
 
+// ── strategy advisor: the mode of the project switch (P35 part C) ────
+
+/// The planned path of the stored adaptive3d op of `session`, as the
+/// advisor plans a candidate: no dressup, no recorder.
+fn planned_candidate(
+    session: &ProjectSession,
+) -> (
+    ResolvedGenInputs,
+    Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
+) {
+    let cancel = AtomicBool::new(false);
+    let resolved = session
+        .resolve_generation_inputs(0, &cancel)
+        .expect("resolve generation inputs for the adaptive3d op");
+    let findings = std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
+    let stock_material = session.stock_config().material.clone();
+    let annotated = {
+        let ctx = crate::compute::execute::ExecutionContext {
+            mesh: resolved.mesh.as_deref(),
+            index: resolved.spatial_index(),
+            selection: crate::compute::execute::SelectionInputs::resolved(&resolved.selection),
+            material: Some(&stock_material),
+            territory_inputs: crate::compute::execute::TerritoryInputs::default()
+                .boundary(resolved.pre_boundary.as_ref()),
+            ..crate::compute::execute::ExecutionContext::new(
+                &findings,
+                &resolved.tool_def,
+                &resolved.tool,
+                &resolved.heights,
+                &resolved.cutting_levels,
+                &resolved.emission_stock_bbox,
+                &cancel,
+            )
+        };
+        crate::compute::execute::execute_operation_annotated(&ctx, &resolved.operation)
+            .expect("plan the candidate")
+    };
+    (resolved, Arc::new(annotated))
+}
+
+/// The terrain session of the P35 advisor tests: Contour Parallel with a
+/// wide stepover and deep levels, so a debug build plans and simulates
+/// the candidate in seconds. The tests prove the mode, not the plan.
+fn light_terrain_session() -> ProjectSession {
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourParallel);
+    for (param, value) in [("stepover", 3.0), ("depth_per_pass", 6.0)] {
+        let _ = session
+            .set_toolpath_param(0, param, serde_json::json!(value))
+            .expect("set the dial");
+    }
+    session
+}
+
+/// The time (s) the advisor gives a path: the integrator call of
+/// `machine::strategy_advisor::recommend_strategy`.
+fn advisor_time_s(session: &ProjectSession, toolpath: &crate::toolpath::Toolpath) -> f64 {
+    let machine = session.machine();
+    crate::machine::kinematics::compute_cycle_time(
+        toolpath,
+        &machine.effective_kinematics(),
+        machine.max_feed_mm_min,
+        machine.max_feed_mm_min,
+    )
+}
+
+/// Write the project switch and give the advisor's path of the candidate
+/// under it: `None` when the advisor times the planned path.
+fn advisor_path_under(
+    session: &mut ProjectSession,
+    switch: crate::session::FeedModulationSwitch,
+    resolved: &ResolvedGenInputs,
+    candidate: &Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
+) -> Option<crate::toolpath::Toolpath> {
+    let cancel = AtomicBool::new(false);
+    let _ = session
+        .apply(crate::session::Command::SetFeedModulation(
+            crate::session::SetFeedModulationArgs { switch },
+        ))
+        .expect("write the switch");
+    let handle = session
+        .capture_recommend_clearing_strategy(0, &cancel)
+        .expect("capture the advisor job");
+    optimized_candidate(
+        &handle.context,
+        candidate,
+        &resolved.tool,
+        &resolved.operation,
+        &cancel,
+    )
+    .map(|(path, _regime)| path)
+}
+
+/// P35 part C (operator ruling 2026-11-16, "Read the switch"): the advisor
+/// times each candidate in the mode of the project switch. Before P35 it
+/// stated the full mode whatever the switch said, so the three settings
+/// gave one time.
+///
+/// - `full`: some cut feed is above the planned feed (non-vacuity: full
+///   lifts feeds on this fixture).
+/// - `cap_only`: no cut feed is above the planned feed, and the time is
+///   longer than the `full` time.
+/// - `off`: the advisor times the planned path (no modulation).
+#[test]
+#[expect(
+    clippy::print_stderr,
+    reason = "the three times are the record of the step"
+)]
+fn the_advisor_times_a_candidate_in_the_mode_of_the_switch_p35() {
+    use crate::session::FeedModulationSwitch;
+    let mut session = light_terrain_session();
+    let (resolved, candidate) = planned_candidate(&session);
+    let planned: Vec<Option<f64>> = candidate.toolpath.moves.iter().map(cut_move_feed).collect();
+    let above_planned = |path: &crate::toolpath::Toolpath| {
+        path.moves
+            .iter()
+            .zip(&planned)
+            .filter(|(m, before)| match (cut_move_feed(m), before) {
+                (Some(after), Some(before)) => after > before + 0.5,
+                _ => false,
+            })
+            .count()
+    };
+
+    let full = advisor_path_under(
+        &mut session,
+        FeedModulationSwitch::Full,
+        &resolved,
+        &candidate,
+    )
+    .expect("full: the advisor modulates the candidate");
+    let cap = advisor_path_under(
+        &mut session,
+        FeedModulationSwitch::CapOnly,
+        &resolved,
+        &candidate,
+    )
+    .expect("cap only: the advisor modulates the candidate");
+    let off = advisor_path_under(
+        &mut session,
+        FeedModulationSwitch::Off,
+        &resolved,
+        &candidate,
+    );
+
+    let (t_full, t_cap, t_planned) = (
+        advisor_time_s(&session, &full),
+        advisor_time_s(&session, &cap),
+        advisor_time_s(&session, &candidate.toolpath),
+    );
+    eprintln!(
+        "advisor candidate time: full {t_full:.2} s, cap only {t_cap:.2} s, planned {t_planned:.2} s; \
+         feeds above the planned feed: full {}, cap only {}",
+        above_planned(&full),
+        above_planned(&cap)
+    );
+    assert!(
+        above_planned(&full) > 0,
+        "non-vacuity: the full mode lifts a feed above the planned feed on this fixture"
+    );
+    assert_eq!(
+        above_planned(&cap),
+        0,
+        "cap only: no feed of the candidate is above its planned feed"
+    );
+    assert!(
+        t_cap > t_full,
+        "the cap-only time ({t_cap:.2} s) is longer than the full time ({t_full:.2} s)"
+    );
+    assert!(
+        off.is_none(),
+        "off: the advisor modulates nothing, and the caller times the planned path"
+    );
+}
+
+/// P35 part C: the advisor's time of a candidate against a
+/// `run_simulation` of that candidate in the same mode. The stored op is
+/// the candidate op, with every dressup off.
+///
+/// The two are NOT one computation. The advisor simulates the planned
+/// path alone on fresh stock at the automatic resolution. `run_simulation`
+/// reads the stored result, after the session stages (the boundary clip,
+/// the entry step), at the stored resolution. The test holds the gap that
+/// was measured on this fixture (see the assertion).
+#[test]
+#[expect(
+    clippy::print_stderr,
+    reason = "the measured gap is the record of the step"
+)]
+fn the_advisor_time_is_the_time_of_a_simulation_in_the_same_mode_p35() {
+    use crate::session::FeedModulationSwitch;
+    for switch in [FeedModulationSwitch::CapOnly, FeedModulationSwitch::Full] {
+        let mut session = light_terrain_session();
+        let dressups = crate::compute::config::DressupConfig {
+            entry_style: crate::compute::config::DressupEntryStyle::None,
+            link_moves: None,
+            lead_in_out: None,
+            arc_fitting: None,
+            segment_merge: None,
+            dogbone: None,
+            feed_optimization: false,
+            optimize_rapid_order: false,
+            ..crate::compute::config::DressupConfig::default()
+        };
+        let _ = session
+            .apply(crate::session::Command::SetDressupConfig(
+                crate::session::SetDressupConfigArgs {
+                    index: 0,
+                    dressups: Box::new(dressups),
+                },
+            ))
+            .expect("every dressup off");
+        let (resolved, candidate) = planned_candidate(&session);
+        let advisor = advisor_path_under(&mut session, switch, &resolved, &candidate)
+            .expect("the advisor modulates the candidate");
+        let t_advisor = advisor_time_s(&session, &advisor);
+
+        let cancel = AtomicBool::new(false);
+        session
+            .generate_toolpath(0, &cancel)
+            .expect("generate the stored op");
+        let _ = session
+            .run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("the simulation runs");
+        let stored = session.result_at(0).expect("a result").toolpath().clone();
+        let t_sim = advisor_time_s(&session, &stored);
+        let gap = (t_advisor - t_sim).abs() / t_sim;
+        eprintln!(
+            "{}: advisor {t_advisor:.2} s ({} moves), run_simulation {t_sim:.2} s ({} moves), \
+             gap {:.2} %",
+            switch.word(),
+            advisor.moves.len(),
+            stored.moves.len(),
+            100.0 * gap
+        );
+        assert!(
+            gap < ADVISOR_SIMULATION_GAP,
+            "{}: the advisor time {t_advisor:.2} s is {:.2} % from the simulation time \
+             {t_sim:.2} s",
+            switch.word(),
+            100.0 * gap
+        );
+    }
+}
+
+/// The relative gap that the test takes as "equal": a float slack. The
+/// two times come from the same path with the same feeds, through the
+/// same integrator (measured 2026-11-16: 0.00 % in each mode).
+const ADVISOR_SIMULATION_GAP: f64 = 1e-6;
+
 // ── DerivedRestRegions boundary (P2.2) ───────────────────────
 
 fn derived_boundary(source_id: usize) -> BoundaryConfig {

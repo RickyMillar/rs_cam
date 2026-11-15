@@ -744,6 +744,8 @@ impl ProjectSession {
             suggest_slots: self.suggest_slots(tc),
             dressups: tc.dressups.clone(),
             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),
+            // P35: the advisor reads the project switch.
+            feed_modulation: self.feed_modulation,
         };
         Ok(RecommendClearingStrategyHandle {
             index,

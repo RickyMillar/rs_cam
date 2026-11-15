@@ -1630,6 +1630,10 @@ struct AdvisorContext {
     dressups: crate::compute::config::DressupConfig,
     /// The setup frame the candidate simulation runs in.
     setup_ctx: super::SetupEvalContext,
+    /// P35 (operator ruling 2026-11-16, "Read the switch"): the project
+    /// feed modulation switch. The advisor times each candidate in the
+    /// mode of the switch, the mode an export of the project runs.
+    feed_modulation: super::FeedModulationSwitch,
 }
 
 /// What [`ProjectSession::start`] captured for one
@@ -1703,7 +1707,9 @@ fn with_clearing_strategy(
 /// For each candidate [`ClearingStrategy`] it (1) runs Suggest to back the
 /// params off to the deflection / power limits, (2) plans the clearing
 /// toolpath off the handle's single shared resolution, (3) simulates and
-/// modulates that candidate, and (4) ranks them through
+/// modulates that candidate in the mode of the project feed modulation
+/// switch (P35; with the switch off it keeps the planned feeds), and (4)
+/// ranks them through
 /// [`crate::machine::strategy_advisor::recommend_strategy`], which times each path
 /// through the accel-aware integrator.
 ///
@@ -1851,9 +1857,13 @@ pub fn execute_recommend_clearing_strategy(
 /// through the shared F-039 core
 /// (`modulate_annotated_against_trace`) so the timed path carries
 /// modulated feeds. Returns `None` (the caller times the raw path with the
-/// Suggest-warning regime) when the machine has no kinematics block, the
-/// candidate can't be simulated, no chipload row is available, or
-/// modulation refuses.
+/// Suggest-warning regime) when the project feed modulation switch is off
+/// (P35), the candidate can't be simulated, no chipload row is available,
+/// or modulation refuses.
+///
+/// P35: the modulation runs in the mode of the project switch (cap only
+/// or full), so the time of a candidate is the time of the feeds that an
+/// export of the project runs, not of the full mode whatever the switch.
 ///
 /// A free function over the captured [`AdvisorContext`]. It holds no
 /// session, and it reaches the chipload target through
@@ -1877,6 +1887,12 @@ fn optimized_candidate(
     crate::toolpath::Toolpath,
     crate::machine::strategy_advisor::LoadRegime,
 )> {
+    // P35 (operator ruling 2026-11-16): the mode of the project switch,
+    // through the one switch-to-mode rule (`FeedModulationSwitch::mode`,
+    // the rule `modulate_simulation_trace` reads). With the switch off no
+    // simulation changes a feed, so the advisor simulates nothing and the
+    // caller times the planned path with its own feeds.
+    let mode = context.feed_modulation.mode()?;
     // Modulate against the SAME kinematics + feed envelope
     // [`recommend_strategy`](crate::machine::strategy_advisor::recommend_strategy)
     // times the candidate with, so the optimized feeds are clamped to the
@@ -1926,12 +1942,6 @@ fn optimized_candidate(
     // same path the user gets after a default sim.
     let strategy = crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax;
     let feed_scale = 1.0;
-    // P32: the advisor compares candidates at the highest feed that every
-    // limit allows, so it states the full mode whatever the project switch
-    // says. It is a planning figure, not the feeds of an export: under the
-    // default switch (cap only) the export runs the dressed feeds or lower.
-    let mode = crate::dressup::feed_modulation::ModulationMode::Full;
-
     let (modulated, outcome) = modulate_annotated_against_trace(
         &FeedContext {
             material: &context.stock.material,

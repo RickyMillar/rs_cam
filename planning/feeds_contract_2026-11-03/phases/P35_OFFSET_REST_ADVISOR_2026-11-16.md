@@ -208,7 +208,8 @@ The fixture (`project_curve_passes_read_the_remaining_stock_p35`, simulation cel
 
 A limit of the filter, found by the fixture: a move is air only when the whole cutter has 0.1 mm of
 clearance over the stock. A pass that runs ON a floor (the same Z) is fed. That is the air share
-that stays in the rows "top 20" (0.223). On the operator job no pass level is on the cavity floor.
+that stays in the rows "top 20" (0.223). On the operator job the air time of the river op falls
+from 919 s to 128 s (see the table below); the 128 s that stay were not split by cause.
 
 ### The wanaka river op (read only)
 
@@ -227,6 +228,7 @@ time of the setup less the time of a third run that also skips toolpath 11 (1594
 | Rapid length | 41154 mm | 49903 mm |
 | Plunges | 1141 | 438 |
 | Simulated op time | 2012 s | 1185 s |
+| Air time of the op (the air time of the setup less the 886 s of the run with no river op) | 919 s | 128 s |
 | Deepest body sample (the depth row of the force budget) | 2.045 mm | 2.045 mm |
 | Samples that cut | 57130 of 401164 | 57130 of 284651 |
 | Collisions, rapid collisions | 0, 0 | 0, 0 |
@@ -245,6 +247,96 @@ time of the setup less the time of a third run that also skips toolpath 11 (1594
 Decisions for the lead (part B):
 
 1. Rule 6 of section 2.2: no exemption of the deepest pass from the filter.
+   A second departure from the brief ("chains split where samples drop, with the entry and link
+   rules of the op"): where the filter drops a run inside a chain, it bridges with a retract, a
+   rapid at the retract plane and a RAPID descent to the resume point (the bridge of every op from
+   remaining stock), not with the straight plunge of the P33 entry. On the wanaka run the plunges go
+   from 1141 to 438, and the op has 0 collisions and 0 rapid collisions. No fixture test asserts
+   the bridge descent.
 2. The proposal file is not changed. The change is the one line above.
 3. With remaining stock a stated top Z is not read by the ladder (rule 2). A stated top above the
    stock adds no pass; a stated top below the stock no longer cuts deep.
+
+## 6. Part C: what is built, and the results
+
+- `AdvisorContext::feed_modulation`, captured in `capture_recommend_clearing_strategy`
+  (`session/compute/params.rs`).
+- `optimized_candidate` (`session/compute.rs`) reads `context.feed_modulation.mode()`, the rule
+  that `modulate_simulation_trace` reads. `None` (off): the function returns before the candidate
+  simulation, and the caller times the planned path, as it does for each candidate that the
+  advisor cannot modulate. The line that stated `ModulationMode::Full` is deleted.
+
+Tests (`session/compute/tests.rs`; the terrain fixture with a 3 mm stepover and 6 mm levels, so a
+debug build runs the two tests in about 100 s with the old advisor test):
+
+| # | Result |
+|---|---|
+| C1 | Held. Before the code: full 9397.01 s, cap only 9397.01 s, and 2114 feeds of the cap-only candidate above the planned feed (the red assertion). After the code (light fixture): full 9264.58 s, cap only 9362.99 s, planned 9233.40 s; feeds above the planned feed: full 695, cap only 0. |
+| C2 | Held. Off: `optimized_candidate` gives `None`, and the caller times the planned path. |
+| C3 | WRONG: the two times are equal. `the_advisor_time_is_the_time_of_a_simulation_in_the_same_mode_p35`: with every dressup off and the default simulation options, cap only gives 9362.99 s against 9362.99 s and full gives 9264.58 s against 9264.58 s (19908 moves each). The test holds the equality to a relative 1e-6. On this fixture the session stages and the resolution add no difference. |
+| C4 | `planning/fixtures/rivmap100/rivmap100.toml`, toolpath "3D Rough", release build, evidence test `the_advisor_reads_the_switch_on_rivmap100_p35` (ignored in a gate run): the choice does NOT change. See the table. |
+
+| Switch | Chosen | Geodesic Adaptive | Contour Parallel | Ratio | Regime |
+|---|---|---|---|---|---|
+| off | Geodesic Adaptive | 1233.8 s | 1903.6 s | 1.543 | Unconstrained |
+| cap only | Geodesic Adaptive | 1344.5 s | 2009.7 s | 1.495 | Machine limited |
+| full | Geodesic Adaptive | 1344.5 s | 2009.7 s | 1.495 | Machine limited |
+
+- Cap only and full give the same times on rivmap100 to 0.1 s. NOT verified why. The terrain
+  test shows that the mode reaches the modulator (695 feeds lifted in full, 0 in cap only).
+- The equality of C3 holds for the candidate op itself with no dressup. In the full advisor job
+  each candidate is the Suggest proposal of the op with another strategy, and the stored toolpath
+  has its dressups, so the advisor time is not the time of the stored toolpath after a
+  simulation. That difference is of before P35 and is not changed.
+
+Decision for the lead (part C): with the switch off the regime of each candidate reads
+`Unconstrained` (the label of a path that the advisor did not modulate).
+
+## 7. Gates (the full tree, parts A, B and C)
+
+One run of each gate on the tree that holds the three parts, 2026-11-16, debug build.
+
+| Gate | Result |
+|---|---|
+| Full clippy (`--workspace --all-targets`, the three core features, `-D warnings`) | Clean. |
+| Core `--lib` | 2836 passed, 1 failed: `feeds::envelope::tests::the_envelope_meets_its_time_budget` (the known red of a parallel run). |
+| `rs_cam_mcp` tests | Passed (2 binaries). |
+| `rs_cam_cli` tests | Passed (17 binaries). |
+| Viz `--lib` (`--test-threads 2`) | 705 passed, 2 ignored. |
+| Viz `mcp_wire_surface_pin`, `side_on_greys_in_control_p6_7`, `the_help_key_is_the_param_name_ui04`, `operations_registry_ui05`, `the_inspector_draws_only_kit_rows_w6`, `folder_maps_name_real_files_f140` | Passed. The wire pin did not move. |
+| `every_op_keeps_its_toolpath_g_opgolden` | 46 changes: the 46 rows of `opgolden_known_46_rows.txt` (sorted diff empty). Every `profile/*` and `project_curve/*` arm reads "ok". A1 and B1 held. |
+| FM1 (`--features heavy-tests --test feeds_matrix_instrument_fm1`) | 2 passed. No CSV moved. Not blessed. |
+| `perf_golden_sim_metrics` (`--features test-support`) | 5 passed. Not blessed. |
+| `set_param_refuses_absent_field_n5` | 7 passed. No pin moved. |
+| The three new test files and the two new lib tests | Passed (the rivmap100 evidence test is ignored in a gate run). |
+| 34 folder sentries of `ops/`, `compute/`, `dressup/` and `session/` (the list is in the gate script of the hand-off) | Passed, but for the three files below. |
+| `every_op_conforms_w4` | 11 passed, 1 failed: check 6 (`contour_each_level`), the known red. |
+| `layered_framework_owns_the_ladder_w3` | 5 passed, 2 failed: the known red, with the list of `KNOWN_REDS_TRIAGE.md` ("zigzag", "trace", "profile tabs", "profile tabs spring"). The Profile hashes of this file were not compared with a run of the base commit. |
+| `simulation_issue_channel_m1` | 2 failed: the known red (`NotSet` stepover of the fixture). |
+| `strategy_advisor_smoke` (`--features heavy-tests`) | 1 passed, in 336 s. `Cargo.toml` says 43 s. The time was not measured on the base commit. |
+
+Not run: `a_clearing_cut_holds_the_pass_load_g_adaptpassload` (a known red that no part touches),
+the whole viz crate, the core full gate.
+
+## 8. After the gates: the lake bands of the operator job with the new key (read only)
+
+A scratch copy of the proposal with `stock_to_leave_radial = -1.4` on the three band ops (side
+`on`), through the release CLI of the tree with parts A and B, setup "1 Back":
+
+- "Lake relief band 6 mm, 10 lakes to Z 13.5" REFUSES: "stock_to_leave_radial = -1.400 mm moves
+  the loop that starts at (146.184, 167.260) to 4 rings (the loop splits)". One lake has parts
+  narrower than 2.8 mm.
+- "Lake relief band 6 mm, lake at X325 Y220 to Z 14.9" generates (366 moves, 0 collisions).
+- "Lake relief band 6 mm, 1 lake to Z 11.4" generates (49 moves, 0 collisions).
+
+So decision 2 of part A is a decision of the job: with the refusal as built, the operator takes
+that lake out of the 10-lake op, or the lead rules that a split loop cuts each ring.
+
+Not verified in this step: a `LadderTop` op on a Bottom setup; the plunge descent of the river op
+(the deepest figure is the depth row of the body cut); the GUI row of part A on screen; cap only
+against full through the public advisor door on a project where the two differ; the Profile hashes
+of `layered_framework_owns_the_ladder_w3` against the base commit; the 336 s of
+`strategy_advisor_smoke` against the base commit. The MCP description of
+`recommend_clearing_strategy` (`rs_cam_viz/src/mcp_server.rs`) does not name the mode; it was not
+changed. `target/release/rs_cam_cli` is the build of the tree with parts A and B (no part C), not
+of HEAD.
