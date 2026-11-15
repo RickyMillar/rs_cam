@@ -96,24 +96,14 @@ fn a_stated_vertical_rate_over_its_limit_warns_with_no_simulation_review_f4() {
         .filter(|w| w.id == ids::EXPORT_STATED_CUT_OVER_LIMIT)
         .collect();
     assert_eq!(warnings.len(), 1, "one warning per op: {warnings:?}");
-    let detail = &warnings.first().expect("one warning").detail;
-    assert!(detail.contains("plunge rate"), "{detail}");
-    assert!(
-        detail.contains("no current simulation measured this op"),
-        "{detail}"
+    // Operator ruling 2026-11-15 ("Drawer only") leaves this warning: the
+    // row is a plunge-rate row of a plunge entry, not a rubbing-floor row.
+    // An entry row of another limit keeps its export warning.
+    assert_eq!(
+        warnings.first().expect("one warning").detail,
+        "Toolpath 'pocket': plunge entry \u{b7} plunge rate 294 % over limit; no current \
+         simulation measured this op"
     );
-    let others = gating.len() - 1;
-    match others {
-        0 => assert!(!detail.contains("more stated row"), "{detail}"),
-        1 => assert!(
-            detail.contains("; 1 more stated row over a limit"),
-            "{detail}"
-        ),
-        n => assert!(
-            detail.contains(&format!("; {n} more stated rows over a limit")),
-            "{detail}"
-        ),
-    }
     assert!(
         exported
             .gcode
@@ -171,4 +161,76 @@ fn a_stated_vertical_rate_over_its_limit_warns_after_a_simulation_review_r8() {
         )),
         "the header names the warning"
     );
+}
+
+/// Operator ruling 2026-11-15 ("Drawer only"): the one rule that says which
+/// stated row writes the export warning. It is `false` only for the rubbing
+/// floor of an entry cut: 4 cells (one per entry kind) of the 28 limits x
+/// 18 cuts below (every cut kind, with each entry kind, and the
+/// stated-point row with no cut).
+#[test]
+fn only_the_rubbing_floor_of_an_entry_cut_is_drawer_only_p31() {
+    use rs_cam_core::adaptive3d::FeedCapSource;
+    use rs_cam_core::limits::{CleanupKind, CutKind, EntryKind, FirstPassKind};
+    use rs_cam_core::tool_load::groups::stated_row_warns_at_export;
+    let cuts: [Option<CutKind>; 18] = [
+        None,
+        Some(CutKind::Body),
+        Some(CutKind::FirstPass(FirstPassKind::Slot)),
+        Some(CutKind::SpringPass),
+        Some(CutKind::WallFinish),
+        Some(CutKind::Entry(EntryKind::Plunge)),
+        Some(CutKind::Entry(EntryKind::Ramp)),
+        Some(CutKind::Entry(EntryKind::Helix)),
+        Some(CutKind::Entry(EntryKind::PeckLadder)),
+        Some(CutKind::EntryApproach),
+        Some(CutKind::Cleanup(CleanupKind::ResidueMop)),
+        Some(CutKind::CappedStep(FeedCapSource::PlannedTurn)),
+        Some(CutKind::SlotRing),
+        Some(CutKind::LeadIn),
+        Some(CutKind::LeadOut),
+        Some(CutKind::Link),
+        Some(CutKind::DressupRelief),
+        Some(CutKind::Drill),
+    ];
+    let mut silent = Vec::new();
+    for limit in LimitId::ALL {
+        for cut in cuts {
+            if !stated_row_warns_at_export(limit, cut) {
+                silent.push((limit, cut));
+            }
+        }
+    }
+    assert_eq!(
+        silent,
+        vec![
+            (
+                LimitId::RubbingFloor,
+                Some(CutKind::Entry(EntryKind::Plunge))
+            ),
+            (LimitId::RubbingFloor, Some(CutKind::Entry(EntryKind::Ramp))),
+            (
+                LimitId::RubbingFloor,
+                Some(CutKind::Entry(EntryKind::Helix))
+            ),
+            (
+                LimitId::RubbingFloor,
+                Some(CutKind::Entry(EntryKind::PeckLadder))
+            ),
+        ]
+    );
+    // The limits that the operator named keep their warning on an entry.
+    for limit in [
+        LimitId::ChipMax,
+        LimitId::ChipMin,
+        LimitId::SpindlePower,
+        LimitId::ToolDeflection,
+        LimitId::PlungeRate,
+        LimitId::VendorDepthTable,
+    ] {
+        assert!(stated_row_warns_at_export(
+            limit,
+            Some(CutKind::Entry(EntryKind::Ramp))
+        ));
+    }
 }

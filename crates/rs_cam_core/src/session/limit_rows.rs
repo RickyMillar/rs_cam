@@ -179,6 +179,8 @@ type GatingRows = Option<Vec<GatingRow>>;
 #[derive(Debug, Clone)]
 struct GatingRow {
     limit: crate::limits::LimitId,
+    /// The declared cut of the row; `None` for a stated-point row.
+    cut: Option<crate::limits::CutKind>,
     face: String,
 }
 
@@ -248,6 +250,12 @@ impl ProjectSession {
     /// a limit that no sample gate judges count
     /// ([`crate::tool_load::groups::judged_only_before_the_simulation`]):
     /// the gate rows of the simulation judge every other limit.
+    ///
+    /// Operator ruling 2026-11-15 ("Drawer only"): under both covers a row
+    /// counts only where
+    /// [`crate::tool_load::groups::stated_row_warns_at_export`] is true. The
+    /// rubbing floor of an entry cut stays red in the Limits drawer and
+    /// writes no export warning.
     #[must_use]
     pub fn stated_cut_over_a_limit(
         &self,
@@ -290,6 +298,7 @@ impl ProjectSession {
                             .into_iter()
                             .map(|row| GatingRow {
                                 limit: row.check().limit,
+                                cut: row.cut(),
                                 face: row.face().to_owned(),
                             })
                             .collect::<Vec<_>>()
@@ -300,6 +309,11 @@ impl ProjectSession {
         };
         let kept: Vec<GatingRow> = gating?
             .into_iter()
+            .filter(|row| {
+                // Operator ruling 2026-11-15 ("Drawer only"): the rubbing
+                // floor of an entry cut writes no export warning.
+                crate::tool_load::groups::stated_row_warns_at_export(row.limit, row.cut)
+            })
             .filter(|row| match cover {
                 SimulationCover::NoFreshSimulation => true,
                 SimulationCover::FreshSimulation => {

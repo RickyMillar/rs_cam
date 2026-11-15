@@ -25,7 +25,7 @@
 //! whose `judge` reads the samples it is given. The side before the
 //! simulation has the same shape (`feeds::planned`, P29-7).
 
-use crate::limits::{ByGroup, CutGroup, LimitId, NotJudged, Scope};
+use crate::limits::{ByGroup, CutGroup, CutKind, EntryKind, LimitId, NotJudged, Scope};
 use crate::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 
 use super::{GateEnv, ToolpathLoadContext};
@@ -396,4 +396,72 @@ pub const fn judged_only_before_the_simulation(limit: LimitId) -> bool {
             crate::feeds::planned::PlaneRole::DepthCeiling(_)
                 | crate::feeds::planned::PlaneRole::ValueCheck(_)
         )
+}
+
+/// **Whether a stated row that exceeds with the gating tone writes the
+/// export warning `export.stated_cut_over_limit`** (operator ruling
+/// 2026-11-15, "Drawer only": an entry rubbing row stays red in the Limits
+/// drawer and writes no export warning; the export warnings are for the
+/// load limits: chip maximum, power, deflection, plunge rate, depth table).
+///
+/// The one rule: the rubbing floor of an entry cut (a plunge, a ramp, a
+/// helix or a peck ladder) does not warn; every other limit and every other
+/// cut warns. The row, its tone, the drawer and the face line do not read
+/// this function. `cut` is `None` for a stated-point row (a limit that is
+/// not a limit of each cut).
+///
+/// Both matches name every variant: a new limit or a new cut kind does not
+/// compile until it states its answer here.
+#[must_use]
+pub const fn stated_row_warns_at_export(limit: LimitId, cut: Option<CutKind>) -> bool {
+    match limit {
+        LimitId::RubbingFloor => match cut {
+            Some(CutKind::Entry(
+                EntryKind::Plunge | EntryKind::Ramp | EntryKind::Helix | EntryKind::PeckLadder,
+            )) => false,
+            Some(
+                CutKind::Body
+                | CutKind::FirstPass(_)
+                | CutKind::SpringPass
+                | CutKind::WallFinish
+                | CutKind::EntryApproach
+                | CutKind::Cleanup(_)
+                | CutKind::CappedStep(_)
+                | CutKind::SlotRing
+                | CutKind::LeadIn
+                | CutKind::LeadOut
+                | CutKind::Link
+                | CutKind::DressupRelief
+                | CutKind::Drill,
+            )
+            | None => true,
+        },
+        LimitId::ChipMax
+        | LimitId::ChipMin
+        | LimitId::SpindlePower
+        | LimitId::ToolDeflection
+        | LimitId::ForceBudget
+        | LimitId::VendorDepthTable
+        | LimitId::PlungeRate
+        | LimitId::FluteGuard
+        | LimitId::CuttingLength
+        | LimitId::VendorAxial
+        | LimitId::CornerCoverage
+        | LimitId::ScallopDepth
+        | LimitId::ToolDiameter
+        | LimitId::MoveBudget
+        | LimitId::EngagementFloor
+        | LimitId::CuttingFeedCap
+        | LimitId::PlannerFeedCap
+        | LimitId::KinematicReach
+        | LimitId::SpindleMaxRpm
+        | LimitId::ZAxisRate
+        | LimitId::OperatorRpmCeiling
+        | LimitId::ChartRpm
+        | LimitId::VendorRpmMax
+        | LimitId::GantryPush
+        | LimitId::DrillChipWelding
+        | LimitId::DrillPeckAdequacy
+        | LimitId::DrillPlungeFeed => true,
+    }
 }

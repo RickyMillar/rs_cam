@@ -180,3 +180,58 @@ these rows to change.
 of the id, not the detail, so `gcode_hash` moves only on an arm that loses its warning: an arm
 whose only stated rows with the gating tone are entry rubbing rows. No other field moves. The list
 is measured with the code in place (results). FM1 reads no export warning: no cell moves.
+
+### B: results (measured)
+
+- **Warnings.** The probe ran again with the rule in place. Every warning word of the four files
+  equals the prediction: 88 compared (44 toolpaths, two covers), 0 mismatches. Every row line of the
+  four dumps (limit, cut, tone, face) is equal before and after: no row moves.
+- **Entry `ChipMin` rows that warn:** 0 of 24, before and after (all have the advisory tone).
+- **Tests.**
+  - `a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6`: the one stated row
+    with the gating tone is (rubbing floor, ramp entry, "ramp entry · rubbing 44 % under floor");
+    the export has no warning and no `WARNING` line.
+  - `a_row_softens_only_under_a_current_modulation_p30_2`: claim 1 holds the literal words with "2
+    more stated rows"; claims 2 and 3 hold a red ramp rubbing row and no stated-cut warning.
+  - `a_stated_cut_over_any_limit_warns_review_f4`: the two plunge-rate cases keep their literal
+    detail ("plunge entry · plunge rate 294 % over limit"), with and without a simulation. A new
+    test, `only_the_rubbing_floor_of_an_entry_cut_is_drawer_only_p31`, holds the rule as a table: of
+    28 limits x 18 cuts, exactly 4 cells are `false` (the rubbing floor on each of the 4 entry
+    kinds).
+- **Op golden.** The known 46 rows, and `gcode_hash` on 26 arms. No other field of an arm moves.
+  Each of the 26 arms loses its one stated-cut warning line (its only stated rows with the gating
+  tone are entry rubbing rows). The arms:
+  `adaptive/each_face`, `adaptive/fresh`, `adaptive/rest`, `adaptive3d/by_area_helix_cp`,
+  `adaptive3d/ramp_geodesic`, `bore/rest`, `chamfer/rest`, `drill/rest`, `face/fresh`, `face/rest`,
+  `pocket/each_face`, `pocket/each_face_flipped`, `pocket/extend_open`, `pocket/fresh`,
+  `pocket/rest`, `pocket/zigzag`, `profile/each_face`, `profile/fresh`, `profile/inside`,
+  `profile/on_closed`, `profile/on_open`, `profile/rest`, `trace/rest`, `zigzag/each_face`,
+  `zigzag/fresh`, `zigzag/rest`. Not blessed here: the field-only bless of `gcode_hash` on these
+  arms is the lead's step (the command is in `ORDER.txt`).
+  Header-only proof: the programs of the arms were dumped (`RS_CAM_OPGOLDEN_DUMP_GCODE`). With the
+  line "(WARNING Tool export.stated_cut_over_limit <op>: Stated cut over a limit: no measured
+  gate)" put back in the header of each op that lost it, each program hashes to its stored value:
+  26 of 26 arms, 31 lines (5 `rest` arms hold two ops and lose two lines).
+- **FM1.** 2 passed. No cell moves, as predicted.
+- **Wire changes.** None: no id, no key and no face changes. The export of a project can hold
+  fewer `export.stated_cut_over_limit` warnings, and the count of "more stated rows" in a detail
+  can fall.
+- **Gates.** On the B tree, one cargo job at a time: fmt check clean. Core sentries:
+  `a_row_softens_only_under_a_current_modulation_p30_2` (4), `a_job_with_each_finding_exports_and_names_it_k6`
+  (3), `a_stated_cut_over_any_limit_warns_review_f4` (3), `one_record_on_every_surface_p29_10` (10),
+  `every_limit_judges_every_declared_cut_p29_7`, `every_declared_cut_is_judged_at_the_stated_point_p29_10`,
+  `the_exemption_list_only_shrinks_p29_3`, `no_limit_reads_the_op_type_p29_last`,
+  `the_record_states_what_the_gcode_runs_p30_1`, `folder_maps_name_real_files_f140`,
+  `command_registry_completeness`: pass. The 24 core binaries whose names hold `modulat`, `export`
+  or `rubbing`: pass, but for `_litmatrix_rubbing_floor_clamp` (the known red) and
+  `feed_modulation_cycle_time_f036c` (not run: 256 s by its `Cargo.toml` comment, over three
+  minutes). Core `--lib`: 2822 passed, 1 failed in the parallel run
+  (`the_envelope_meets_its_time_budget`, the known timing red; alone: 2 of 3 runs pass, 1 fails on
+  the time budget while another session ran a release build). `rs_cam_mcp` 39; `rs_cam_cli` all
+  pass. Viz `--lib` 704 passed (no GUI ran); the 13 viz binaries whose names hold `export`,
+  `modulat`, `readiness`, `k6`, `sim` or `mcp_wire` and the 7 named viz binaries: pass. FM1: 2
+  passed. Op golden: the known 46 rows and the 26 `gcode_hash` rows above.
+- **Full clippy is red at HEAD, in a file this step does not touch:**
+  `crates/rs_cam_core/tests/rubbing_floor_diameter_scaling_measurement.rs:613`, "field `ae_mm` is
+  never read" (the file of commit `729b5b919`). With `--keep-going` it is the only finding of the
+  workspace. Not changed here; the lead decides.

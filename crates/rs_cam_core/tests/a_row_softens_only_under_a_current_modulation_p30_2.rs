@@ -9,14 +9,16 @@
 //!    line), and the program is still written (a warning, never a refusal).
 //! 2. After a simulation with feed modulation, the result is modulated: the
 //!    same row carries `Caveat::BeforeModulation`, takes the caution tone,
-//!    and the chip row gives no export warning. Review R8: the stated
-//!    rubbing row of the ramp entry warns (no sample gate judges the
-//!    rubbing floor, row `S-NoSampleGate`).
+//!    and the chip row gives no export warning. Operator ruling 2026-11-15
+//!    ("Drawer only"): the stated rubbing row of the ramp entry keeps its
+//!    gating tone (red in the Limits drawer) and writes no export warning,
+//!    so the export has no `export.stated_cut_over_limit` warning.
 //! 3. A simulation with modulation off on a fresh result keeps the planned
 //!    stage, so the row keeps its danger tone. Review 2026-11-15 F4: the
 //!    simulation is fresh for the op, so a measured verdict judges the cut:
 //!    the export names the measured chip row (`load.chipload.*`), not the
-//!    stated chip row. Review R8: the stated rubbing row warns, as in 2.
+//!    stated chip row. The stated rubbing row of the ramp entry writes no
+//!    export warning, as in 2.
 //!
 //! The door (`ProjectSession::limit_rows`) takes no modulation argument: it
 //! reads `ProjectSession::run_modulation_of`, so the states above come from
@@ -36,7 +38,9 @@ use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::dressup::feed_modulation::RunModulation;
-use rs_cam_core::limits::{Caveat, CheckRow, CutKind, ExportFeed, LimitId, Subject, Tone};
+use rs_cam_core::limits::{
+    Caveat, CheckRow, CutKind, EntryKind, ExportFeed, LimitId, Subject, Tone,
+};
 use rs_cam_core::session::{
     FeedStage, ProjectSession, SimulationCover, SimulationOptions, SimulationResolution,
 };
@@ -144,11 +148,37 @@ fn stated_cut_details(session: &ProjectSession) -> Vec<String> {
         .collect()
 }
 
-/// Review R8: after a fresh simulation the chip rows do not warn (the chip
-/// gate judges them), and the stated rubbing row of the ramp entry warns
-/// (the rubbing floor has no sample gate, row `S-NoSampleGate`).
-const RAMP_RUBBING_AFTER_A_SIMULATION: &str = "Toolpath 'pocket': ramp entry · rubbing 44 % \
-     under floor; no sample gate of the simulation judges this limit";
+/// The face of the stated rubbing row of the ramp entry. The ramp runs at
+/// the plunge rate of the fixture, 500 mm/min at 18000 rpm on two flutes:
+/// a chip of 500 / (18000 x 2) = 0.0139 mm, 44 % under the 0.025 mm
+/// rubbing floor.
+const RAMP_RUBBING_FACE: &str = "ramp entry · rubbing 44 % under floor";
+
+/// Operator ruling 2026-11-15 ("Drawer only"): the stated rubbing row of
+/// the ramp entry keeps the gating tone, so the Limits drawer shows it red.
+fn assert_the_ramp_rubbing_row_is_red(session: &ProjectSession) {
+    let rows = session
+        .limit_rows(0, None)
+        .expect("the op")
+        .envelope()
+        .expect("a tool")
+        .expect("the envelope builds");
+    let row = rows
+        .iter()
+        .find(|r| {
+            r.check().limit == LimitId::RubbingFloor
+                && matches!(
+                    r.subject(),
+                    Subject::StatedCut {
+                        cut: CutKind::Entry(EntryKind::Ramp),
+                        ..
+                    }
+                )
+        })
+        .expect("the stated rubbing row of the ramp entry");
+    assert_eq!(row.tone(), Tone::Exceeds, "{}", row.face());
+    assert_eq!(row.face(), RAMP_RUBBING_FACE);
+}
 
 #[test]
 fn a_planned_result_keeps_the_danger_tone_and_warns_p30_2() {
@@ -176,12 +206,21 @@ fn a_planned_result_keeps_the_danger_tone_and_warns_p30_2() {
         "{}",
         row.detail()
     );
-    assert!(
+    // The four stated rows with the gating tone: the feed cap, the two chip
+    // maximum rows and the ramp rubbing row. The ramp rubbing row does not
+    // count for the export (operator ruling 2026-11-15): two others.
+    assert_eq!(
         session
             .stated_cut_over_a_limit(0, SimulationCover::NoFreshSimulation)
-            .is_some(),
-        "the export door reads the row"
+            .map(|over| over.words()),
+        Some(
+            "stated point · feed cap 125 % over limit; 2 more stated rows over a limit; no \
+             current simulation measured this op"
+                .to_owned()
+        ),
+        "the export door reads the rows"
     );
+    assert_the_ramp_rubbing_row_is_red(&session);
     assert!(export_names_the_warning(&session), "the export warns");
 }
 
@@ -204,13 +243,15 @@ fn a_current_modulated_result_softens_and_does_not_warn_p30_2() {
     let row = body_chip_max(&session);
     assert_eq!(row.tone(), Tone::ExceedsAdvisory, "{}", row.face());
     assert!(row.caveats().contains(&Caveat::BeforeModulation));
-    // Review R8: the chip row warns no more; the stated rubbing row of the
-    // ramp entry warns, since no sample gate judges the rubbing floor.
-    assert!(export_names_the_warning(&session), "the rubbing row warns");
-    assert_eq!(
-        stated_cut_details(&session),
-        vec![RAMP_RUBBING_AFTER_A_SIMULATION.to_owned()]
+    // The chip row warns no more (the chip gate judges it). Operator ruling
+    // 2026-11-15: the stated rubbing row of the ramp entry is red in the
+    // drawer and writes no export warning.
+    assert_the_ramp_rubbing_row_is_red(&session);
+    assert!(
+        !export_names_the_warning(&session),
+        "no stated row writes an export warning"
     );
+    assert_eq!(stated_cut_details(&session), Vec::<String>::new());
 }
 
 /// Review 2026-11-15 F5 (c): a proposal row does not soften under the
@@ -272,13 +313,15 @@ fn a_simulation_with_modulation_off_warns_by_the_measured_row_p30_2() {
     assert_eq!(session.feed_stage(0), Some(FeedStage::Planned));
     let row = body_chip_max(&session);
     assert_eq!(row.tone(), Tone::Exceeds, "{}", row.face());
-    // Review R8: the measured verdict judges the chip, so the stated chip
-    // row does not warn; the stated rubbing row of the ramp entry warns.
-    assert!(export_names_the_warning(&session), "the rubbing row warns");
-    assert_eq!(
-        stated_cut_details(&session),
-        vec![RAMP_RUBBING_AFTER_A_SIMULATION.to_owned()]
+    // The measured verdict judges the chip, so the stated chip row does not
+    // warn. Operator ruling 2026-11-15: the stated rubbing row of the ramp
+    // entry is red in the drawer and writes no export warning.
+    assert_the_ramp_rubbing_row_is_red(&session);
+    assert!(
+        !export_names_the_warning(&session),
+        "no stated row writes an export warning"
     );
+    assert_eq!(stated_cut_details(&session), Vec::<String>::new());
     let trace = session
         .simulation_result()
         .and_then(|s| s.cut_trace.clone());

@@ -27,6 +27,7 @@ use std::collections::BTreeSet;
 
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::gcode::{ExportWarning, ExportedGcode};
+use rs_cam_core::limits::{CutKind, EntryKind, LimitId, Tone};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::session::run_state::{RunState, toolpath_run_state};
 use rs_cam_core::tool_load::drill_gates::{
@@ -316,7 +317,8 @@ fn only_inverted_exported(apply_suggest: bool) -> (ProjectSession, ExportedGcode
 ///
 /// The op keeps its ramp entry and takes the speeds of the session's own
 /// Suggest, so no stated row exceeds with the gating tone. Without the
-/// apply the ramp rubs ([`a_ramp_that_rubs_writes_the_stated_cut_warning_k6`]).
+/// apply the ramp rubs
+/// ([`a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6`]).
 #[test]
 fn a_clean_job_writes_no_warning_line_k6() {
     let (session, exported) = only_inverted_exported(true);
@@ -346,23 +348,35 @@ fn a_clean_job_writes_no_warning_line_k6() {
 /// runs at the plunge rate, 500 mm/min at 18000 rpm on two flutes: a chip
 /// of 500 / (18000 x 2) = 0.0139 mm, 44 % under the 0.025 mm rubbing
 /// floor. A ramp chip row is exact, so it keeps the gating tone (review
-/// 2026-11-15 R2), and the export warns for every stated row with that
-/// tone (R4, R8).
+/// 2026-11-15 R2): the row is red in the Limits drawer.
+///
+/// Operator ruling 2026-11-15 ("Drawer only"): an entry rubbing row writes
+/// no export warning (`tool_load::groups::stated_row_warns_at_export`). It
+/// is the only stated row of this op with the gating tone, so the export
+/// has no warning and the header has no warning line.
 #[test]
-fn a_ramp_that_rubs_writes_the_stated_cut_warning_k6() {
-    let (_, exported) = only_inverted_exported(false);
-    assert_eq!(exported.warnings.len(), 1, "{:?}", exported.warnings);
-    let warning = exported.warnings.first().expect("one warning");
-    assert_eq!(warning.id, "export.stated_cut_over_limit");
-    assert_eq!(warning.toolpath, "Inverted");
-    for words in ["ramp entry", "rubbing 44 % under floor"] {
-        assert!(warning.detail.contains(words), "{}", warning.detail);
-    }
-    assert!(
-        exported
-            .gcode
-            .lines()
-            .any(|line| line.contains("WARNING") && line.contains("export.stated_cut_over_limit")),
-        "the header names the warning"
+fn a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6() {
+    let (session, exported) = only_inverted_exported(false);
+    let rows = session
+        .limit_rows(k6_project::INVERTED, None)
+        .expect("the op")
+        .envelope()
+        .expect("a tool")
+        .expect("the envelope builds");
+    let gating: Vec<(LimitId, Option<CutKind>, &str)> = rows
+        .iter()
+        .filter(|row| row.is_stated() && row.tone() == Tone::Exceeds)
+        .map(|row| (row.check().limit, row.cut(), row.face()))
+        .collect();
+    assert_eq!(
+        gating,
+        vec![(
+            LimitId::RubbingFloor,
+            Some(CutKind::Entry(EntryKind::Ramp)),
+            "ramp entry \u{b7} rubbing 44 % under floor"
+        )],
+        "the drawer holds one red row, the ramp rubbing row"
     );
+    assert!(exported.warnings.is_empty(), "{:?}", exported.warnings);
+    assert!(!exported.gcode.contains("WARNING"), "{}", exported.gcode);
 }
