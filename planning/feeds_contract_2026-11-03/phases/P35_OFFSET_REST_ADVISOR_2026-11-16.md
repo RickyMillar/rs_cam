@@ -405,3 +405,48 @@ test `a_lake_band_reports_its_split_loops_p35d` for the notes):
 
 Decisions for the lead (part D): the split has its own id and the anchor `Operation`; the tab
 editor does not show the tabs of the later rings of a split loop.
+
+## 10. Part E: the rapid re-entry of the air-cut filter on a `LadderTop` op
+
+Departure 3 of the step: where the filter drops a run inside a chain, it comes back with a retract,
+a rapid at the retract plane and a RAPID descent to the resume point, not with the P33 plunge.
+
+Prediction (before the test): the resume point is the end of the last move that the filter calls
+air, and the filter calls a move air only when the whole cutter has 0.1 mm of clearance over the
+stock before the op. So the rapid descent ends in air, and the first fed move after it starts in
+air. No rapid enters stock, and no fix of the filter is necessary.
+
+The test: `a_rapid_re_entry_after_a_dropped_run_stays_out_of_the_stock_p35e` (in
+`project_curve_passes_read_the_remaining_stock_p35`). The stepped-stock fixture with the pocket in
+the MIDDLE of the curve (X -30 to X 30, floor Z 12; the curve X -45 to X 45, full depth Z 8, step
+2.0 mm, cell 0.5 mm). Each pass above the floor (Z 18, 16, 14) cuts at the two ends and is in air
+between them, so the filter bridges it.
+
+| Claim | Measured |
+|---|---|
+| Non-vacuity: the stored path holds rapid descents that end below the stock top | 3 (one for each pass above the floor) |
+| Each such rapid is vertical | Held |
+| No cell of the stock before the op, with its centre in the tool disc, stands above the end of the rapid | Held for the 3 descents |
+| The simulation of the session finds no rapid into stock | 0 rapid collisions |
+| The first fed move after each descent cuts no more than one step | 3 samples, the deepest 0.00 mm (the move is still in air; the cut starts on a later move) |
+| No sample of the op cuts more than one step (2.0 mm plus the cell) | Held |
+
+The prediction held. The filter is not changed.
+
+Not covered: a tool that is not a flat end mill (the footprint check of the test reads the disc of
+a flat tool), and a Bottom setup.
+
+## 11. Gates of parts D and E (one run, the tree with D and E, 2026-11-16)
+
+| Gate | Result |
+|---|---|
+| Full clippy | Clean. |
+| Core `--lib` | 2836 passed, 1 failed: `the_envelope_meets_its_time_budget` (the known red of a parallel run). The `_w1` rows of the diagnostics table passed with the new id. |
+| `rs_cam_mcp`, `rs_cam_cli` tests | Passed. |
+| Viz `--lib` (`--test-threads 2`) | 705 passed, 2 ignored. |
+| Viz `mcp_wire_surface_pin`, `one_place_per_diagnostic_w2b`, `the_inspector_bad_states_w0`, `folder_maps_name_real_files_f140`, `a_job_with_each_finding_exports_and_names_it_on_every_surface_k6` | Passed. |
+| `every_op_keeps_its_toolpath_g_opgolden` | 46 changes: the 46 known rows (sorted diff empty). Every `profile/*` arm reads "ok". |
+| 29 core sentries (the two P35 test files, the Profile and tab sentries, the `dressup/` and `diagnostics/` sentries, `findings_transport_join_h21`, the folder map and test hygiene sentries) | Passed, but for the two known reds: `every_op_conforms_w4` check 6 and `layered_framework_owns_the_ladder_w3` (the same two tests and the same hashes as in section 7). |
+
+Not run for D and E: FM1 and `perf_golden_sim_metrics` (no code of a Fresh op with no key moved;
+the op golden holds that), `strategy_advisor_smoke`.

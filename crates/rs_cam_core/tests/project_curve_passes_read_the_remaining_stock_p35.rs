@@ -24,6 +24,11 @@
 //!   2 passes, not the 3 that stay of a ladder from the stock top (the
 //!   pass on the floor itself is not air for the filter).
 //!
+//! - (d) P35 E: where the air-cut filter drops a run INSIDE a chain (a
+//!   pocket in the middle of the curve), it comes back with a rapid
+//!   descent to the resume point. No such rapid enters the stock, and the
+//!   first fed move after it cuts no more than one step.
+//!
 //! Measured with the simulation (`axial_engagement_mm`, `plunge_descent_mm`
 //! and the air-cut time of the op's summary), not from the plan.
 //!
@@ -88,15 +93,25 @@ fn board() -> StockConfig {
 /// The session: the pocket (toolpath 0), then the Project Curve (toolpath
 /// 1) from `curve_x0` to `CURVE_X1` with the stated top Z.
 fn session(source: StockSource, top_z: f64, curve_x0: f64, curve_x1: f64) -> ProjectSession {
+    session_with_pocket(source, top_z, (curve_x0, curve_x1), (-45.0, POCKET_X1))
+}
+
+/// [`session`] with the X span of the curve and of the pocket stated.
+fn session_with_pocket(
+    source: StockSource,
+    top_z: f64,
+    (curve_x0, curve_x1): (f64, f64),
+    (pocket_x0, pocket_x1): (f64, f64),
+) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
     let tool_id = rs_cam_core::ids::ToolId::from_raw(builder.tools()[tool_idx].id.raw());
     let pocket_model = builder.add_model(polygon_model(
         vec![Polygon2::new(vec![
-            P2::new(-45.0, -10.0),
-            P2::new(POCKET_X1, -10.0),
-            P2::new(POCKET_X1, 10.0),
-            P2::new(-45.0, 10.0),
+            P2::new(pocket_x0, -10.0),
+            P2::new(pocket_x1, -10.0),
+            P2::new(pocket_x1, 10.0),
+            P2::new(pocket_x0, 10.0),
         ])],
         "p35_pocket",
     ));
@@ -308,4 +323,133 @@ fn a_curve_under_the_floor_takes_its_ladder_from_the_floor_p35() {
     eprintln!("remaining stock, a curve under the floor: {m:?}");
     assert_eq!(m.levels, vec![10.0, 8.0], "2 passes from the floor at 12");
     assert!(m.deepest_mm <= ONE_STEP_MM, "{m:?}");
+}
+
+/// (d) P35 E. The pocket is in the middle of the curve (X -30 to X 30), so
+/// each pass above the floor cuts at the two ends and is in air over
+/// 60 mm between them. The air-cut filter replaces that run with a retract
+/// bridge: a rapid up, a rapid across and a RAPID descent to the resume
+/// point.
+#[test]
+fn a_rapid_re_entry_after_a_dropped_run_stays_out_of_the_stock_p35e() {
+    let mut session = session_with_pocket(
+        StockSource::FromRemainingStock,
+        STOCK_TOP,
+        (-45.0, 45.0),
+        (-30.0, 30.0),
+    );
+    run_prior(&mut session);
+    let cancel = AtomicBool::new(false);
+    let _ = session
+        .generate_toolpath(1, &cancel)
+        .expect("the river generates");
+    let id = session.toolpath_configs()[1].id;
+    // The stock before the river op: what the pocket left.
+    let prior = std::sync::Arc::clone(
+        session
+            .simulation_result()
+            .expect("the prior simulation")
+            .prior_stocks
+            .get(&id)
+            .expect("the river has a prior stock"),
+    );
+    let tp = session
+        .result_at(1)
+        .expect("a result")
+        .annotated()
+        .toolpath
+        .clone();
+    simulate(&mut session);
+    let sim = session.simulation_result().expect("a simulation");
+    let trace = sim.cut_trace.as_ref().expect("a cut trace");
+
+    // The rapid descents: a rapid that goes down and ends below the stock
+    // top. A P33 entry is a FED plunge, so each such rapid is a bridge of
+    // the filter.
+    let radius = TOOL_D / 2.0;
+    let grid = &prior.z_grid;
+    let mut descents = 0;
+    let mut after_a_descent: Vec<usize> = Vec::new();
+    for (i, pair) in tp.moves.windows(2).enumerate() {
+        let (from, m) = (&pair[0], &pair[1]);
+        let descends = m.move_type == MoveType::Rapid
+            && m.target.z < from.target.z - 1e-6
+            && m.target.z < STOCK_TOP - 1e-6;
+        if !descends {
+            continue;
+        }
+        descents += 1;
+        after_a_descent.push(i + 2);
+        // The descent is straight down, so its end is its lowest point and
+        // the column check below covers the whole move.
+        assert!(
+            (m.target.x - from.target.x).hypot(m.target.y - from.target.y) < 1e-9,
+            "a rapid descent is vertical"
+        );
+        // No cell of the stock before the op, with its centre in the tool
+        // disc, stands above the end of the rapid. The passes of the op
+        // itself only remove material, so the stock at that time is lower.
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let (x, y) = grid.cell_to_world(row, col);
+                if (x - m.target.x).hypot(y - m.target.y) > radius {
+                    continue;
+                }
+                let top = grid.top_z_at(row, col).map_or(f64::NEG_INFINITY, f64::from);
+                assert!(
+                    top <= m.target.z + 1e-6,
+                    "the rapid descent to ({:.2}, {:.2}, {:.2}) enters stock: the cell at \
+                     ({x:.2}, {y:.2}) stands at Z {top:.2}",
+                    m.target.x,
+                    m.target.y,
+                    m.target.z
+                );
+            }
+        }
+    }
+    eprintln!(
+        "{descents} rapid descents below the stock top; {} rapid collisions in the simulation",
+        sim.rapid_collisions.len()
+    );
+    assert!(
+        descents >= 3,
+        "non-vacuity: the filter bridges the air run of each pass above the floor; \
+         {descents} rapid descents"
+    );
+    assert!(
+        sim.rapid_collisions.is_empty(),
+        "the simulation finds a rapid into stock: {:?}",
+        sim.rapid_collisions
+    );
+
+    // The first fed move after each descent cuts no more than one step.
+    let mut judged = 0;
+    let mut deepest = 0.0_f64;
+    for s in trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == id && after_a_descent.contains(&s.move_index))
+    {
+        judged += 1;
+        deepest = deepest.max(s.axial_engagement_mm.max(s.plunge_descent_mm));
+    }
+    eprintln!(
+        "{judged} samples on the first fed move after a descent; the deepest cuts {deepest:.2} mm"
+    );
+    assert!(
+        judged > 0,
+        "non-vacuity: the fed moves after a descent have samples"
+    );
+    assert!(
+        deepest <= ONE_STEP_MM,
+        "the first fed move after a rapid descent cuts {deepest:.2} mm; one step is {STEP} mm"
+    );
+    // And no sample of the op cuts more than one step.
+    let worst = trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == id && s.is_cutting)
+        .map(|s| s.axial_engagement_mm.max(s.plunge_descent_mm))
+        .fold(0.0_f64, f64::max);
+    assert!(worst <= ONE_STEP_MM, "a sample cuts {worst:.2} mm");
 }
