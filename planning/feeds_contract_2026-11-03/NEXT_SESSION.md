@@ -1,16 +1,23 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-15, afternoon (read this first)
+## State on 2026-11-15, evening (read this first)
 
-- P31 A, B, C are committed (`13335e447..d3f630423`), the GUI freeze fix is `84aa45646`. Nothing is pushed.
-- The practical test on the wanaka operator file and five operator rulings are in
-  `phases/P31_OPERATOR_RULINGS_2026-11-15.md` section E.
-- To build, in this order: (1) feed modulation off / cap only / full, default cap only; the force
-  budget never sets a feed; a floor at the rubbing feed; (2) a depth per pass inside Project Curve;
-  (3) Generate All also generates a rest op that waits on a simulation; (4) the 6 mm relief band on
-  the operator file with a measured thickness check; (5) M4-A (D of the P31 note; the baseline
-  binary is stale after step 1).
-- Not run on today's commits: the viz test binaries, the core full gate. The push waits for both.
+- Committed, not pushed: P31 A, B, C (`13335e447..d3f630423`), the GUI freeze fix `84aa45646`,
+  P32 (`250dbd7e1`, `8d5f677e1`, rulings `7ed22f657`), P33 (`93f56946f`, `29583e163`, `28305b389`).
+- P32: feed modulation is off, cap only (default) or full. The force budget sets no feed while it
+  is advisory. No load cap goes below the rubbing floor. Note: `phases/P32_CAP_ONLY_2026-11-15.md`
+  (section 7 holds the lead rulings and the open items).
+- P33: a Project Curve takes `depth_per_pass` (passes inside one toolpath). A simulation that
+  confirms modulated feeds makes them current. Generate All: no silent state found, no code.
+  Note: `phases/P33_CURVE_PASSES_2026-11-15.md`.
+- The lead gate is green on `28305b389` for core (the known reds only); the viz gate ran on
+  `7ed22f657`. The release GUI of `28305b389` ran the wanaka job.
+- The job proposal is `planning/rivmap_block_job/nz_wanaka_21_lead_proposal.toml`, with its note
+  `planning/rivmap_block_job/LEAD_PROPOSAL_2026-11-15.md`. The operator file is not changed.
+- Next: (1) the operator reads the proposal note and rules on its open items; (2) M4-A (D of the
+  P31 note; the baseline binary is stale after P32); (3) the reds of P32 note 7.9; (4) the
+  clean-up list (P32 note section 7, P33 note "Decisions for the lead"); (5) the core full gate
+  once, then the push; (6) P27.
 
 ## HAND-OVER 2026-11-11 evening, updated 2026-11-12 night (read this section first)
 
