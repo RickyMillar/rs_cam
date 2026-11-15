@@ -553,6 +553,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     ),
     (ids::GEOM_TAB_PLACEMENT, NOTE, "Tabs not placed as asked"),
     (
+        ids::GEOM_PROFILE_LOOP_SPLIT,
+        OP,
+        "A loop splits: its narrow parts are not cut",
+    ),
+    (
         ids::GEOM_OFFSET_LIBRARY_FAILURE,
         OP,
         "Offset failed: material can be left",

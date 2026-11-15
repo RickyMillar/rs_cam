@@ -340,3 +340,68 @@ of `layered_framework_owns_the_ladder_w3` against the base commit; the 336 s of
 `recommend_clearing_strategy` (`rs_cam_viz/src/mcp_server.rs`) does not name the mode; it was not
 changed. `target/release/rs_cam_cli` is the build of the tree with parts A and B (no part C), not
 of HEAD.
+
+## 9. Part D: a split loop cuts each ring (lead ruling 2026-11-16)
+
+Ruling: a loop that the radial value splits into several rings does not refuse. Profile cuts each
+ring that the offset gives back, for every side, and reports the split. A loop that collapses to
+nothing still refuses. This replaces rule 4 of section 1.2 and decision 2 of section 4.
+
+Predictions (before the code):
+
+| # | Prediction |
+|---|---|
+| D1 | Red first. A dumbbell (two 20 mm squares, a 2 mm neck), side `on` with -1.4 and side `inside` with -1.6: before the code the op refuses ("2 rings"). After it the op cuts two rings, each cut point is 1.4 mm inside the loop, and no fed move crosses the neck. |
+| D2 | One warning names the start point of the loop and the ring count. |
+| D3 | A 2 mm square with -1.4 still refuses. No key: the op golden does not move. |
+
+What is built:
+
+- `ops/profile.rs`: `profile_path_reported` returns `ProfileRings` (the rings, the offset failure
+  count, the split). `on_line_contours` returns the contours and the splits. The refusal
+  `RadialLeaveRefusal::NotOneRing` is now `Collapsed` (no ring only). With no value the function
+  gives no ring or the first ring of the offset, as before.
+- The report. The Profile has no channel for collapsed geometry (a collapse with no value cuts
+  nothing and says nothing). Its one per-loop report is the note list of the adapter
+  (`ProfileReport::tabs`, `TabPlacementFinding`). The split is a new note there,
+  `TabNote::SplitLoop { start, leave, rings }`, and no new stats field is built.
+- The diagnostic. A split is not a tab remark, and the tab remark has the anchor `Note`, which is
+  Info at every site (W1). So the adapter gives the notes as two findings: `geom.tab_placement`
+  (Info, the tab remarks) and the new id `geom.profile_loop_split` (Caution, `warn(Danger::Part)`,
+  anchor `Operation`, face "A loop splits: its narrow parts are not cut"). The message names each
+  split loop: "The loop from X.. Y.. splits into N rings with a radial stock to leave of .. mm".
+- The tabs on a split loop (`dressup/tabs.rs`): the first ring is the ring of the region. It reads
+  the drawn outline for the side rule and takes the hand tabs of the loop. Each later ring has no
+  region: it takes automatic tabs by its own sides (`tab_count`), as a nested ring of side `on`
+  does. The `tab_layout` query (the tab editor) gives marks only for a ring with a region, so the
+  editor shows the tabs of the first ring only. The cut has the tabs of every ring.
+
+Results:
+
+| # | Result |
+|---|---|
+| D1 | Held. Red before the code: "Operation failed: Profile: stock_to_leave_radial = -1.400 mm moves the loop that starts at (0.000, 0.000) to 2 rings (the loop splits)". After it `a_split_loop_cuts_each_ring_and_warns_p35d` is green for the two sides. An outward offset (side `outside` with a positive value) does not split a loop, so it has no arm. |
+| D2 | Held. `stats.tab_placement` holds one `SplitLoop` (start 0, 0; 2 rings), and the diagnostics hold `geom.profile_loop_split` (Caution) and no `geom.tab_placement`. With `tab_count = 2` the cut lifts over a tab on each ring. |
+| D3 | Held (`a_collapsed_loop_and_an_open_path_refuse_p35`; the op golden: section 11). |
+
+The "10 lakes" band of the proposal (read only; a scratch copy with `stock_to_leave_radial = -1.0`,
+side `on`, no exclude, floor Z 13.5; release CLI of this tree for the simulation, and the evidence
+test `a_lake_band_reports_its_split_loops_p35d` for the notes):
+
+- The op generates: 7206 moves, 6252 mm cut, 4320 mm rapid, 0 collisions, 0 rapid collisions.
+- Three of the eleven lakes split. The other eight are one ring each. 15 rings in all.
+
+| Lake (start of the loop) | Rings |
+|---|---|
+| X146.18 Y167.26 | 3 |
+| X105.35 Y222.91 | 2 |
+| X70.75 Y414.49 | 2 |
+| each of the other eight | 1 |
+
+- Warnings of the op: one `geom.profile_loop_split` (Caution) with the three notes above. The CLI
+  `summary.json` lists the id under the findings of the toolpath; it does not print the note text.
+- The ring count of a lake with no note is 1 by the rule (a collapse refuses); it was not counted
+  on the path.
+
+Decisions for the lead (part D): the split has its own id and the anchor `Operation`; the tab
+editor does not show the tabs of the later rings of a split loop.

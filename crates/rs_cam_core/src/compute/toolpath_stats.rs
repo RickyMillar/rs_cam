@@ -1172,7 +1172,9 @@ impl SelectionNoteFinding {
 }
 
 /// P5 (S12): the loops of a Profile whose automatic tabs did not follow
-/// the side rule. One note per loop, in the order the op cut them.
+/// the side rule. One note per loop, in the order the op cut them. P35 D:
+/// the per-loop notes of the Profile adapter, so it also holds each loop
+/// that the radial stock to leave splits ([`TabNote::SplitLoop`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabPlacementFinding {
     /// The op label (`OperationType::label`).
@@ -1209,6 +1211,33 @@ pub enum TabNote {
         /// The tab count asked (`tab_count`).
         asked: usize,
     },
+    /// P35 D (lead ruling 2026-11-16): the radial stock to leave moves the
+    /// loop to more than one ring (a part of the loop is narrower than the
+    /// offset allows). The op cuts each ring, and it does not cut the
+    /// narrow parts between them. The hand tabs of the loop go on the
+    /// first ring; each ring takes automatic tabs by its own sides. This
+    /// note is a warning (`geom.profile_loop_split`, `Caution`), not a tab
+    /// placement remark.
+    SplitLoop {
+        /// The drawn start of the loop (setup frame).
+        start: [f64; 2],
+        /// The radial stock to leave (mm).
+        leave: f64,
+        /// The rings the op cuts for this loop. At least 2.
+        rings: usize,
+    },
+}
+
+impl TabNote {
+    /// True for a note that warns of geometry the op does not cut as
+    /// drawn (P35 D: a split loop). The other notes are tab remarks.
+    #[must_use]
+    pub const fn warns(&self) -> bool {
+        match self {
+            Self::SplitLoop { .. } => true,
+            Self::EvenSpacing { .. } | Self::FewerThanAsked { .. } | Self::OpenPath { .. } => false,
+        }
+    }
 }
 
 impl std::fmt::Display for TabNote {
@@ -1241,6 +1270,16 @@ impl std::fmt::Display for TabNote {
                 "The open path from X{x:.2} Y{y:.2} takes none of the {asked} tabs asked: \
                  tabs go on closed loops only. Close the path in the drawing to hold a part \
                  with tabs."
+            ),
+            Self::SplitLoop {
+                start: [x, y],
+                leave,
+                rings,
+            } => write!(
+                f,
+                "The loop from X{x:.2} Y{y:.2} splits into {rings} rings with a radial stock \
+                 to leave of {leave:.3} mm: each ring is cut, and the narrow parts of the loop \
+                 between the rings are not cut."
             ),
         }
     }

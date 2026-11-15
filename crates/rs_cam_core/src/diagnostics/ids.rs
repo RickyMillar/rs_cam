@@ -392,6 +392,10 @@ diag_ids! {
     /// P5 (S12): a Profile loop took its tabs by the even-spacing fallback, or
     /// its sides hold fewer tabs than asked.
     pub const GEOM_TAB_PLACEMENT: &str = "geom.tab_placement" => warn(Danger::Part);
+    /// P35 D (lead ruling 2026-11-16): the radial stock to leave of a Profile
+    /// moves a loop to more than one ring. The op cuts each ring; the narrow
+    /// parts of the loop between the rings are not cut.
+    pub const GEOM_PROFILE_LOOP_SPLIT: &str = "geom.profile_loop_split" => warn(Danger::Part);
     /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
     /// `cavalier_contours` panicked and was contained, or one of the offset
     /// module's own input guards refused the ring — rather than collapsing.

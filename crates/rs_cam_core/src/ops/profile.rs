@@ -86,7 +86,7 @@ pub struct ProfileParams {
 }
 
 /// P35: why a loop with a radial stock to leave gives no cut ring. The op
-/// refuses; it does not drop the loop and it does not cut a part of it.
+/// refuses; it does not drop the loop without a report.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RadialLeaveRefusal {
     /// An open path (side `On`). It closes no area, so the value has no
@@ -97,15 +97,12 @@ pub enum RadialLeaveRefusal {
         /// The value (mm).
         leave: f64,
     },
-    /// The moved loop is not one ring: it collapsed (`rings == 0`) or it
-    /// split.
-    NotOneRing {
+    /// The moved loop is no ring: the loop is too small for the value.
+    Collapsed {
         /// The first point of the loop.
         start: [f64; 2],
         /// The value (mm).
         leave: f64,
-        /// The count of rings the offset gave.
-        rings: usize,
     },
 }
 
@@ -119,22 +116,71 @@ impl std::fmt::Display for RadialLeaveRefusal {
                  or cut beside the path with Trace (compensation left or right).",
                 start[0], start[1]
             ),
-            Self::NotOneRing {
-                start,
-                leave,
-                rings,
-            } => write!(
+            Self::Collapsed { start, leave } => write!(
                 f,
                 "Profile: stock_to_leave_radial = {leave:.3} mm moves the loop that starts at \
-                 ({:.3}, {:.3}) to {}. Take the loop out of the selection or change the value.",
-                start[0],
-                start[1],
-                if rings == 0 {
-                    "no ring (the loop is too small)".to_owned()
-                } else {
-                    format!("{rings} rings (the loop splits)")
-                }
+                 ({:.3}, {:.3}) to no ring (the loop is too small). Take the loop out of the \
+                 selection or change the value.",
+                start[0], start[1]
             ),
+        }
+    }
+}
+
+/// P35 D (lead ruling 2026-11-16): a loop that the radial stock to leave
+/// moved to more than one ring. The op cuts each ring and reports the
+/// split (`TabNote::SplitLoop`); it does not refuse.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RadialLeaveSplit {
+    /// The first point of the drawn loop.
+    pub start: [f64; 2],
+    /// The value (mm).
+    pub leave: f64,
+    /// The rings the offset gave. At least 2.
+    pub rings: usize,
+}
+
+impl RadialLeaveSplit {
+    /// The split of a loop that starts at `start`, or `None` for one ring.
+    fn of(start: Option<&P2>, leave: f64, rings: usize) -> Option<Self> {
+        (rings > 1).then(|| Self {
+            start: start.map_or([0.0, 0.0], |p| [p.x, p.y]),
+            leave,
+            rings,
+        })
+    }
+
+    /// The note of the split for the op report.
+    #[must_use]
+    pub const fn note(&self) -> crate::compute::toolpath_stats::TabNote {
+        crate::compute::toolpath_stats::TabNote::SplitLoop {
+            start: self.start,
+            leave: self.leave,
+            rings: self.rings,
+        }
+    }
+}
+
+/// The cut rings of one loop ([`profile_path_reported`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileRings {
+    /// The tool-centre rings, in the order the offset gave them. Empty
+    /// when the offset of a loop with no radial stock to leave collapses.
+    /// More than one only with a radial stock to leave (P35 D).
+    pub rings: Vec<Vec<P2>>,
+    /// The offset failure count (Checkpoint C).
+    pub failures: usize,
+    /// P35 D: the split, when `rings` holds more than one ring.
+    pub split: Option<RadialLeaveSplit>,
+}
+
+impl ProfileRings {
+    /// The rings of a loop with no radial stock to leave: none or one.
+    fn plain((contour, failures): (Option<Vec<P2>>, usize)) -> Self {
+        Self {
+            rings: contour.into_iter().collect(),
+            failures,
+            split: None,
         }
     }
 }
@@ -144,25 +190,28 @@ fn moves_the_ring(leave: f64) -> bool {
     leave.abs() > 0.0
 }
 
-/// P35: the ONE ring of `polygon` moved by `distance` (the sign of
+/// P35: every ring of `polygon` moved by `distance` (the sign of
 /// [`crate::polygon::offset_polygon_reported`]: positive is inward on a CCW
-/// ring), with the offset failure count. Anything but one ring refuses.
-fn one_moved_ring(
+/// ring), with the offset failure count. P35 D: a loop that splits gives
+/// each of its rings. No ring refuses (the loop collapsed).
+fn moved_rings(
     polygon: &Polygon2,
     distance: f64,
     leave: f64,
-) -> Result<(Vec<P2>, usize), RadialLeaveRefusal> {
+) -> Result<(Vec<Vec<P2>>, usize), RadialLeaveRefusal> {
     let (results, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
-    let rings = results.len();
-    let mut usable = results.into_iter().filter(|p| p.exterior.len() >= 3);
-    match (usable.next(), rings) {
-        (Some(ring), 1) => Ok((ring.exterior, usize::from(failure.is_some()))),
-        (_, rings) => Err(RadialLeaveRefusal::NotOneRing {
+    let rings: Vec<Vec<P2>> = results
+        .into_iter()
+        .map(|p| p.exterior)
+        .filter(|ring| ring.len() >= 3)
+        .collect();
+    if rings.is_empty() {
+        return Err(RadialLeaveRefusal::Collapsed {
             start: polygon.exterior.first().map_or([0.0, 0.0], |p| [p.x, p.y]),
             leave,
-            rings: if rings == 1 { 0 } else { rings },
-        }),
+        });
     }
+    Ok((rings, usize::from(failure.is_some())))
 }
 
 /// The **Z-independent half** of a profile pass (the Layered Profile
@@ -193,19 +242,23 @@ fn one_moved_ring(
 /// - controller compensation: the programmed line is the loop moved by `s`
 ///   alone, to the side of the tool. The controller adds its radius.
 ///
-/// With `s = 0` the function is the function of before the field.
+/// With `s = 0` the function is the function of before the field: no
+/// ring, or the first ring of the offset.
+///
+/// P35 D (lead ruling 2026-11-16): with a value, a loop that the offset
+/// splits gives each ring, and [`ProfileRings::split`] names the split.
 ///
 /// # Errors
 ///
-/// With a value that is not 0, a moved loop that is not one ring
-/// ([`RadialLeaveRefusal`]). The caller refuses the op.
+/// With a value that is not 0, a moved loop that is no ring
+/// ([`RadialLeaveRefusal::Collapsed`]). The caller refuses the op.
 pub fn profile_path_reported(
     polygon: &Polygon2,
     params: &ProfileParams,
-) -> Result<(Option<Vec<P2>>, usize), RadialLeaveRefusal> {
+) -> Result<ProfileRings, RadialLeaveRefusal> {
     let leave = params.stock_to_leave_radial;
     if !moves_the_ring(leave) {
-        return Ok(if params.compensate_in_controller {
+        return Ok(ProfileRings::plain(if params.compensate_in_controller {
             // Controller handles the offset — toolpath follows the exact boundary.
             let pts = polygon.exterior.clone();
             if pts.len() < 3 {
@@ -216,7 +269,7 @@ pub fn profile_path_reported(
             }
         } else {
             profile_contour_reported(polygon, params.tool_radius, params.side)
-        });
+        }));
     }
     // The radius the software offsets by: none when the controller adds it.
     let radius = if params.compensate_in_controller {
@@ -231,18 +284,35 @@ pub fn profile_path_reported(
         // Side `On` cuts through `on_line_contours`. A closed exterior
         // here takes the same rule: out by `leave`.
         ProfileSide::On => {
-            return match on_line_contours(polygon, leave)?.into_iter().next() {
-                Some(OnLineContour::Closed(ring)) => Ok((Some(ring), 0)),
-                Some(OnLineContour::Open(_)) | None => Ok((None, 0)),
-            };
+            let (contours, splits) = on_line_contours(polygon, leave)?;
+            return Ok(ProfileRings {
+                rings: contours
+                    .into_iter()
+                    .filter_map(|c| match c {
+                        OnLineContour::Closed(ring) => Some(ring),
+                        OnLineContour::Open(_) => None,
+                    })
+                    .collect(),
+                failures: 0,
+                split: splits.into_iter().next(),
+            });
         }
     };
     if !moves_the_ring(distance) {
         // `r + s = 0`: the tool centre is on the line.
         let pts = polygon.exterior.clone();
-        return Ok((if pts.len() < 3 { None } else { Some(pts) }, 0));
+        return Ok(ProfileRings::plain((
+            if pts.len() < 3 { None } else { Some(pts) },
+            0,
+        )));
     }
-    one_moved_ring(polygon, distance, leave).map(|(ring, failures)| (Some(ring), failures))
+    let (rings, failures) = moved_rings(polygon, distance, leave)?;
+    let split = RadialLeaveSplit::of(polygon.exterior.first(), leave, rings.len());
+    Ok(ProfileRings {
+        rings,
+        failures,
+        split,
+    })
 }
 
 /// Generate the 2D profile contour (tool center path).
@@ -327,15 +397,19 @@ pub enum OnLineContour {
 /// ring is its own loop, a nested ring too. The moved ring keeps the
 /// winding of the drawn ring.
 ///
+/// P35 D: a ring that the value splits gives each of its rings, one after
+/// the other, and one [`RadialLeaveSplit`] in the second part of the
+/// result.
+///
 /// # Errors
 ///
 /// With a value that is not 0: an open path (it closes no area, so the
-/// value has no direction), and a ring that the offset does not give back
-/// as one ring ([`RadialLeaveRefusal`]).
+/// value has no direction), and a ring that collapses
+/// ([`RadialLeaveRefusal`]).
 pub fn on_line_contours(
     polygon: &Polygon2,
     leave: f64,
-) -> Result<Vec<OnLineContour>, RadialLeaveRefusal> {
+) -> Result<(Vec<OnLineContour>, Vec<RadialLeaveSplit>), RadialLeaveRefusal> {
     let moved = moves_the_ring(leave);
     if !polygon.closed {
         return match polygon.exterior.first() {
@@ -345,52 +419,59 @@ pub fn on_line_contours(
                     leave,
                 })
             }
-            Some(_) if polygon.exterior.len() >= 2 => {
-                Ok(vec![OnLineContour::Open(polygon.exterior.clone())])
-            }
-            Some(_) | None => Ok(Vec::new()),
+            Some(_) if polygon.exterior.len() >= 2 => Ok((
+                vec![OnLineContour::Open(polygon.exterior.clone())],
+                Vec::new(),
+            )),
+            Some(_) | None => Ok((Vec::new(), Vec::new())),
         };
     }
-    std::iter::once(&polygon.exterior)
+    let mut contours = Vec::new();
+    let mut splits = Vec::new();
+    for ring in std::iter::once(&polygon.exterior)
         .chain(&polygon.holes)
         .filter(|ring| ring.len() >= 3)
-        .map(|ring| {
-            if moved {
-                moved_on_line_ring(ring, leave).map(OnLineContour::Closed)
-            } else {
-                Ok(OnLineContour::Closed(ring.clone()))
-            }
-        })
-        .collect()
+    {
+        if moved {
+            let rings = moved_on_line_rings(ring, leave)?;
+            splits.extend(RadialLeaveSplit::of(ring.first(), leave, rings.len()));
+            contours.extend(rings.into_iter().map(OnLineContour::Closed));
+        } else {
+            contours.push(OnLineContour::Closed(ring.clone()));
+        }
+    }
+    Ok((contours, splits))
 }
 
-/// P35: one closed ring of side `On` moved out of its own area by `leave`.
-/// The offset sign reads a CCW ring (see [`profile_contour_reported`]), and
-/// a ring of side `On` comes in the drawn winding, so the offset runs on a
-/// CCW copy and the result takes the drawn winding back.
-fn moved_on_line_ring(ring: &[P2], leave: f64) -> Result<Vec<P2>, RadialLeaveRefusal> {
+/// P35: one closed ring of side `On` moved out of its own area by `leave`:
+/// each ring the offset gives back (P35 D). The offset sign reads a CCW
+/// ring (see [`profile_contour_reported`]), and a ring of side `On` comes
+/// in the drawn winding, so the offset runs on a CCW copy and each result
+/// takes the drawn winding back.
+fn moved_on_line_rings(ring: &[P2], leave: f64) -> Result<Vec<Vec<P2>>, RadialLeaveRefusal> {
     let mut ccw = Polygon2::new(ring.to_vec());
     let drawn_ccw = ccw.signed_area() >= 0.0;
     ccw.ensure_winding();
     // Outward is negative for the offset.
-    let (mut moved, _failures) = one_moved_ring(&ccw, -leave, leave).map_err(|refusal| {
+    let (mut rings, _failures) = moved_rings(&ccw, -leave, leave).map_err(|refusal| {
         // Name the drawn start point, not the start of the CCW copy.
         match (refusal, ring.first()) {
-            (RadialLeaveRefusal::NotOneRing { leave, rings, .. }, Some(first)) => {
-                RadialLeaveRefusal::NotOneRing {
+            (RadialLeaveRefusal::Collapsed { leave, .. }, Some(first)) => {
+                RadialLeaveRefusal::Collapsed {
                     start: [first.x, first.y],
                     leave,
-                    rings,
                 }
             }
             (other, _) => other,
         }
     })?;
-    let moved_ccw = Polygon2::new(moved.clone()).signed_area() >= 0.0;
-    if moved_ccw != drawn_ccw {
-        moved.reverse();
+    for moved in &mut rings {
+        let moved_ccw = Polygon2::new(moved.clone()).signed_area() >= 0.0;
+        if moved_ccw != drawn_ccw {
+            moved.reverse();
+        }
     }
-    Ok(moved)
+    Ok(rings)
 }
 
 /// One pass along the open path `path` at `params.cut_depth` (P6.3, side
@@ -516,7 +597,9 @@ mod tests {
     fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
         match profile_path_reported(polygon, params)
             .expect("no radial stock to leave refuses")
-            .0
+            .rings
+            .into_iter()
+            .next()
         {
             Some(contour) => {
                 profile_path_to_toolpath(

@@ -15,8 +15,9 @@
 //!   `Inside`, value -1.6: the centre is 1.4 mm inside.
 //! - (c) A ring drawn clockwise, and a Bottom setup, give the side of (a).
 //! - (d) No key, and the value 0, give the same moves.
-//! - (e) A loop that collapses refuses, an open path with a value refuses,
-//!   and the text names the start point.
+//! - (e) A loop that collapses to no ring refuses, an open path with a
+//!   value refuses, and the text names the start point.
+//! - (h) P35 D: a loop that splits cuts each ring and warns.
 //! - (f) Controller compensation: the programmed ring is the loop moved by
 //!   the value alone.
 //! - (g) The tabs sit on the moved ring.
@@ -354,25 +355,6 @@ fn a_collapsed_loop_and_an_open_path_refuse_p35() {
     );
     assert!(text.contains("(0.000, 0.000)"), "names the start: {text}");
 
-    // A dumbbell: two 10 mm squares joined by a 2 mm neck. Moved in by
-    // 1.4 mm the neck closes and the loop splits.
-    let dumbbell = vec![Polygon2::new(vec![
-        P2::new(0.0, 0.0),
-        P2::new(10.0, 0.0),
-        P2::new(10.0, 4.0),
-        P2::new(20.0, 4.0),
-        P2::new(20.0, 0.0),
-        P2::new(30.0, 0.0),
-        P2::new(30.0, 10.0),
-        P2::new(20.0, 10.0),
-        P2::new(20.0, 6.0),
-        P2::new(10.0, 6.0),
-        P2::new(10.0, 10.0),
-        P2::new(0.0, 10.0),
-    ])];
-    let text = run(dumbbell, profile(ProfileSide::On, Some(-1.4))).expect_err("refuses");
-    assert!(text.contains("2 rings"), "{text}");
-
     // An open path closes no area.
     let open = vec![Polygon2::open_path(vec![
         P2::new(-30.0, 20.0),
@@ -387,6 +369,181 @@ fn a_collapsed_loop_and_an_open_path_refuse_p35() {
     // With no value the open path cuts, as before.
     let tp = run(open, profile(ProfileSide::On, None)).expect("an open path cuts on the line");
     assert!(!cut_points(&tp).is_empty());
+}
+
+/// The side (mm) of each square of the dumbbell.
+const DB: f64 = 20.0;
+
+/// A dumbbell: two 20 mm squares joined by a 2 mm neck. Moved in by 1.4 mm
+/// the neck closes and the loop splits into two rings.
+fn dumbbell() -> Vec<P2> {
+    let (lo, hi) = (DB / 2.0 - 1.0, DB / 2.0 + 1.0);
+    [
+        (0.0, 0.0),
+        (DB, 0.0),
+        (DB, lo),
+        (2.0 * DB, lo),
+        (2.0 * DB, 0.0),
+        (3.0 * DB, 0.0),
+        (3.0 * DB, DB),
+        (2.0 * DB, DB),
+        (2.0 * DB, hi),
+        (DB, hi),
+        (DB, DB),
+        (0.0, DB),
+    ]
+    .iter()
+    .map(|&(x, y)| P2::new(x, y))
+    .collect()
+}
+
+/// The distance from `p` to the closed polyline `ring`.
+fn to_ring(p: P2, ring: &[P2]) -> f64 {
+    let n = ring.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (ring[i], ring[(i + 1) % n]);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let len2 = dx * dx + dy * dy;
+            let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0);
+            (p.x - (a.x + t * dx)).hypot(p.y - (a.y + t * dy))
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// (h) P35 D (lead ruling 2026-11-16): a loop that the value splits does
+/// not refuse. The op cuts each ring that the offset gives back, for side
+/// `On` and side `Inside`, and one warning names the start point of the
+/// loop and the ring count. The hand tabs of the loop go on its first
+/// ring; each ring takes automatic tabs by its own sides.
+#[test]
+fn a_split_loop_cuts_each_ring_and_warns_p35d() {
+    use rs_cam_core::compute::toolpath_stats::TabNote;
+    use rs_cam_core::diagnostics::Severity;
+    for (side, leave) in [(ProfileSide::On, -1.4), (ProfileSide::Inside, -1.6)] {
+        let mut session = session(vec![Polygon2::new(dumbbell())], profile(side, Some(leave)));
+        let cancel = AtomicBool::new(false);
+        session
+            .generate_toolpath(0, &cancel)
+            .unwrap_or_else(|e| panic!("{side:?}: a split loop generates: {e}"));
+        let result = session.result_at(0).expect("a result");
+        let tp = result.annotated().toolpath.clone();
+
+        // Each cut point is 1.4 mm inside the loop: no ring is a chord
+        // across the neck, and no point is outside the rule.
+        let points = cut_points(&tp);
+        assert!(points.len() >= 4, "{side:?}: {} cut points", points.len());
+        for p in &points {
+            let d = to_ring(*p, &dumbbell());
+            assert!(
+                (d - 1.4).abs() < RING_TOL,
+                "{side:?}: the cut point ({:.3}, {:.3}) is {d:.4} mm from the loop",
+                p.x,
+                p.y
+            );
+        }
+        // Two rings: points in each square, none in the neck (X 20 to 40).
+        let left = points.iter().filter(|p| p.x < DB).count();
+        let right = points.iter().filter(|p| p.x > 2.0 * DB).count();
+        assert!(
+            left >= 4 && right >= 4,
+            "{side:?}: {left} left, {right} right"
+        );
+        assert_eq!(left + right, points.len(), "{side:?}: no cut in the neck");
+        // No fed move at the cut depth crosses the neck.
+        let mut prev: Option<P2> = None;
+        for m in &tp.moves {
+            let here = P2::new(m.target.x, m.target.y);
+            let at_depth = (m.target.z + DEPTH).abs() < 1e-6;
+            if m.move_type != MoveType::Rapid
+                && at_depth
+                && let Some(from) = prev
+            {
+                assert!(
+                    (from.x < 1.5 * DB) == (here.x < 1.5 * DB),
+                    "{side:?}: a fed move crosses the neck"
+                );
+            }
+            prev = at_depth.then_some(here);
+        }
+
+        // The warning: one note for the loop, with its start and count.
+        let finding = result
+            .stats
+            .tab_placement
+            .clone()
+            .unwrap_or_else(|| panic!("{side:?}: the op records the split"));
+        let splits: Vec<_> = finding
+            .notes
+            .iter()
+            .filter_map(|n| match *n {
+                TabNote::SplitLoop { start, rings, .. } => Some((start, rings)),
+                TabNote::EvenSpacing { .. }
+                | TabNote::FewerThanAsked { .. }
+                | TabNote::OpenPath { .. } => None,
+            })
+            .collect();
+        assert_eq!(splits, vec![([0.0, 0.0], 2)], "{side:?}");
+        let text = finding.message();
+        assert!(
+            text.contains("2 rings") && text.contains("X0.00 Y0.00"),
+            "{side:?}: {text}"
+        );
+        let diagnostics = session
+            .diagnose_toolpath_with_trace(0, None)
+            .expect("diagnose");
+        let warning = diagnostics
+            .iter()
+            .find(|d| d.id.as_str() == "geom.profile_loop_split")
+            .unwrap_or_else(|| panic!("{side:?}: the split is a diagnostic"));
+        assert_eq!(warning.severity, Severity::Caution, "{side:?}");
+        assert!(
+            warning.message.contains("2 rings") && warning.message.contains("X0.00 Y0.00"),
+            "{side:?}: {}",
+            warning.message
+        );
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|d| d.id.as_str() == "geom.tab_placement"),
+            "{side:?}: a split is no tab remark"
+        );
+
+        // The tabs: the cut of each ring lifts over a tab. The tab top is
+        // the floor plus the tab height (2 mm): a fed move there is a lift.
+        let mut tabbed = self::session(
+            vec![Polygon2::new(dumbbell())],
+            ProfileConfig {
+                tab_count: 2,
+                tab_width: 2.0,
+                ..profile(side, Some(leave))
+            },
+        );
+        tabbed
+            .generate_toolpath(0, &cancel)
+            .unwrap_or_else(|e| panic!("{side:?}: the tabbed op generates: {e}"));
+        let tab_top = -DEPTH + 2.0;
+        let lifts: Vec<P2> = tabbed
+            .result_at(0)
+            .expect("a result")
+            .annotated()
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.move_type != MoveType::Rapid && (m.target.z - tab_top).abs() < 1e-6)
+            .map(|m| P2::new(m.target.x, m.target.y))
+            .collect();
+        let lifts_left = lifts.iter().filter(|p| p.x < DB).count();
+        let lifts_right = lifts.iter().filter(|p| p.x > 2.0 * DB).count();
+        assert!(
+            lifts_left >= 2 && lifts_right >= 2,
+            "{side:?}: {lifts_left} lift moves on the left ring, {lifts_right} on the right ring"
+        );
+        for p in &lifts {
+            let d = to_ring(*p, &dumbbell());
+            assert!((d - 1.4).abs() < RING_TOL, "{side:?}: a tab off its ring");
+        }
+    }
 }
 
 /// (f) Controller compensation: the programmed ring is the loop moved by

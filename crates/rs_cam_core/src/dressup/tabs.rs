@@ -973,9 +973,10 @@ pub struct ProfileTabRule<'a> {
 ///
 /// # Errors
 ///
-/// P35: with a radial stock to leave that is not 0, a loop that the offset
-/// does not give back as one ring, or an open path
-/// ([`crate::ops::profile::RadialLeaveRefusal`]). The caller refuses the op.
+/// P35: with a radial stock to leave that is not 0, a loop that collapses,
+/// or an open path ([`crate::ops::profile::RadialLeaveRefusal`]). The
+/// caller refuses the op. P35 D: a loop that splits does not refuse; the
+/// plan holds each ring and one `TabNote::SplitLoop` note.
 pub fn plan_profile_tabs(
     pieces: &[crate::polygon::Polygon2],
     rule: &ProfileTabRule<'_>,
@@ -991,22 +992,37 @@ pub fn plan_profile_tabs(
             on_line_tabs(piece, rule, tabs_on, &mut plan)?;
             continue;
         }
-        let (contour, failures) = crate::ops::profile::profile_path_reported(piece, rule.profile)?;
-        plan.offset_failures += failures;
-        let Some(contour) = contour else { continue };
-        let ring = crate::ops::profile::profile_ring(&contour, rule.profile.climb);
+        let rings = crate::ops::profile::profile_path_reported(piece, rule.profile)?;
+        plan.offset_failures += rings.failures;
+        // P35 D: a loop that the radial stock to leave splits is cut ring
+        // by ring, and one note names the split.
+        plan.notes.extend(rings.split.iter().map(|s| s.note()));
         // A Profile is not a `LevelClip` op, so the runner gives it the
         // region polygons whole: the piece finds its region by its exterior.
         let region = rule
             .regions
             .iter()
             .position(|r| r.exterior == piece.exterior);
-        let planned = if tabs_on {
-            contour_tabs(piece, region, &ring, rule, &mut plan.notes)
-        } else {
-            untabbed(region, ring, true)
-        };
-        plan.contours.push(planned);
+        for (index, contour) in rings.rings.into_iter().enumerate() {
+            let ring = crate::ops::profile::profile_ring(&contour, rule.profile.climb);
+            // The first ring is the ring of the region: it reads the drawn
+            // outline and takes the hand tabs. A later ring of a split
+            // loop (P35 D) is no region of the op: it takes automatic tabs
+            // by its own sides, as a nested ring of side `On` does.
+            let planned = match (tabs_on, index) {
+                (false, 0) => untabbed(region, ring, true),
+                (false, _) => untabbed(None, ring, true),
+                (true, 0) => contour_tabs(piece, region, &ring, rule, &mut plan.notes),
+                (true, _) => contour_tabs(
+                    &crate::polygon::Polygon2::new(contour),
+                    None,
+                    &ring,
+                    rule,
+                    &mut plan.notes,
+                ),
+            };
+            plan.contours.push(planned);
+        }
     }
     Ok(plan)
 }
@@ -1052,11 +1068,11 @@ fn on_line_tabs(
         .regions
         .iter()
         .position(|r| r.closed == piece.closed && r.exterior == piece.exterior);
-    for (index, contour) in
-        crate::ops::profile::on_line_contours(piece, rule.profile.stock_to_leave_radial)?
-            .into_iter()
-            .enumerate()
-    {
+    let (contours, splits) =
+        crate::ops::profile::on_line_contours(piece, rule.profile.stock_to_leave_radial)?;
+    // P35 D: one note for each ring that the radial stock to leave splits.
+    plan.notes.extend(splits.iter().map(|s| s.note()));
+    for (index, contour) in contours.into_iter().enumerate() {
         match contour {
             OnLineContour::Open(path) => {
                 if rule.count > 0

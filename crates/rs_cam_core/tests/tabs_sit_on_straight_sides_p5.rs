@@ -455,7 +455,9 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
     };
     let contour = profile_path_reported(&outline, &params)
         .expect("no radial stock to leave refuses")
-        .0
+        .rings
+        .into_iter()
+        .next()
         .expect("a contour");
     let ring = profile_ring(&contour, params.climb);
     // The point snaps to the outline at (13, 20); the ring takes its

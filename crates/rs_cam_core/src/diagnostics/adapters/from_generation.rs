@@ -583,31 +583,55 @@ fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
     }]
 }
 
-/// P5: a Profile loop did not take its tabs on its straight sides. `Info`:
-/// the loop still has tabs, but not where the side rule puts them, or
-/// fewer than asked. Silent when every loop followed the rule.
+/// The per-loop notes of a Profile (`ToolpathStats::tab_placement`), as two
+/// findings:
+///
+/// - P5, `geom.tab_placement` (`Info`): a loop did not take its tabs on its
+///   straight sides. The loop still has tabs, but not where the side rule
+///   puts them, or fewer than asked.
+/// - P35 D, `geom.profile_loop_split` (`Caution`): the radial stock to
+///   leave moves a loop to more than one ring (`TabNote::warns`). The op
+///   cuts each ring, and a part of the drawn loop is not cut.
+///
+/// Silent when the op recorded no note.
 fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     let Some(f) = &stats.tab_placement else {
         return Vec::new();
     };
-    vec![Diagnostic {
-        id: DiagnosticId::from(ids::GEOM_TAB_PLACEMENT),
-        scope: Scope::Toolpath { id: toolpath_id },
-        category: Category::Geometry,
-        severity: Severity::Info,
-        // Decided at generation over the loops the op cuts.
-        confidence: Confidence::Verified,
-        state: DiagnosticState::Current,
-        source: Source::StaticValidation,
-        face: crate::diagnostics::presentation::face(ids::GEOM_TAB_PLACEMENT),
-        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_TAB_PLACEMENT),
-        message: f.message(),
-        evidence: None,
-        fix: None,
-        supersedes: vec![],
-        group: None,
-        suppressed_diagnostics: vec![],
-    }]
+    let finding = |id: &'static str, severity: Severity, warns: bool| {
+        let notes: Vec<String> = f
+            .notes
+            .iter()
+            .filter(|note| note.warns() == warns)
+            .map(ToString::to_string)
+            .collect();
+        (!notes.is_empty()).then(|| Diagnostic {
+            id: DiagnosticId::from(id),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::Geometry,
+            severity,
+            // Decided at generation over the loops the op cuts.
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(id),
+            anchor: crate::diagnostics::presentation::anchor(id),
+            message: format!("{}: {}", f.op, notes.join(" ")),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            group: None,
+            suppressed_diagnostics: vec![],
+        })
+    };
+    finding(ids::GEOM_TAB_PLACEMENT, Severity::Info, false)
+        .into_iter()
+        .chain(finding(
+            ids::GEOM_PROFILE_LOOP_SPLIT,
+            Severity::Caution,
+            true,
+        ))
+        .collect()
 }
 
 /// A/M6: which rest reference the claims pipeline ran against.

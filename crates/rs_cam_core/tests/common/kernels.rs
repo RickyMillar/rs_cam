@@ -34,7 +34,9 @@ pub fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
 pub fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
     match profile_path_reported(polygon, params)
         .expect("no radial stock to leave refuses")
-        .0
+        .rings
+        .into_iter()
+        .next()
     {
         Some(contour) => {
             profile_path_to_toolpath(
