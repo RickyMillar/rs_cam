@@ -368,10 +368,16 @@ fn wanaka_suggest_baseline() {
             .safe_envelope(&deep)
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
+        // RE-PINNED 2026-11-15 (feeds contract P29-4 and P29-5, operator
+        // go of 2026-11-12): the machine force budget (`Rigidity`) lowers a
+        // depth proposal where it is reached before the vendor ap bound. On
+        // this op it is reached first, so it binds the proposal, and the
+        // proposal sits under the vendor ap bound. The vendor ap bound is
+        // still the matched row's own ceiling (the checks below).
         assert_eq!(
             envelope.proposal_binding,
-            Some(LimitKind::VendorAxial),
-            "{ctx}: the vendor ap bound must bind the proposal (not deflection or rigidity)"
+            Some(LimitKind::Rigidity),
+            "{ctx}: the force budget is reached before the vendor ap bound and binds the proposal"
         );
         let envelope_clamped = envelope.proposal.get().ap_mm().expect("a proposed depth");
         let stated_ae = envelope
@@ -390,8 +396,9 @@ fn wanaka_suggest_baseline() {
         match envelope.operator {
             Some(Placement::Outside { binding, .. }) => assert_eq!(
                 binding,
-                LimitKind::VendorAxial,
-                "{ctx}: the stated point must sit outside the vendor ap bound"
+                LimitKind::Rigidity,
+                "{ctx}: the stated point must sit outside the force budget, the first limit \
+                 that it passes"
             ),
             other => panic!("{ctx}: a stated 9 mm must be outside the envelope, got {other:?}"),
         }
@@ -420,19 +427,20 @@ fn wanaka_suggest_baseline() {
             (None, None) => panic!("{ctx}: matched row carries no ap ceiling at all"),
         };
         assert!(
-            (envelope_clamped - row_ap_ceiling).abs() < 1e-9,
-            "{ctx}: the proposal must be the matched row's own ap ceiling \
-             (min(ap_max_factor × Ø6, ap_max_mm) = {row_ap_ceiling}), got {envelope_clamped}"
+            (vendor_bound - row_ap_ceiling).abs() < 1e-9 && envelope_clamped < row_ap_ceiling,
+            "{ctx}: the vendor ap bound {vendor_bound} must be the matched row's own ap ceiling \
+             (min(ap_max_factor × Ø6, ap_max_mm) = {row_ap_ceiling}), and the proposal \
+             {envelope_clamped} sits under it"
         );
         // Re-baselined 2026-09-23 (feeds matrix R5): the printed Spektra
         // pocket row carries the chart's own depth condition, ap_max_factor
         // 1.0 (1 x D = 6.0 mm). The 4.2 mm baseline of 2026-08-16 was the
         // 0.7 x D ceiling of the unprinted row, now derived/c.
         assert!(
-            (envelope_clamped - 6.0).abs() < 0.05,
-            "{ctx}: envelope-clamped DPP must land near 6.0 mm (the printed row's 1 x D \
+            (vendor_bound - 6.0).abs() < 0.05,
+            "{ctx}: the vendor ap bound must land near 6.0 mm (the printed row's 1 x D \
              ceiling; re-baselined from 4.2 on 2026-09-23 for R5, from 5.4 on 2026-08-16 \
-             for 6604303c / Checkpoint K-(a4)), got {envelope_clamped}"
+             for 6604303c / Checkpoint K-(a4)), got {vendor_bound}"
         );
 
         // ── RE-BASELINED 2026-08-13 (Checkpoint J-1) ───────────────────
@@ -596,10 +604,12 @@ fn wanaka_suggest_baseline() {
             .safe_envelope(&deep)
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
+        // RE-PINNED 2026-11-15 (P29-4 and P29-5): the force budget is
+        // reached before the vendor ap bound (the Back Rough block).
         assert_eq!(
             envelope.proposal_binding,
-            Some(LimitKind::VendorAxial),
-            "{ctx}: the vendor ap bound must bind a stated 9 mm"
+            Some(LimitKind::Rigidity),
+            "{ctx}: the force budget must bind a stated 9 mm"
         );
         let envelope_clamped = envelope.proposal.get().ap_mm().expect("a proposed depth");
         assert!(

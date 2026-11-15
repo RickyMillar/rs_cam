@@ -609,8 +609,6 @@ struct Row {
     /// The peak chip of the body cut that the warning reports (mm/tooth).
     /// Meaningful only when `bound`.
     peak_chip: f64,
-    /// The radial width of the cut (mm).
-    ae_mm: f64,
     /// The floor actually applied — the global constant, or the matched band's
     /// derated ceiling when that sat lower. Meaningful only when `bound`.
     applied_floor: f64,
@@ -786,7 +784,6 @@ fn sweep() -> Vec<Row> {
                         bound: clamp.is_some(),
                         requested_fpt: clamp.map_or(final_fpt, |c| c.0),
                         peak_chip: clamp.map_or(f64::NAN, |c| c.3),
-                        ae_mm: ae,
                         applied_floor: clamp.map_or(f64::NAN, |c| c.1),
                         band_capped_from: clamp.and_then(|c| c.2),
                         final_fpt,
