@@ -509,3 +509,103 @@ Base commit `03090f83c`. Written before the code.
 | F7 | With `depth_per_pass`, remaining stock and +0.6 on the stepped-stock fixture: each fed point is at Y +0.6, the levels are the levels of part B (18 to 8), and no sample cuts more than one step. |
 | F8 | `set_param_refuses_absent_field_n5` does not move (as in part A). The MCP wire pin does not move. |
 | F9 | Wanaka (two laps of the 2 mm tool, +0.6 and -0.6): the count of `tool.flute_overreach` moves of "V rivers and lakes" falls from 189; no prediction of the new count. The 2 mm tool (8 mm flute) cuts at most `depth_per_pass` 1.0 mm plus the cell per sample. |
+
+## 13. Part F: what is built, and the results
+
+- `ProjectCurveConfig::lateral_offset: Option<f64>` (range -10.0 to 10.0 mm; not written when
+  empty). GUI row "Lateral offset" in the Advanced section of the Project Curve editor; empty shows
+  "on the curve". The row is NOT seen on screen.
+- `ops/project_curve.rs`: `lateral_curves` (rules 2, 3, 6 and 7). It calls
+  `polygon::offset_open_path_reported` for an open path and `ops::profile::rings_moved_out` for a
+  ring. `rings_moved_out` is the ring rule of Profile side `on`, moved out of `moved_on_line_rings`
+  so that the two ops read one routine.
+- `compute/execute/curve.rs`: `CurveOp::plan` returns a `PlannedCurve` (the path, the notes, the
+  offset failure count). `run_curve` records the notes as a `TabPlacementFinding` and the failures
+  as `OffsetFailures`.
+- `compute/execute/curve_engrave.rs`: with a value, `ProjectCurveOp::plan` moves the curve and
+  projects each piece with the kernel of before. With no value it calls the kernel on the curve,
+  as before.
+- The warning: `TabNote::OffsetSplit { start, offset, pieces, closed }` on the note list of P35 D,
+  given by the diagnostics as `geom.profile_loop_split` (Caution).
+
+| # | Result |
+|---|---|
+| F1 | Held: section 14. |
+| F2 | Held. Red before the code: "unknown parameter 'lateral_offset' for Project Curve operation" (7 of 7 tests). After it `an_open_path_moves_left_for_a_positive_value_p35f`: Y +0.6 for +0.6, Y -0.6 for -0.6 (to 1e-9), X span -30 to 30. |
+| F3 | Held. `a_closed_ring_moves_out_of_its_own_area_p35f` (the two windings; side `inside` gives 2.4 mm inside). |
+| F4 | Held. `a_corner_keeps_the_distance_on_the_two_sides_p35f` (within 0.011 mm; the right side goes round the corner). |
+| F5 | Held. `the_projection_runs_at_the_offset_position_p35f`: tip Z 8 with no value, Z 11 with the cutter projection at +2.0, Z 8 with the point projection at +2.0. |
+| F6 | Held. `a_split_is_cut_piece_by_piece_with_a_warning_p35f`: the dumbbell gives 2 pieces and one note; the hairpin gives a piece count that is not 1 and one note; the op generates. |
+| F7 | Held. `the_ladder_and_the_remaining_stock_read_the_moved_path_p35f`: every fed move at Y +0.6, levels 18 to 8, no fed move above the floor over the floor part, deepest sample at most 2.5 mm. |
+| F8 | Section 14. |
+| F9 | The count falls from 189 to 152. The worst move does not change. See below. |
+
+Not tested: the sign of an open path on a Bottom setup (`drawing_mirrored` is the rule of Trace;
+no test arm here runs a Bottom setup).
+
+### The wanaka job with the two laps (read only)
+
+The scratch copy is `p35/wanaka/proposal_with_slot.toml` in the scratch folder of the step: the
+proposal of `03090f83c` with two new toolpaths (ids 29 and 30) after "Lake relief band 6 mm, 1
+lake to Z 11.4". Each is a copy of "Lake outline channel 6 mm" with tool 5, no selection table
+(both layers of model 8), `depth = -4.15`, `depth_per_pass = 1.0`, `lateral_offset = 0.6` or
+`-0.6`, feed 1010, plunge 240, spindle 18000, remaining stock. The copied `feeds_provenance`
+records are the records of the 6 mm op; they were not written again.
+
+Instrument: the release CLI of this tree, `project <copy> --setup "1 Back" --summary`, under the
+memory guard, cell 0.2 mm, cap only. The same run on the proposal as committed gives the base
+figures (189 moves, worst 9.40 mm: the figures of the lead). The run with the laps took 103 s and
+13.9 GB.
+
+| | "River and lake slot 2 mm, 0.6 left" | "... 0.6 right" |
+|---|---|---|
+| Moves | 11659 | 11865 |
+| Cut length | 2560 mm | 2566 mm |
+| Rapid length | 41108 mm | 40804 mm |
+| Plunges | 78 | 71 |
+| Deepest body sample (the depth row of the force budget) | 0.879 mm | 0.880 mm |
+| Samples that cut | 646 of 182455 | 552 of 181394 |
+| Collisions, rapid collisions | 0, 0 | 0, 0 |
+| Findings | `geom.profile_loop_split`, `tool.reach_past_flute` | the same |
+
+- Time: the simulated time of the setup goes from 9532 s to 11132 s, so the two laps together add
+  1600 s. The cut and rapid lengths of every other op are equal in the two runs. A time per lap
+  was not measured.
+- "V rivers and lakes": 152 moves with wood over the tip above the flute (189 before). The worst
+  is the same move: move 10604 at X293.138 Y324.278 Z6.853, 9.40 mm of wood over the tip.
+- Shank and holder: every op of the setup has 0 collisions in the two runs. The one rapid
+  collision is "Drill light holes" (known). The contact zones of the simulation hold only
+  `flute_top`: "Pin drill" 5, "V rivers and lakes" 152, "Day strip slit V60" 7. The two laps have
+  no contact zone.
+- The laps cut little: 646 and 552 samples remove material. The 6 mm channels took the rest.
+- Why 152 moves stay was NOT found. Two facts from the numbers of the ruling: the slot is
+  3.2 mm wide and the shank of the V-bit is 3.175 mm, so the clearance is 0.0125 mm on each side,
+  below the 0.2 mm cell of the simulation; and each lap has the warning `geom.profile_loop_split`
+  (some curves have no room for 0.6 mm, so they are cut in pieces or not cut). The note text of
+  the pieces was not read on this job.
+
+Decisions for the lead (part F):
+
+1. The warning of a Project Curve uses the id `geom.profile_loop_split` and the note list named
+   for the tabs. A rename of the id (for example `geom.offset_split`) is a break of one day old
+   id; it is not done.
+2. The laps as stated remove 37 of the 189 moves. A wider offset or a third lap is a job
+   decision.
+
+## 14. Gates of part F (the tree with part F, 2026-11-16)
+
+The lead stopped the gate script during the `rs_cam_mcp` run. The gates before it were complete;
+the gates from `rs_cam_mcp` on ran again afterwards, on the same tree.
+
+| Gate | Result |
+|---|---|
+| Full clippy | Clean. |
+| Core `--lib` | 2836 passed, 1 failed: `the_envelope_meets_its_time_budget` (the known red of a parallel run). |
+| `rs_cam_mcp`, `rs_cam_cli` tests | Passed. |
+| Viz `--lib` (`--test-threads 2`) | 705 passed, 2 ignored. |
+| Viz `mcp_wire_surface_pin`, `one_place_per_diagnostic_w2b`, `the_inspector_bad_states_w0`, `the_help_key_is_the_param_name_ui04`, `operations_registry_ui05`, `the_inspector_draws_only_kit_rows_w6`, `folder_maps_name_real_files_f140`, `a_job_with_each_finding_exports_and_names_it_on_every_surface_k6` | Passed. The wire pin did not move (F8). |
+| `every_op_keeps_its_toolpath_g_opgolden` | 46 changes: the 46 known rows (sorted diff empty). The seven `project_curve/*` arms read "ok" (F1). |
+| `set_param_refuses_absent_field_n5` | Passed. No pin moved (F8). |
+| 39 core sentries (the P35 test files, the Project Curve, Profile, tab, `compute/`, `dressup/` and `diagnostics/` sentries, the folder map and test hygiene sentries) | Passed, but for the two known reds: `every_op_conforms_w4` check 6 and `layered_framework_owns_the_ladder_w3` (the same two tests and the same hashes as before). |
+
+Not run for F: FM1, `perf_golden_sim_metrics`, `strategy_advisor_smoke`.

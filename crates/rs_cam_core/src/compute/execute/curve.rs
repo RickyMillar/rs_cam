@@ -14,7 +14,9 @@
 //! - the Z frame ([`CurveFrame`], from `ExecutionContext::z_flipped`);
 //! - the height query (W6.3 `HeightQuery::Mesh`: the mesh and the cutter
 //!   of the context);
-//! - the cancel, the per-curve loop and the concatenation;
+//! - the cancel, the per-curve loop and the concatenation; P35 F: the
+//!   record of the notes and the offset failures of each curve
+//!   ([`PlannedCurve`]);
 //! - the link inputs, resolved once ([`CurveLink`]): the territory
 //!   regions (W6.2), the ONE link ceiling of the op's row
 //!   (`op_link_ceiling`, G-LINKCEIL) and the link kinematics;
@@ -61,6 +63,17 @@ pub(crate) struct CurveLink<'a> {
     pub kinematics: Option<&'a LinkKinematics>,
 }
 
+/// What [`CurveOp::plan`] gives for one curve.
+pub(crate) struct PlannedCurve {
+    /// The curve at the full depth.
+    pub toolpath: Toolpath,
+    /// P35 F: the notes of the curve (`TabNote::OffsetSplit`).
+    pub notes: Vec<crate::compute::toolpath_stats::TabNote>,
+    /// P35 F: the offset failures of the curve; `None` when the op made
+    /// no offset call through a `_reported` name.
+    pub offset_failures: Option<usize>,
+}
+
 /// One curve op. See the module doc for what the runner owns.
 pub(crate) trait CurveOp {
     /// The label prefix of the cut-run spans.
@@ -70,14 +83,16 @@ pub(crate) trait CurveOp {
     /// guard compares the measured engagement with it.
     fn commanded_depth_mm(&self) -> f64;
 
-    /// Project and cut one curve.
+    /// Project and cut one curve. P35 F: the op also gives the notes of
+    /// the curve (a lateral offset that is not one piece) and its offset
+    /// failure count; the runner records them.
     fn plan(
         &self,
         curve: &Polygon2,
         query: HeightQuery<'_>,
         frame: CurveFrame,
         cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError>;
+    ) -> Result<PlannedCurve, OperationError>;
 
     /// Join the planned curves. The totals are `Some` only when the link
     /// stage ran; the runner records them (G-LINKVISIBLE). The default
@@ -120,10 +135,22 @@ pub(crate) fn run_curve<O: CurveOp>(
     };
     let cancel = ctx.cancel_fn();
     let mut planned = Toolpath::new();
+    let mut notes = Vec::new();
     for curve in curves {
-        planned
-            .moves
-            .extend(op.plan(curve, query, frame, &cancel)?.moves);
+        let one = op.plan(curve, query, frame, &cancel)?;
+        planned.moves.extend(one.toolpath.moves);
+        notes.extend(one.notes);
+        if let Some(failures) = one.offset_failures {
+            ctx.record(&super::findings::OffsetFailures(failures));
+        }
+    }
+    // P35 F: a curve that the lateral offset does not give back as one
+    // piece. The per-loop note list is the channel of P35 D.
+    if !notes.is_empty() {
+        ctx.record(&crate::compute::toolpath_stats::TabPlacementFinding {
+            op: op_type.label(),
+            notes,
+        });
     }
     if let Some(finding) = BuriedCurveFinding::measure(
         &planned,

@@ -443,33 +443,43 @@ pub fn on_line_contours(
     Ok((contours, splits))
 }
 
-/// P35: one closed ring of side `On` moved out of its own area by `leave`:
-/// each ring the offset gives back (P35 D). The offset sign reads a CCW
-/// ring (see [`profile_contour_reported`]), and a ring of side `On` comes
+/// P35: one closed ring moved out of the area that it closes by `distance`
+/// (a negative value moves it in): each ring the offset gives back, with
+/// the offset failure count. An empty list is a collapse. The offset sign
+/// reads a CCW ring (see [`profile_contour_reported`]), and the ring comes
 /// in the drawn winding, so the offset runs on a CCW copy and each result
-/// takes the drawn winding back.
-fn moved_on_line_rings(ring: &[P2], leave: f64) -> Result<Vec<Vec<P2>>, RadialLeaveRefusal> {
+/// takes the drawn winding back. THE ring rule of Profile side `On` and of
+/// the lateral offset of Project Curve (P35 F).
+pub(crate) fn rings_moved_out(ring: &[P2], distance: f64) -> (Vec<Vec<P2>>, usize) {
     let mut ccw = Polygon2::new(ring.to_vec());
     let drawn_ccw = ccw.signed_area() >= 0.0;
     ccw.ensure_winding();
     // Outward is negative for the offset.
-    let (mut rings, _failures) = moved_rings(&ccw, -leave, leave).map_err(|refusal| {
-        // Name the drawn start point, not the start of the CCW copy.
-        match (refusal, ring.first()) {
-            (RadialLeaveRefusal::Collapsed { leave, .. }, Some(first)) => {
-                RadialLeaveRefusal::Collapsed {
-                    start: [first.x, first.y],
-                    leave,
-                }
-            }
-            (other, _) => other,
-        }
-    })?;
+    let (results, failure) = crate::polygon::offset_polygon_reported(&ccw, -distance);
+    let mut rings: Vec<Vec<P2>> = results
+        .into_iter()
+        .map(|p| p.exterior)
+        .filter(|ring| ring.len() >= 3)
+        .collect();
     for moved in &mut rings {
         let moved_ccw = Polygon2::new(moved.clone()).signed_area() >= 0.0;
         if moved_ccw != drawn_ccw {
             moved.reverse();
         }
+    }
+    (rings, usize::from(failure.is_some()))
+}
+
+/// P35: one closed ring of side `On` moved out of its own area by `leave`:
+/// each ring the offset gives back (P35 D, [`rings_moved_out`]). No ring
+/// refuses, and the refusal names the drawn start point.
+fn moved_on_line_rings(ring: &[P2], leave: f64) -> Result<Vec<Vec<P2>>, RadialLeaveRefusal> {
+    let (rings, _failures) = rings_moved_out(ring, leave);
+    if rings.is_empty() {
+        return Err(RadialLeaveRefusal::Collapsed {
+            start: ring.first().map_or([0.0, 0.0], |p| [p.x, p.y]),
+            leave,
+        });
     }
     Ok(rings)
 }

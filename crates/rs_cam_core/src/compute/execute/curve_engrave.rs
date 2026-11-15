@@ -24,7 +24,7 @@ use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 use std::borrow::Cow;
 
-use super::curve::{CurveFrame, CurveLink, CurveOp, run_curve};
+use super::curve::{CurveFrame, CurveLink, CurveOp, PlannedCurve, run_curve};
 use super::height_field::{
     AnalyticField, HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule,
     run_height_field,
@@ -555,18 +555,35 @@ impl CurveOp for ProjectCurveOp<'_> {
         query: HeightQuery<'_>,
         frame: CurveFrame,
         cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<PlannedCurve, OperationError> {
         let (MeshInput { mesh, index }, cutter) = query.mesh(OperationType::ProjectCurve)?;
-        Ok(
+        let params = self.kernel_params(frame);
+        let project = |curve: &Polygon2| {
             crate::ops::project_curve::project_curve_toolpath_with_cancel(
-                curve,
-                mesh,
-                index,
-                cutter,
-                &self.kernel_params(frame),
-                cancel,
-            )?,
-        )
+                curve, mesh, index, cutter, &params, cancel,
+            )
+        };
+        // No lateral offset (no key, or 0): the curve itself, as before.
+        let offset = self.cfg.lateral_offset.unwrap_or(0.0);
+        if offset.abs() <= 0.0 {
+            return Ok(PlannedCurve {
+                toolpath: project(curve)?,
+                notes: Vec::new(),
+                offset_failures: None,
+            });
+        }
+        // P35 F: the curve moves in XY before the projection, so the tip Z
+        // of each sample is the projection at the moved position.
+        let moved = crate::ops::project_curve::lateral_curves(curve, offset, frame.z_flipped);
+        let mut toolpath = Toolpath::new();
+        for piece in &moved.curves {
+            toolpath.moves.extend(project(piece)?.moves);
+        }
+        Ok(PlannedCurve {
+            toolpath,
+            notes: moved.notes,
+            offset_failures: Some(moved.failures),
+        })
     }
 
     /// P33: the depth ladder (`depth_per_pass`). With no key the op has

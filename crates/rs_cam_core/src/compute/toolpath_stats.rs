@@ -1226,6 +1226,22 @@ pub enum TabNote {
         /// The rings the op cuts for this loop. At least 2.
         rings: usize,
     },
+    /// P35 F (operator ruling 2026-11-16): the lateral offset of a Project
+    /// Curve does not give one piece for a curve. A bend tighter than the
+    /// value, or a part of a ring narrower than the value allows, has no
+    /// room for the moved path. The op cuts each piece that the offset
+    /// gives back; with no piece the curve is not cut. A warning
+    /// (`geom.profile_loop_split`, `Caution`).
+    OffsetSplit {
+        /// The drawn start of the curve (setup frame).
+        start: [f64; 2],
+        /// The lateral offset (mm).
+        offset: f64,
+        /// The pieces the op cuts for this curve. Never 1.
+        pieces: usize,
+        /// True for a closed ring, false for an open path.
+        closed: bool,
+    },
 }
 
 impl TabNote {
@@ -1234,7 +1250,7 @@ impl TabNote {
     #[must_use]
     pub const fn warns(&self) -> bool {
         match self {
-            Self::SplitLoop { .. } => true,
+            Self::SplitLoop { .. } | Self::OffsetSplit { .. } => true,
             Self::EvenSpacing { .. } | Self::FewerThanAsked { .. } | Self::OpenPath { .. } => false,
         }
     }
@@ -1281,6 +1297,27 @@ impl std::fmt::Display for TabNote {
                  to leave of {leave:.3} mm: each ring is cut, and the narrow parts of the loop \
                  between the rings are not cut."
             ),
+            Self::OffsetSplit {
+                start: [x, y],
+                offset,
+                pieces,
+                closed,
+            } => {
+                let what = if closed { "ring" } else { "open path" };
+                match pieces {
+                    0 => write!(
+                        f,
+                        "The {what} from X{x:.2} Y{y:.2} has no room for a lateral offset of \
+                         {offset:.3} mm: it is not cut."
+                    ),
+                    n => write!(
+                        f,
+                        "The {what} from X{x:.2} Y{y:.2} gives {n} pieces with a lateral offset \
+                         of {offset:.3} mm: each piece is cut, and the parts with no room for \
+                         the offset are not cut."
+                    ),
+                }
+            }
         }
     }
 }

@@ -418,6 +418,71 @@ fn project_polygon_rings_with_cancel(
     Ok(())
 }
 
+/// P35 F: the curves of one drawn curve after the lateral offset.
+#[derive(Debug, Clone)]
+pub struct LateralCurves {
+    /// The tool-centre curves before `side`: open pieces in the drawn
+    /// direction, or closed rings in the drawn winding. Empty when the
+    /// offset leaves no room.
+    pub curves: Vec<Polygon2>,
+    /// The offset calls that came back with an `OffsetFailure`.
+    pub failures: usize,
+    /// One note for each ring or path that is not one piece.
+    pub notes: Vec<crate::compute::toolpath_stats::TabNote>,
+}
+
+/// P35 F (operator ruling 2026-11-16, "2 mm tool slot"): `curve` moved by
+/// the lateral offset `offset` (mm) in XY, before the projection.
+///
+/// - An open path: a positive value is to the LEFT of the drawn direction
+///   (the first point to the last), the sign of
+///   [`crate::polygon::offset_open_path_reported`] and of Trace `left`.
+///   `drawing_mirrored` (a Bottom setup) flips the sign, so the side holds
+///   in the drawing frame, as `TraceParams::drawing_mirrored` does.
+/// - A closed ring: a positive value moves the ring OUT of the area that
+///   it closes ([`crate::ops::profile::rings_moved_out`], the rule of
+///   Profile side `On`). Each ring of the polygon is its own loop.
+///
+/// A path or a ring that the offset does not give back as one piece is
+/// cut piece by piece (none, when the offset leaves no room), and one
+/// `TabNote::OffsetSplit` names it. No offset routine lives here.
+#[must_use]
+pub fn lateral_curves(curve: &Polygon2, offset: f64, drawing_mirrored: bool) -> LateralCurves {
+    use crate::compute::toolpath_stats::TabNote;
+    let note = |first: Option<&P2>, pieces: usize, closed: bool| {
+        (pieces != 1).then(|| TabNote::OffsetSplit {
+            start: first.map_or([0.0, 0.0], |p| [p.x, p.y]),
+            offset,
+            pieces,
+            closed,
+        })
+    };
+    let mut out = LateralCurves {
+        curves: Vec::new(),
+        failures: 0,
+        notes: Vec::new(),
+    };
+    if !curve.closed {
+        let distance = if drawing_mirrored { -offset } else { offset };
+        let (pieces, failure) = crate::polygon::offset_open_path_reported(curve, distance);
+        out.failures += usize::from(failure.is_some());
+        out.notes
+            .extend(note(curve.exterior.first(), pieces.len(), false));
+        out.curves = pieces;
+        return out;
+    }
+    for ring in std::iter::once(&curve.exterior)
+        .chain(&curve.holes)
+        .filter(|ring| ring.len() >= 3)
+    {
+        let (rings, failures) = crate::ops::profile::rings_moved_out(ring, offset);
+        out.failures += failures;
+        out.notes.extend(note(ring.first(), rings.len(), true));
+        out.curves.extend(rings.into_iter().map(Polygon2::new));
+    }
+    out
+}
+
 /// P33 (operator ruling 2026-11-15: "For multiple passes that should be
 /// built into the toolpath, not multiple tool paths"): the depth ladder of
 /// a Project Curve.

@@ -32,7 +32,7 @@ One typed finding model for every upstream source. `diagnostics::diagnose` turns
   keeps the detail) and an `anchor` (`Field { key }`, `Tool`, `Operation`, `Note` = Info/Hint at
   every site, `Project`, `View`). A new id needs a `TABLE` row. A site fills both from
   `presentation::face`/`anchor`, or builds its face with `face_or_default`. `fit_anchor` turns a
-  field the op does not publish into `Operation`; the orchestrator calls it. P35 D: the Profile note channel (`ToolpathStats::tab_placement`) gives two ids: `geom.tab_placement` (Info) and `geom.profile_loop_split` (Caution, the notes where `TabNote::warns`).
+  field the op does not publish into `Operation`; the orchestrator calls it. P35 D: the Profile note channel (`ToolpathStats::tab_placement`) gives two ids: `geom.tab_placement` (Info) and `geom.profile_loop_split` (Caution, the notes where `TabNote::warns`; P35 F: a Project Curve records its `TabNote::OffsetSplit` notes on the same list).
 
 ## Sentries
 

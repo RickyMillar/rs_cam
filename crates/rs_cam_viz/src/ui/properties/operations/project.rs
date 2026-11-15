@@ -155,6 +155,20 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
         fields,
     );
     advanced(ui, "proj_adv", |ui| {
+        // P35 F: an optional key. Empty cuts on the curve.
+        dv_opt(
+            ui,
+            p(
+                OperationType::ProjectCurve,
+                "lateral_offset",
+                "Lateral offset",
+            ),
+            &mut cfg.lateral_offset,
+            " mm",
+            0.1,
+            Some("on the curve"),
+            fields,
+        );
         dv(
             ui,
             p(

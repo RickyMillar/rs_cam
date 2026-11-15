@@ -33,6 +33,11 @@ const HELP_DEPTH: &str = "Total cut depth from stock surface.";
 const HELP_DEPTH_PER_PASS: &str =
     "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large.";
 
+const HELP_PROJECT_CURVE_LATERAL_OFFSET: &str = "Lateral offset (mm) of the tool centre from the drawn curve, in XY, before the projection. \
+     Empty or 0 cuts on the curve. An open path: a positive value is to the left of the drawn \
+     direction, a negative value to the right. A closed ring: a positive value moves the ring \
+     out of its own area, a negative value into it. The value adds to Side. A curve with no \
+     room for the offset is cut in pieces or not cut, with a warning.";
 const HELP_PROJECT_CURVE_DEPTH_PER_PASS: &str = "Largest depth of one pass. Empty cuts the full depth in one pass. With a value the \
      toolpath cuts the curve in equal passes from the op top Z (Heights) down to the full depth; \
      each pass is the projected curve at a smaller depth, and the last pass is the full depth.";
@@ -3701,6 +3706,16 @@ pub struct ProjectCurveConfig {
     )]
     #[param(driver_set = DRIVER_SET_SELECTION)]
     pub selection: Selection,
+    /// P35 F (operator ruling 2026-11-16, "2 mm tool slot"): the lateral
+    /// offset (mm) of the tool centre line from the drawn curve, in XY,
+    /// before the projection. `None` and `0` cut on the curve. An open
+    /// path: positive is to the left of the drawn direction. A closed
+    /// ring: positive is out of the area that the ring closes. It adds to
+    /// `side`. See `ops::project_curve::lateral_curves`. The range is the
+    /// range of the Profile `stock_to_leave_radial`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = HELP_PROJECT_CURVE_LATERAL_OFFSET, range = -10.0..=10.0)]
+    pub lateral_offset: Option<f64>,
 }
 
 /// `0.0` — chaining OFF.
@@ -3731,6 +3746,7 @@ impl Default for ProjectCurveConfig {
             spindle_rpm: None,
             chain_distance_mm: default_project_curve_chain_distance_mm(),
             selection: Selection::drawing(),
+            lateral_offset: None,
         }
     }
 }
