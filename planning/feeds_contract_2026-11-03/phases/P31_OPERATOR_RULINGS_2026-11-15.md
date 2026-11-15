@@ -85,3 +85,98 @@ Y 274.33 to Y 327.25, on X 15.5 and on X 379.5 (symmetric about Y 230). In each 
 **Verdict.** The corrected boxes do what the frame note said. Only ops of setup "3 Front" move
 (idx 12 and idx 17 of the ops that were generated). No obstacle hit. Not generated: idx 1, 2, 3,
 14, 15 and 16 (idx 14, 15 and 16 are in setup "3 Front" and can move).
+
+## B. Entry rubbing warns in the drawer only
+
+The operator, 2026-11-15: "Drawer only". An entry rubbing row stays red in the Limits drawer. It
+writes no export warning. The export warnings stay for the load limits (chip maximum, power,
+deflection, plunge rate, depth table).
+
+### B: the rule as it is built
+
+- One typed rule in core, next to `judged_only_before_the_simulation`:
+  `tool_load::groups::stated_row_warns_at_export(limit, cut)`. It is `false` only for
+  `LimitId::RubbingFloor` on `CutKind::Entry(_)` (a plunge, a ramp, a helix or a peck ladder). Each
+  match names every variant, so a new limit or a new cut kind does not compile until it states its
+  answer.
+- `ProjectSession::stated_cut_over_a_limit` (the door of `export.stated_cut_over_limit`) keeps a
+  stated row with the gating tone only where the rule is `true`, under both covers (no fresh
+  simulation, fresh simulation). The memo holds the cut of each row.
+- Not changed: the row, its tone, the drawer, the face line of the Passes card, the warning id
+  and its face.
+- An air lead (`EntryApproach`) and a lead-in (`LeadIn`) are in the entry GROUP but are not entry
+  cuts of the ruling; the rule keeps their warning. No stated row of the four files has one of
+  these cuts with the gating tone (measured, the probe below).
+
+### B: predictions (before the code)
+
+Instrument: a throwaway probe at HEAD (`p31/B/zz_p31_probe_b.rs`: every stated row with the gating
+tone, with its limit and its cut, and the words of `stated_cut_over_a_limit` under both covers),
+READ-ONLY on the four project files, no simulation, and a script that applies the rule
+(`p31/B/predict.py`; it first checks that the rule of HEAD gives the words of HEAD: 0 mismatches).
+
+"No simulation" is the warning of an export with no simulation. "Fresh simulation" is the warning
+after a simulation that is fresh for the op. An op that is not in a table has no stated-cut warning
+before or after.
+
+`nz_wanaka_21_operator.toml`: no warning changes. Idx 1, 2, 7, 8, 14 and 15 keep their warning
+with the same words (chip maximum rows; no entry rubbing row has the gating tone on this file).
+
+`nz_wanaka_21.toml`:
+
+| idx | State | Before | After |
+|---|---|---|---|
+| 2 | no simulation | stated point · moves 78 % over limit; 1 more stated row over a limit | stated point · moves 78 % over limit (no "more") |
+| 2 | fresh simulation | ramp entry · rubbing 48 % under floor | no warning |
+| 16 | no simulation | body · chip max 50 % over limit · until modulated | the same |
+| 17 | no simulation | ramp entry · rubbing 48 % under floor | no warning |
+| 17 | fresh simulation | ramp entry · rubbing 48 % under floor | no warning |
+
+`rivmap100.toml`:
+
+| idx | State | Before | After |
+|---|---|---|---|
+| 0 Face 5 | both | ramp entry · rubbing 44 % under floor | no warning |
+| 1 3D Rough | both | helix entry · rubbing 44 % under floor | no warning |
+| 2 Scallop Finish | both | body · rubbing 17 % under floor | the same |
+| 3 Project Curve | both | body · rubbing 17 % under floor; 1 more stated row over a limit | the same |
+
+`rivmap100_live_0925.toml`:
+
+| idx | State | Before | After |
+|---|---|---|---|
+| 0 Face 5 | both | ramp entry · rubbing 44 % under floor | no warning |
+| 1 3D Rough ladder | no simulation | stated point · depth 33 % over vendor depth cap | the same |
+| 2 Scallop Finish | both | body · rubbing 17 % under floor | the same |
+| 3 Project Curve | both | body · rubbing 17 % under floor; 1 more stated row over a limit | the same |
+
+Totals with no simulation: operator 6 warnings to 6; `nz_wanaka_21` 3 to 2; rivmap100 4 to 2;
+rivmap100_live 4 to 3. A body rubbing row (Scallop Finish, Project Curve) is not an entry row and
+keeps its warning.
+
+**The chip minimum of an entry.** The operator named only the rubbing floor, so the rule leaves a
+`ChipMin` row as it is. Count of stated `ChipMin` rows of an entry cut that exceed: operator 7,
+`nz_wanaka_21` 7, rivmap100 5, rivmap100_live 5. Every one has the advisory tone (the band floor of
+an entry is a reference, `AdvisoryFloor`), so none writes an export warning: 0 of 24 warn, before
+and after. They are caution rows of the drawer. A ruling is needed only if the operator wants
+these rows to change.
+
+**Tests that change.**
+
+- `a_job_with_each_finding_exports_and_names_it_k6`: the mirror case becomes
+  `a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6`. It asserts the one
+  stated row with the gating tone from `limit_rows` (rubbing floor, ramp entry, face "ramp entry ·
+  rubbing 44 % under floor"), no export warning and no `WARNING` header line.
+- `a_row_softens_only_under_a_current_modulation_p30_2`: claims 2 and 3 (after a simulation) assert
+  that the ramp rubbing row keeps the gating tone and that the export has no
+  `export.stated_cut_over_limit` warning. Claim 1 (no simulation) asserts the literal words
+  "stated point · feed cap 125 % over limit; 2 more stated rows over a limit; no current
+  simulation measured this op" (3 more before: the ramp rubbing row leaves the count).
+- `a_stated_cut_over_any_limit_warns_review_f4` (R4 and R8): the plunge-rate row of a plunge entry
+  still warns, with and without a simulation. This is the proof that an entry row of another limit
+  keeps its warning.
+
+**Op golden, FM1.** Golden arms run no simulation. The header line of the warning prints the face
+of the id, not the detail, so `gcode_hash` moves only on an arm that loses its warning: an arm
+whose only stated rows with the gating tone are entry rubbing rows. No other field moves. The list
+is measured with the code in place (results). FM1 reads no export warning: no cell moves.
