@@ -137,3 +137,27 @@ height map gives 238 moves, in the same areas.
 2. A V-bit with a longer cone (a 20 degree bit on a 6 mm shank has a cone of about 16 mm). No
    toolpath change.
 3. A shallower V-bit depth on the lake outlines (a design change of the map).
+
+## Update 2026-11-16, third: the 2 mm slot does not close the V-bit finding
+
+The operator chose option 1 (the 2 mm tool slot). P35 F (`51bac94ea`) added `lateral_offset` to
+Project Curve. Measured on a scratch copy (`p35/wanaka/proposal_with_slot.toml` in the lead
+scratchpad; release CLI, setup "1 Back"): two laps of the 2 mm tool at +0.6 and -0.6 mm from the
+V-bit curves, cutter projection, 4.15 mm above the front surface, on remaining stock.
+
+- V-bit moves with wood above the cone: 189 to 152. The worst move does not change (9.40 mm).
+- The two laps add 1600 s (41 m of rapid moves each).
+- **The two laps are NOT in the proposal file.**
+
+**Why (measured, `relief_sheet_s1.stl` against the V-bit end points and the height map).** The
+cone top is 8.15 mm above the tip, and the tip is 2.1 to 4.9 mm below the front surface. At 171 of
+the 227 remaining points, wood within the shank radius must go down to less than 4.0 mm from the
+front surface before the shank is free (least 2.73 mm, median 3.26 mm). A lap that keeps 4 mm of
+wood cannot remove that wood. The 4 mm rule and the 8.15 mm cone do not fit together at a steep
+shore.
+
+**What is left to choose:**
+1. A V-bit with a longer cone. No wood is thinned and no toolpath is added.
+2. Laps that follow the cone top (about 5 mm above the front surface at the offset position),
+   which leave 2.7 to 4 mm of wood at about 170 points.
+3. Leave the 189 moves: the shank rubs over at most 1.3 mm of height (median 0.85 mm).
