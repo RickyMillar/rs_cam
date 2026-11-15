@@ -1918,7 +1918,7 @@ enabled = true
 tool_id = 0
 model_id = 8
 boundary_inherit = true
-stock_source = "fresh"
+stock_source = "from_remaining_stock"
 coolant = "off"
 
 [setups.toolpaths.operation]
@@ -1975,7 +1975,7 @@ mode = "auto"
 
 [setups.toolpaths.heights.top_z]
 mode = "manual"
-value = 25.5
+value = 16.5
 
 [setups.toolpaths.heights.bottom_z]
 mode = "auto"
@@ -2158,7 +2158,7 @@ basis = 13
 
 [[setups.toolpaths]]
 id = 25
-name = "Lake relief band 6 mm, 10 lakes to Z 13.5"
+name = "Lake relief band 6 mm, 11 lakes to Z 13.5"
 enabled = true
 tool_id = 0
 model_id = 15
@@ -2171,6 +2171,7 @@ kind = "profile"
 
 [setups.toolpaths.operation.params]
 side = "on"
+stock_to_leave_radial = -1.0
 depth_per_pass = 2.1
 feed_rate = 3165.0
 plunge_rate = 1347.0
@@ -2192,95 +2193,6 @@ z = 13.5
 source = "toolpath_model"
 
 [setups.toolpaths.operation.params.selection.rules.filter]
-
-[[setups.toolpaths.operation.params.selection.excludes]]
-source = "toolpath_model"
-kind = "loop"
-layer = "LAKE_POCKET"
-anchor = [324.606876988699, 220.39322479181342]
-measure = 10.876224640093092
-
-[setups.toolpaths.dressups]
-entry_style = "ramp"
-helix_pitch = 1.0
-entry_clearance_mm = 0.5
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = true
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = true
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "manual"
-value = 25.5
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = false
-source = "stock"
-containment = "center"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = false
-
-[[setups.toolpaths]]
-id = 26
-name = "Lake relief band 6 mm, lake at X325 Y220 to Z 14.9"
-enabled = true
-tool_id = 0
-model_id = 15
-boundary_inherit = true
-stock_source = "fresh"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "profile"
-
-[setups.toolpaths.operation.params]
-side = "on"
-depth_per_pass = 2.1
-feed_rate = 3165.0
-plunge_rate = 1347.0
-ramp_feed_rate = 3165.0
-climb = true
-tab_count = 0
-tab_width = 6.0
-tab_height = 2.0
-finishing_passes = 0
-compensation = "in_computer"
-spindle_rpm = 10610
-region_ordering = "by_area"
-
-[setups.toolpaths.operation.params.floor]
-from = "z"
-z = 14.9
-
-[[setups.toolpaths.operation.params.selection.picks]]
-source = "toolpath_model"
-kind = "loop"
-layer = "LAKE_POCKET"
-anchor = [324.606876988699, 220.39322479181342]
-measure = 10.876224640093092
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -2340,6 +2252,7 @@ kind = "profile"
 
 [setups.toolpaths.operation.params]
 side = "on"
+stock_to_leave_radial = -1.0
 depth_per_pass = 2.1
 feed_rate = 3165.0
 plunge_rate = 1347.0

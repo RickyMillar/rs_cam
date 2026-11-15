@@ -59,3 +59,46 @@ side `on` and lifts the band of the one thin lake to Z 14.9 (10.90 + 4.0).
    top of 25.5 made 11 rapids enter stock, so the lead put 16.5 back. Cause not found.
 4. **Not done:** the dial-in of the roughs and of the 2 mm pockets; the V-bit depth; the pin drill
    (30 mm deep, 25 mm flute); the day strip slit.
+
+## Update 2026-11-16 (the proposal file as committed now)
+
+The operator answered on 2026-11-15/16: the shank cannot stay in the wood; cull the river passes
+that cut air; both files stay. Three code steps came from that (P35: `2755cfc6d`, `8f1b52170`,
+`f31841045`, `7df21620f`), and the proposal file changed. Measured on the release GUI of
+`7df21620f`, clean load, one Generate All, one simulation at 0.2 mm, cap only. This section
+replaces "Changes", "Result" and open items 1 and 2 above.
+
+### The file now
+
+1. **River:** `depth_per_pass = 2.1`, `stock_source = "from_remaining_stock"`, top Z 16.5 as in
+   the operator file. The pass ladder starts at the stock top under the curve, and the air-cut
+   filter drops the parts of a pass with no wood.
+2. **One band for model 15:** "Lake relief band 6 mm, 11 lakes to Z 13.5", side `on`,
+   `stock_to_leave_radial = -1.0`. The tool centre is 1.0 mm inside the lake edge (the centre line
+   of the 2 mm pocket tool), so the band reaches 2.0 mm outside the edge. Three lakes split at a
+   narrow neck (15 rings in all); the op warns `geom.profile_loop_split`.
+3. **The band for model 16** at Z 11.4 has the same offset.
+4. The band at Z 14.9 is deleted.
+
+Least wood under a band that reaches 2.0 mm outside the edge, against `relief_sheet_s1.stl`:
+4.23 mm (model 15), 5.17 mm (model 16).
+
+### Result
+
+| | Operator file | Proposal, 2026-11-16 |
+|---|---|---|
+| Shank contacts, "Lake pocket 2 mm, 11 lakes" | 463 | 0 |
+| Shank contacts, "Lake pocket 2 mm, 1 lake" | 110 | 0 |
+| V-bit moves with wood above the flute | 981 | 315 (worst 14.36 mm over the tip) |
+| River: deepest body cut | 14.33 mm | 2.05 mm (release CLI measure of P35 B) |
+| River: moves, cut length | 17261, 6506 mm | 48023, 13273 mm |
+| Moves above the stated feed | 0 | 0 |
+| Simulated total time | 16996 s | 18080 s |
+| Rapid into stock, "Drill light holes" | 1 | 1 (not fixed) |
+
+### Still open
+
+- The V-bit: 315 moves have wood above its 8.15 mm flute. The 6 mm band at 3 mm outside gave 194.
+- The drill rapid at the corner hole (item 3 above), and item 4 above.
+- Each tool size in the file is "estimated". The shank of the 2 mm tool (3.175 mm assumed) and
+  the flute of the 6 mm tool decide the shank and the pin drill findings.
