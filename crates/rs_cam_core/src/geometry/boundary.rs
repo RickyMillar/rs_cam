@@ -723,10 +723,36 @@ pub(crate) fn clip_walk(
         }
 
         let descent_feed = usable_plunge_rate.unwrap_or(source_feed);
+        // P31 A (operator, 2026-11-13: "go for the fixes"): a kept piece of
+        // a lift in place (the same XY, the target higher). A re-entry into
+        // it goes down only to the top of the kept piece: a descent to its
+        // low end and the lift back up cut a column that the source path
+        // cut on its way to the lift, and the clip removed that way.
+        let lifts_in_place = start.x.total_cmp(&m.target.x).is_eq()
+            && start.y.total_cmp(&m.target.y).is_eq()
+            && m.target.z > start.z;
         let mut ends_at_target = false;
         for &(interval_start, interval_end) in &intervals {
             let entry = interpolate_segment(start, m.target, interval_start);
             let exit = interpolate_segment(start, m.target, interval_end);
+
+            if lifts_in_place && (interval_start > CLIP_PARAMETER_EPSILON || !at_source_target) {
+                if at_source_target {
+                    result.rapid_to_with_intent(
+                        P3::new(start.x, start.y, safe_z),
+                        MoveIntent::Retract,
+                    );
+                    at_source_target = false;
+                }
+                reentries.record(result.moves.len());
+                result.feed_to_with_intent(exit, descent_feed, MoveIntent::EntryPlunge);
+                ends_at_target = interval_end >= 1.0 - CLIP_PARAMETER_EPSILON;
+                if !ends_at_target {
+                    result
+                        .rapid_to_with_intent(P3::new(exit.x, exit.y, safe_z), MoveIntent::Retract);
+                }
+                continue;
+            }
 
             if interval_start > CLIP_PARAMETER_EPSILON {
                 if at_source_target {
@@ -1992,5 +2018,103 @@ mod tests {
             assert_eq!(m.move_type, MoveType::Rapid);
             assert!((m.target.z - safe_z).abs() < 1e-10);
         }
+    }
+
+    /// A permit that allows the tool only at or above `floor_z` inside the
+    /// X band `x0..x1`, and everywhere outside the band: the head zone of
+    /// an obstacle at one level.
+    struct BandFloor {
+        x0: f64,
+        x1: f64,
+        floor_z: f64,
+    }
+
+    impl ClipPermit for BandFloor {
+        fn point_allowed(&self, p: P3) -> bool {
+            p.x < self.x0 || p.x > self.x1 || p.z >= self.floor_z
+        }
+
+        fn allowed_intervals(&self, start: P3, end: P3) -> Vec<(f64, f64)> {
+            // The tests below use only moves along one axis.
+            let (a, b) = (self.point_allowed(start), self.point_allowed(end));
+            if a && b {
+                return vec![(0.0, 1.0)];
+            }
+            if !a && !b {
+                return Vec::new();
+            }
+            let t = if (end.z - start.z).abs() > 0.0 {
+                (self.floor_z - start.z) / (end.z - start.z)
+            } else {
+                let edge = if start.x < self.x0 || end.x < self.x0 {
+                    self.x0
+                } else {
+                    self.x1
+                };
+                (edge - start.x) / (end.x - start.x)
+            };
+            if a { vec![(0.0, t)] } else { vec![(t, 1.0)] }
+        }
+
+        fn arc_allowed(&self, start: P3, m: &Move) -> bool {
+            self.point_allowed(start) && self.point_allowed(m.target)
+        }
+    }
+
+    /// P31 A: the clip keeps the upper part of a lift in place (a tab
+    /// lift). The re-entry goes down to the top of the kept piece, not to
+    /// its low end and back up. Before the fix the walk gave a plunge to
+    /// Z 0.5 and a lift to Z 2 (operator file idx 17, two sites).
+    #[test]
+    fn a_reentry_into_a_lift_in_place_stops_at_its_top_p31() {
+        let permit = BandFloor {
+            x0: 10.0,
+            x1: 30.0,
+            floor_z: 0.5,
+        };
+        let safe_z = 20.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, safe_z));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 300.0);
+        // The floor pass enters the band, where the level Z 0 is not allowed.
+        tp.feed_to(P3::new(20.0, 0.0, 0.0), 1000.0);
+        // The tab lift, in place and inside the band: Z 0 to Z 2.
+        tp.feed_to(P3::new(20.0, 0.0, 2.0), 1000.0);
+        // The tab top, out of the band.
+        tp.feed_to(P3::new(40.0, 0.0, 2.0), 1000.0);
+
+        let (clipped, _mapping, reentries) =
+            clip_walk(&tp, &permit, safe_z, None, &ClipReentries::default());
+
+        let lowest_in_band = clipped
+            .moves
+            .iter()
+            .filter(|m| m.target.x > 10.0 && m.target.x < 30.0)
+            .map(|m| m.target.z)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            (lowest_in_band - 2.0).abs() < 1e-12,
+            "the tool goes no lower than the top of the lift inside the band: {lowest_in_band}"
+        );
+        let plunges: Vec<&Move> = clipped
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .collect();
+        assert_eq!(plunges.len(), 1, "one re-entry descent");
+        let plunge = plunges[0];
+        assert!((plunge.target.x - 20.0).abs() < 1e-12 && (plunge.target.z - 2.0).abs() < 1e-12);
+        assert_eq!(reentries.len(), 1, "the descent is a recorded re-entry");
+        assert_eq!(
+            clipped.moves[reentries.indices()[0]].target,
+            plunge.target,
+            "the record names the descent"
+        );
+        assert!(
+            clipped.moves.last().is_some_and(|last| {
+                (last.target.x - 40.0).abs() < 1e-12 && (last.target.z - 2.0).abs() < 1e-12
+            }),
+            "the tab top is kept to its end"
+        );
     }
 }

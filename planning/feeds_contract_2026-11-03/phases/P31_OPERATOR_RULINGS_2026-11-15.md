@@ -86,6 +86,30 @@ Y 274.33 to Y 327.25, on X 15.5 and on X 379.5 (symmetric about Y 230). In each 
 (idx 12 and idx 17 of the ops that were generated). No obstacle hit. Not generated: idx 1, 2, 3,
 14, 15 and 16 (idx 14, 15 and 16 are in setup "3 Front" and can move).
 
+### A: the two straight plunges, fixed by the lead (2026-11-15)
+
+The two straight plunges of idx 17 (re-entries 2 and 4 of the table above) were a defect of the
+clip walk. The clip kept the upper part of a tab lift (a lift in place, Z 0.5 to Z 2.0). The walk
+then went down to the low end of the kept piece and back up: a plunge of 0.75 mm into stock at
+1582 mm/min, with no cut after it at that level. The limit row of that plunge was "plunge rate
+17 % over limit" with the advisory tone, so no export warning named it.
+
+The fix is in `geometry::boundary::clip_walk`: a re-entry into a kept piece of a lift in place
+goes down only to the top of the kept piece. Unit test:
+`--lib a_reentry_into_a_lift_in_place_stops_at_its_top_p31` (red with the rule off: the tool goes
+to Z 0.5).
+
+Measured on the operator file (release, 12 ops, no simulation, export through
+`export_gcode_checked`): at (15.5, 327.25) and at (379.5, 132.75) the descent now ends at Z 2.0,
+the tab top; the level before it cut that position to Z 1.25, so the descent is in air. No move of
+the program reaches Z 0.5 at those sites. The op golden file does not move (the known 46 rows and
+the 42 header-only `gcode_hash` rows of B and C, no other row).
+
+The same run gives the export warnings of the operator file with no simulation: the "not
+simulated" load rows, the tool reach rows, and `export.stated_cut_over_limit` on idx 7 and idx 8.
+No `export.feed_above_stated` warning: no generated op of the operator file runs above a stated
+feed before a simulation.
+
 ## B. Entry rubbing warns in the drawer only
 
 The operator, 2026-11-15: "Drawer only". An entry rubbing row stays red in the Limits drawer. It
