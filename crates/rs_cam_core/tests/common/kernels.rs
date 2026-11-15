@@ -32,7 +32,10 @@ pub fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
 /// One profile level: the side offset, then the stamp. A collapsed offset
 /// gives no contour and an empty toolpath.
 pub fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
-    match profile_path_reported(polygon, params).0 {
+    match profile_path_reported(polygon, params)
+        .expect("no radial stock to leave refuses")
+        .0
+    {
         Some(contour) => {
             profile_path_to_toolpath(
                 &contour,

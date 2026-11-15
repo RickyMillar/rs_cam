@@ -465,6 +465,20 @@ pub(in crate::ui::properties) fn draw_profile_params(
             },
         );
         finishing_passes_row(ui, OperationType::Profile, &mut cfg.finishing_passes);
+        // P35: an optional key. Empty cuts on the line that Side gives.
+        dv_opt(
+            ui,
+            p(
+                OperationType::Profile,
+                "stock_to_leave_radial",
+                "Radial stock to leave",
+            ),
+            &mut cfg.stock_to_leave_radial,
+            " mm",
+            0.1,
+            Some("on the line"),
+            fields,
+        );
     });
 }
 

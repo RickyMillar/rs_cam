@@ -79,6 +79,90 @@ pub struct ProfileParams {
     /// When true, the controller handles tool radius compensation (G41/G42),
     /// so the toolpath follows the exact boundary geometry with no software offset.
     pub compensate_in_controller: bool,
+    /// P35: the radial stock to leave (mm), `ProfileConfig::stock_to_leave_radial`.
+    /// `0.0` is the path of before the field. See [`profile_path_reported`]
+    /// for where each side puts the tool centre.
+    pub stock_to_leave_radial: f64,
+}
+
+/// P35: why a loop with a radial stock to leave gives no cut ring. The op
+/// refuses; it does not drop the loop and it does not cut a part of it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RadialLeaveRefusal {
+    /// An open path (side `On`). It closes no area, so the value has no
+    /// direction.
+    OpenPath {
+        /// The first point of the path.
+        start: [f64; 2],
+        /// The value (mm).
+        leave: f64,
+    },
+    /// The moved loop is not one ring: it collapsed (`rings == 0`) or it
+    /// split.
+    NotOneRing {
+        /// The first point of the loop.
+        start: [f64; 2],
+        /// The value (mm).
+        leave: f64,
+        /// The count of rings the offset gave.
+        rings: usize,
+    },
+}
+
+impl std::fmt::Display for RadialLeaveRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::OpenPath { start, leave } => write!(
+                f,
+                "Profile: stock_to_leave_radial = {leave:.3} mm, and the open path that starts at \
+                 ({:.3}, {:.3}) closes no area, so the value has no direction. Set the value to 0, \
+                 or cut beside the path with Trace (compensation left or right).",
+                start[0], start[1]
+            ),
+            Self::NotOneRing {
+                start,
+                leave,
+                rings,
+            } => write!(
+                f,
+                "Profile: stock_to_leave_radial = {leave:.3} mm moves the loop that starts at \
+                 ({:.3}, {:.3}) to {}. Take the loop out of the selection or change the value.",
+                start[0],
+                start[1],
+                if rings == 0 {
+                    "no ring (the loop is too small)".to_owned()
+                } else {
+                    format!("{rings} rings (the loop splits)")
+                }
+            ),
+        }
+    }
+}
+
+/// True when `leave` moves the tool centre (P35). `0.0` and `-0.0` do not.
+fn moves_the_ring(leave: f64) -> bool {
+    leave.abs() > 0.0
+}
+
+/// P35: the ONE ring of `polygon` moved by `distance` (the sign of
+/// [`crate::polygon::offset_polygon_reported`]: positive is inward on a CCW
+/// ring), with the offset failure count. Anything but one ring refuses.
+fn one_moved_ring(
+    polygon: &Polygon2,
+    distance: f64,
+    leave: f64,
+) -> Result<(Vec<P2>, usize), RadialLeaveRefusal> {
+    let (results, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
+    let rings = results.len();
+    let mut usable = results.into_iter().filter(|p| p.exterior.len() >= 3);
+    match (usable.next(), rings) {
+        (Some(ring), 1) => Ok((ring.exterior, usize::from(failure.is_some()))),
+        (_, rings) => Err(RadialLeaveRefusal::NotOneRing {
+            start: polygon.exterior.first().map_or([0.0, 0.0], |p| [p.x, p.y]),
+            leave,
+            rings: if rings == 1 { 0 } else { rings },
+        }),
+    }
 }
 
 /// The **Z-independent half** of a profile pass (the Layered Profile
@@ -93,22 +177,72 @@ pub struct ProfileParams {
 /// Handles both compensation modes: `compensate_in_controller` returns the
 /// exterior verbatim (no offset is made, so the count is a measured `0`), and
 /// the software-compensation branch delegates to [`profile_contour_reported`].
-#[must_use]
+///
+/// # The radial stock to leave (P35)
+///
+/// `params.stock_to_leave_radial = s` moves the tool centre. A positive
+/// value leaves material on the wall (Fusion "Stock to Leave (Radial)",
+/// `research/fusion360_ui_reference.docx`); a negative value cuts past the
+/// line. With the tool radius `r`:
+///
+/// - `Outside`: the loop moved out by `r + s`;
+/// - `Inside`: the loop moved in by `r + s`;
+/// - `On`: the ring moved out by `s` (the area the ring closes is read as
+///   the part, as `Outside` reads it). The closed rings of side `On` go
+///   through [`on_line_contours`];
+/// - controller compensation: the programmed line is the loop moved by `s`
+///   alone, to the side of the tool. The controller adds its radius.
+///
+/// With `s = 0` the function is the function of before the field.
+///
+/// # Errors
+///
+/// With a value that is not 0, a moved loop that is not one ring
+/// ([`RadialLeaveRefusal`]). The caller refuses the op.
 pub fn profile_path_reported(
     polygon: &Polygon2,
     params: &ProfileParams,
-) -> (Option<Vec<P2>>, usize) {
-    if params.compensate_in_controller {
-        // Controller handles the offset — toolpath follows the exact boundary.
-        let pts = polygon.exterior.clone();
-        if pts.len() < 3 {
-            return (None, 0);
-        }
-        // No offset is made on this branch, so there is nothing to count.
-        (Some(pts), 0)
-    } else {
-        profile_contour_reported(polygon, params.tool_radius, params.side)
+) -> Result<(Option<Vec<P2>>, usize), RadialLeaveRefusal> {
+    let leave = params.stock_to_leave_radial;
+    if !moves_the_ring(leave) {
+        return Ok(if params.compensate_in_controller {
+            // Controller handles the offset — toolpath follows the exact boundary.
+            let pts = polygon.exterior.clone();
+            if pts.len() < 3 {
+                (None, 0)
+            } else {
+                // No offset is made on this branch, so there is nothing to count.
+                (Some(pts), 0)
+            }
+        } else {
+            profile_contour_reported(polygon, params.tool_radius, params.side)
+        });
     }
+    // The radius the software offsets by: none when the controller adds it.
+    let radius = if params.compensate_in_controller {
+        0.0
+    } else {
+        params.tool_radius
+    };
+    // The sign of `profile_contour_reported`: inward is positive.
+    let distance = match params.side {
+        ProfileSide::Inside => radius + leave,
+        ProfileSide::Outside => -(radius + leave),
+        // Side `On` cuts through `on_line_contours`. A closed exterior
+        // here takes the same rule: out by `leave`.
+        ProfileSide::On => {
+            return match on_line_contours(polygon, leave)?.into_iter().next() {
+                Some(OnLineContour::Closed(ring)) => Ok((Some(ring), 0)),
+                Some(OnLineContour::Open(_)) | None => Ok((None, 0)),
+            };
+        }
+    };
+    if !moves_the_ring(distance) {
+        // `r + s = 0`: the tool centre is on the line.
+        let pts = polygon.exterior.clone();
+        return Ok((if pts.len() < 3 { None } else { Some(pts) }, 0));
+    }
+    one_moved_ring(polygon, distance, leave).map(|(ring, failures)| (Some(ring), failures))
 }
 
 /// Generate the 2D profile contour (tool center path).
@@ -186,20 +320,77 @@ pub enum OnLineContour {
 /// path itself. The open/closed choice reads `polygon.closed` before any
 /// point count, so an open path never reaches the closed emitter. A ring
 /// below 3 points and a path below 2 points give no line.
-#[must_use]
-pub fn on_line_contours(polygon: &Polygon2) -> Vec<OnLineContour> {
+///
+/// P35: `leave` is the radial stock to leave (mm). `0.0` gives the lines
+/// themselves. Another value moves each closed ring out of the area that
+/// the ring itself closes by `leave` (a negative value moves it in); each
+/// ring is its own loop, a nested ring too. The moved ring keeps the
+/// winding of the drawn ring.
+///
+/// # Errors
+///
+/// With a value that is not 0: an open path (it closes no area, so the
+/// value has no direction), and a ring that the offset does not give back
+/// as one ring ([`RadialLeaveRefusal`]).
+pub fn on_line_contours(
+    polygon: &Polygon2,
+    leave: f64,
+) -> Result<Vec<OnLineContour>, RadialLeaveRefusal> {
+    let moved = moves_the_ring(leave);
     if !polygon.closed {
-        return if polygon.exterior.len() >= 2 {
-            vec![OnLineContour::Open(polygon.exterior.clone())]
-        } else {
-            Vec::new()
+        return match polygon.exterior.first() {
+            Some(first) if moved && polygon.exterior.len() >= 2 => {
+                Err(RadialLeaveRefusal::OpenPath {
+                    start: [first.x, first.y],
+                    leave,
+                })
+            }
+            Some(_) if polygon.exterior.len() >= 2 => {
+                Ok(vec![OnLineContour::Open(polygon.exterior.clone())])
+            }
+            Some(_) | None => Ok(Vec::new()),
         };
     }
     std::iter::once(&polygon.exterior)
         .chain(&polygon.holes)
         .filter(|ring| ring.len() >= 3)
-        .map(|ring| OnLineContour::Closed(ring.clone()))
+        .map(|ring| {
+            if moved {
+                moved_on_line_ring(ring, leave).map(OnLineContour::Closed)
+            } else {
+                Ok(OnLineContour::Closed(ring.clone()))
+            }
+        })
         .collect()
+}
+
+/// P35: one closed ring of side `On` moved out of its own area by `leave`.
+/// The offset sign reads a CCW ring (see [`profile_contour_reported`]), and
+/// a ring of side `On` comes in the drawn winding, so the offset runs on a
+/// CCW copy and the result takes the drawn winding back.
+fn moved_on_line_ring(ring: &[P2], leave: f64) -> Result<Vec<P2>, RadialLeaveRefusal> {
+    let mut ccw = Polygon2::new(ring.to_vec());
+    let drawn_ccw = ccw.signed_area() >= 0.0;
+    ccw.ensure_winding();
+    // Outward is negative for the offset.
+    let (mut moved, _failures) = one_moved_ring(&ccw, -leave, leave).map_err(|refusal| {
+        // Name the drawn start point, not the start of the CCW copy.
+        match (refusal, ring.first()) {
+            (RadialLeaveRefusal::NotOneRing { leave, rings, .. }, Some(first)) => {
+                RadialLeaveRefusal::NotOneRing {
+                    start: [first.x, first.y],
+                    leave,
+                    rings,
+                }
+            }
+            (other, _) => other,
+        }
+    })?;
+    let moved_ccw = Polygon2::new(moved.clone()).signed_area() >= 0.0;
+    if moved_ccw != drawn_ccw {
+        moved.reverse();
+    }
+    Ok(moved)
 }
 
 /// One pass along the open path `path` at `params.cut_depth` (P6.3, side
@@ -323,7 +514,10 @@ mod tests {
     /// `profile_path_to_toolpath` (`emit_level`). A collapsed offset gives
     /// no contour and an empty toolpath. D3 deleted the public wrapper.
     fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
-        match profile_path_reported(polygon, params).0 {
+        match profile_path_reported(polygon, params)
+            .expect("no radial stock to leave refuses")
+            .0
+        {
             Some(contour) => {
                 profile_path_to_toolpath(
                     &contour,
@@ -347,6 +541,7 @@ mod tests {
             safe_z: 10.0,
             climb: false,
             compensate_in_controller: false,
+            stock_to_leave_radial: 0.0,
         }
     }
 
@@ -553,6 +748,7 @@ mod tests {
                 safe_z: 5.0,
                 climb: false,
                 compensate_in_controller: false,
+                stock_to_leave_radial: 0.0,
             },
         );
         assert!(

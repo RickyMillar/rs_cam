@@ -646,6 +646,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     region_ordering:
                         rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
                     selection: rs_cam_core::selection::Selection::drawing(),
+                    stock_to_leave_radial: None,
                 })
             },
             ToolType::EndMill,

@@ -141,3 +141,37 @@ Operator ruling 2026-11-16: "Read the switch" (`P32_CAP_ONLY_2026-11-15.md` sect
 | C2 | Switch off: the candidate path is the planned path, move for move. |
 | C3 | The advisor time against a `run_simulation` of that candidate in the same mode: NOT equal in general. The advisor simulates the candidate alone, on fresh stock, at the automatic resolution, with no dressup; `run_simulation` reads the dressed result at the stored resolution. The test asserts equality on a session that removes those differences where it can, and section 4 states the gap that stays. |
 | C4 | `planning/fixtures/rivmap100/rivmap100.toml`: the choice in `cap_only` against `full` is measured and reported; no prediction of the winner. |
+
+## 4. Part A: what is built, and the results
+
+- `ProfileConfig::stock_to_leave_radial: Option<f64>` (range -10.0 to 10.0 mm; not written when
+  empty). GUI row "Radial stock to leave" in the Advanced section of the Profile editor; empty
+  shows "on the line". The row is NOT seen on screen (no GUI run in this step).
+- `ops/profile.rs`: `ProfileParams::stock_to_leave_radial`; `profile_path_reported` and
+  `on_line_contours` move the ring (rule 2) and return `RadialLeaveRefusal` (rules 3 and 4).
+  `profile_path_reported` now returns a `Result`.
+- `dressup/tabs.rs`: `plan_profile_tabs` returns a `Result`. `ProfilePass::prepare` and
+  `ProjectSession::tab_layout` give the refusal as `OperationError::InvalidParam`.
+- A ring of side `On` comes in the drawn winding. The offset runs on a counter-clockwise copy, and
+  the moved ring takes the drawn winding back, so the cut direction does not change.
+
+| # | Result |
+|---|---|
+| A1 | See section 7 (the op golden runs once on the full tree). |
+| A2 | Held. `side_on_with_minus_1_4_cuts_1_6_outside_and_4_4_inside_p35`: each fed point is 1.4 mm inside (within 0.011 mm, the arc tolerance of the offset); on the simulated stock (cell 0.5 mm) the cell one cell inside each band edge is cut and the cell one cell outside it is whole. The red state was shown with the offset turned off (`moves_the_ring` false): 6 of 7 tests failed, this one with "0.0000 mm from the line; expected -1.4". The prediction "the door refuses the key" was not run: the test was written after the field. |
+| A3 | Held. `outside_and_inside_move_by_the_radius_plus_the_value_p35`. |
+| A4 | Held. `a_clockwise_ring_and_a_bottom_setup_keep_the_side_p35` (the Bottom setup arm compares the ring area on the line and moved, on the standard fixture, in the two frames). |
+| A5 | Held. `a_collapsed_loop_and_an_open_path_refuse_p35`; a loop with a 2 mm neck refuses with "2 rings". |
+| A6 | Held. `in_control_programs_the_loop_moved_by_the_value_p35`. |
+| A7 | WRONG for `set_param_refuses_absent_field_n5`: it did not move (7 passed, no pin changed). The MCP wire pin and FM1: section 7. |
+
+Not predicted: the tabs. `the_tabs_follow_the_ring_and_the_door_takes_the_key_p35` reads
+`tab_layout`: each of the 4 automatic tabs is 1.4 mm inside the line. The same test holds the door:
+`SetToolpathParam` takes the key, refuses 10.5 (outside the range) and clears it with `null`.
+
+Decisions for the lead (part A):
+
+1. The direction of side `on` (section 1.2 rule 2).
+2. A loop that splits refuses the op. The other choice is to cut each ring of the split.
+3. The tab side rule of a NESTED ring of side `on` reads the moved ring as its outline (the drawn
+   ring before). The exterior ring reads the drawn outline.

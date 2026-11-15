@@ -970,11 +970,16 @@ pub struct ProfileTabRule<'a> {
 /// a loop with no side that holds a tab takes `count` tabs spaced evenly
 /// by length on the cut ring, and a note says so. With `count == 0` and no
 /// hand tab at all, no ring gets a tab and no ring moves its start.
-#[must_use]
+///
+/// # Errors
+///
+/// P35: with a radial stock to leave that is not 0, a loop that the offset
+/// does not give back as one ring, or an open path
+/// ([`crate::ops::profile::RadialLeaveRefusal`]). The caller refuses the op.
 pub fn plan_profile_tabs(
     pieces: &[crate::polygon::Polygon2],
     rule: &ProfileTabRule<'_>,
-) -> ProfileTabPlan {
+) -> Result<ProfileTabPlan, crate::ops::profile::RadialLeaveRefusal> {
     let tabs_on = rule.count > 0 || !rule.hand.is_empty();
     let mut plan = ProfileTabPlan {
         contours: Vec::new(),
@@ -983,10 +988,10 @@ pub fn plan_profile_tabs(
     };
     for piece in pieces {
         if rule.profile.side == crate::ops::profile::ProfileSide::On {
-            on_line_tabs(piece, rule, tabs_on, &mut plan);
+            on_line_tabs(piece, rule, tabs_on, &mut plan)?;
             continue;
         }
-        let (contour, failures) = crate::ops::profile::profile_path_reported(piece, rule.profile);
+        let (contour, failures) = crate::ops::profile::profile_path_reported(piece, rule.profile)?;
         plan.offset_failures += failures;
         let Some(contour) = contour else { continue };
         let ring = crate::ops::profile::profile_ring(&contour, rule.profile.climb);
@@ -1003,7 +1008,7 @@ pub fn plan_profile_tabs(
         };
         plan.contours.push(planned);
     }
-    plan
+    Ok(plan)
 }
 
 /// A contour with no tab: `ring` in cut order, its start as it is.
@@ -1033,21 +1038,24 @@ fn untabbed(region: Option<usize>, ring: Vec<P2>, closed: bool) -> PlannedContou
 ///   [`TabNote::OpenPath`](crate::compute::toolpath_stats::TabNote::OpenPath)
 ///   note.
 ///
-/// No offset is made, so no offset failure is counted.
+/// With no radial stock to leave no offset is made, so no offset failure
+/// is counted. P35: with a value, each closed ring is the moved ring
+/// (`on_line_contours`), and the tabs sit on it.
 fn on_line_tabs(
     piece: &crate::polygon::Polygon2,
     rule: &ProfileTabRule<'_>,
     tabs_on: bool,
     plan: &mut ProfileTabPlan,
-) {
+) -> Result<(), crate::ops::profile::RadialLeaveRefusal> {
     use crate::ops::profile::OnLineContour;
     let region = rule
         .regions
         .iter()
         .position(|r| r.closed == piece.closed && r.exterior == piece.exterior);
-    for (index, contour) in crate::ops::profile::on_line_contours(piece)
-        .into_iter()
-        .enumerate()
+    for (index, contour) in
+        crate::ops::profile::on_line_contours(piece, rule.profile.stock_to_leave_radial)?
+            .into_iter()
+            .enumerate()
     {
         match contour {
             OnLineContour::Open(path) => {
@@ -1083,6 +1091,7 @@ fn on_line_tabs(
             }
         }
     }
+    Ok(())
 }
 
 /// The tabs of the cut ring `ring` of `outline`, the region at index

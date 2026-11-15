@@ -13,7 +13,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
   `lead_side.rs` — the side of a lead arc (P6.0c, SAFETY): away from the `RingMaterial` the op states per closed pass (`Produced::closed_passes`); an arc off the air side keeps the plunge; no side and no probe: no lead.
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs, within the
   tolerance in 3D (G-TIERBURIAL). `feedopt.rs`, `feed_modulation.rs`,
-  `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5), the lift from the bridge width (P5b) and `apply_tabs`; P4.6: `plan_profile_tabs` is THE placement (`ProfilePass::prepare` and the `tab_layout` query; it reads `ops::profile`) and `resolve_hand_tabs` the one hand-tab resolver. `condition.rs` — segment merge (roughing; off where
+  `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5), the lift from the bridge width (P5b) and `apply_tabs`; P4.6: `plan_profile_tabs` is THE placement (`ProfilePass::prepare` and the `tab_layout` query; it reads `ops::profile`; P35: it returns the `RadialLeaveRefusal` of a loop that `stock_to_leave_radial` does not give back as one ring, and the tabs sit on the moved ring) and `resolve_hand_tabs` the one hand-tab resolver. `condition.rs` — segment merge (roughing; off where
   `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP; P6.0b: on a `finished_edge` op at most `FlattenPolicy::UNTOLERANCED_MM`).
 
 ## Invariants

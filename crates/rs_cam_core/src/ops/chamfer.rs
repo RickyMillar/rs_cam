@@ -237,6 +237,7 @@ pub(crate) fn chamfer_rings_at_z(
         safe_z: params.safe_z,
         climb: false,
         compensate_in_controller: false,
+        stock_to_leave_radial: 0.0,
     };
     let mut tp = SidedToolpath::new();
     for ring in rings {
@@ -320,6 +321,7 @@ pub(crate) fn chamfer_open_at_z(
         safe_z: params.safe_z,
         climb: false,
         compensate_in_controller: false,
+        stock_to_leave_radial: 0.0,
     };
     let mut tp = SidedToolpath::new();
     for path in paths {

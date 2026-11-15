@@ -164,6 +164,7 @@ pub(crate) fn generate_profile(
             safe_z: feeds.safe_z,
             climb: cfg.climb,
             compensate_in_controller: cfg.compensation == CompensationType::InControl,
+            stock_to_leave_radial: cfg.stock_to_leave_radial.unwrap_or(0.0),
         },
     };
     run_layered(&pass, ctx, prepared)
@@ -665,7 +666,10 @@ impl LayeredOp for ProfilePass<'_> {
                 width: self.cfg.tab_width,
                 profile: &self.base,
             },
-        );
+        )
+        // P35: a loop that the radial stock to leave does not give back as
+        // one ring refuses the op.
+        .map_err(|refusal| OperationError::InvalidParam(refusal.to_string()))?;
         let contours = plan
             .contours
             .into_iter()

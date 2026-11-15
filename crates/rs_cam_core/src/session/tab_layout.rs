@@ -129,6 +129,7 @@ impl ProjectSession {
             safe_z: 0.0,
             climb: cfg.climb,
             compensate_in_controller: cfg.compensation == CompensationType::InControl,
+            stock_to_leave_radial: cfg.stock_to_leave_radial.unwrap_or(0.0),
         };
         let plan = plan_profile_tabs(
             lines,
@@ -139,7 +140,10 @@ impl ProjectSession {
                 width: cfg.tab_width,
                 profile: &profile,
             },
-        );
+        )
+        .map_err(|refusal| {
+            SessionError::Operation(OperationError::InvalidParam(refusal.to_string()))
+        })?;
         // The frame door keeps the order of the items, so the index of an
         // item in the setup half names the same item in the model half. The
         // key of the model half is the key a pick of the item stores.

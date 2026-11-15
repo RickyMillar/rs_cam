@@ -176,6 +176,7 @@ fn test_no_nan_in_profile_toolpath() {
                 safe_z: 10.0,
                 climb: false,
                 compensate_in_controller: false,
+                stock_to_leave_radial: 0.0,
             };
 
             let tp = profile_level(&polygon, &params);

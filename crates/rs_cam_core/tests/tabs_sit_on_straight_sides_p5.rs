@@ -451,8 +451,10 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
         safe_z: 10.0,
         climb: cfg.climb,
         compensate_in_controller: false,
+        stock_to_leave_radial: 0.0,
     };
     let contour = profile_path_reported(&outline, &params)
+        .expect("no radial stock to leave refuses")
         .0
         .expect("a contour");
     let ring = profile_ring(&contour, params.climb);

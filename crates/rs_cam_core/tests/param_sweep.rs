@@ -378,6 +378,7 @@ fn default_profile_params() -> ProfileParams {
         safe_z: 10.0,
         climb: true,
         compensate_in_controller: false,
+        stock_to_leave_radial: 0.0,
     }
 }
 

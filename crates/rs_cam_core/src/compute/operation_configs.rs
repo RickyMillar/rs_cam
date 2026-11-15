@@ -61,6 +61,10 @@ const HELP_SLOPE_FROM: &str =
 const HELP_SLOPE_TO: &str =
     "Maximum surface slope (degrees) to machine. Steeper faces are skipped.";
 
+const HELP_STOCK_TO_LEAVE_RADIAL: &str = "Radial stock to leave (mm). Empty or 0 cuts on the line that Side gives. A positive value \
+     leaves material on the wall. A negative value cuts past the line. Outside moves the tool out, \
+     Inside moves it in, and On the line moves each closed loop out of its own area (negative: \
+     into it). An open path with a value refuses.";
 const HELP_STOCK_TO_LEAVE_AXIAL: &str = "Finishing allowance kept on the surface for a later pass. Applied as a vertical offset: on a \
      wall sloped at angle A, what remains measured normal to the surface is this value x cos(A).";
 
@@ -1134,6 +1138,16 @@ pub struct ProfileConfig {
     )]
     #[param(driver_set = DRIVER_SET_SELECTION)]
     pub selection: Selection,
+    /// P35 (operator ruling 2026-11-15): the radial stock to leave (mm).
+    /// `None` and `0` cut on the line that `side` gives. A positive value
+    /// leaves material on the wall; a negative value cuts past the line
+    /// (Fusion "Stock to Leave (Radial)",
+    /// `research/fusion360_ui_reference.docx`). Where the tool centre goes
+    /// per side: `ops::profile::profile_path_reported`. The range is the
+    /// magnitude of `stock_to_leave_axial` (10 mm) in the two directions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = HELP_STOCK_TO_LEAVE_RADIAL, range = -10.0..=10.0)]
+    pub stock_to_leave_radial: Option<f64>,
 }
 
 impl Default for ProfileConfig {
@@ -1156,6 +1170,7 @@ impl Default for ProfileConfig {
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
             selection: Selection::drawing(),
+            stock_to_leave_radial: None,
         }
     }
 }
