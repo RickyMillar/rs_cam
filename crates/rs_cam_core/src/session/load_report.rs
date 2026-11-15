@@ -576,6 +576,38 @@ mod tests {
         );
     }
 
+    /// The diagnostic walk of a surface that holds the trace `Arc` (the MCP
+    /// snapshot before and after each change) builds the report once, and
+    /// each list equals the list of the door that builds its own report.
+    /// Before the fix the walk built one report per toolpath: about 4
+    /// minutes on the GUI thread on the wanaka operator file (2026-11-15).
+    #[test]
+    fn a_diagnostic_walk_with_a_held_trace_builds_the_report_once() {
+        let mut s = session();
+        let tool_id = s.tools()[0].id.raw();
+        let _ = s.add_toolpath(0, pocket_config(tool_id)).unwrap();
+        s.insert_result(1, result_of(zigzag(1200.0))).unwrap();
+        let trace = Arc::new(fresh_trace(&s));
+        for index in 0..s.toolpath_count() {
+            let held = s
+                .diagnose_toolpath_with_held_trace(index, Some(&trace))
+                .unwrap();
+            let built = s
+                .diagnose_toolpath_with_trace(index, Some(trace.as_ref()))
+                .unwrap();
+            assert_eq!(
+                format!("{held:?}"),
+                format!("{built:?}"),
+                "toolpath {index}"
+            );
+        }
+        assert_eq!(
+            s.tool_load_report_builds(),
+            1,
+            "the walk built the report more than once"
+        );
+    }
+
     #[test]
     fn the_trace_is_keyed_by_identity_and_an_in_place_rewrite_reads_as_new() {
         let s = session();

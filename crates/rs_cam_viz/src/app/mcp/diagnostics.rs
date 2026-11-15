@@ -621,11 +621,13 @@ impl RsCamApp {
 
     pub(super) fn mcp_diagnostic_snapshot(&self) -> Vec<serde_json::Value> {
         let state = self.controller.state();
+        // The trace in its `Arc`: the per-toolpath walk below then reads
+        // the memoised load report (one build, not one per toolpath).
         let sim_trace = state
             .simulation
             .results
             .as_ref()
-            .and_then(|r| r.cut_trace.as_deref());
+            .and_then(|r| r.cut_trace.as_ref());
         let mut values = Vec::new();
         let evidence = viz_project_evidence(state);
         values.extend(
@@ -641,7 +643,7 @@ impl RsCamApp {
         for index in 0..state.session().toolpath_count() {
             if let Ok(diags) = state
                 .session()
-                .diagnose_toolpath_with_trace(index, sim_trace)
+                .diagnose_toolpath_with_held_trace(index, sim_trace)
             {
                 values.extend(
                     diags

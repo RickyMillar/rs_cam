@@ -113,7 +113,33 @@ impl ProjectSession {
         index: usize,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
-        self.diagnose_toolpath_at_depth(index, sim_trace, DiagnoseDepth::Full)
+        self.diagnose_toolpath_at_depth(index, sim_trace, DiagnoseDepth::Full, None)
+    }
+
+    /// [`Self::diagnose_toolpath_with_trace`] for a caller that holds the
+    /// trace in its `Arc`: the load report comes from the session memo
+    /// ([`Self::tool_load_report_for`]), so a walk over every toolpath
+    /// builds the report once, not once per toolpath.
+    ///
+    /// Measured on the wanaka operator file with a held simulation
+    /// (2026-11-15): one report build is about 12 s, and the MCP diagnostic
+    /// snapshot called the unmemoised door for each of 18 toolpaths, so one
+    /// MCP change kept the GUI thread busy for about 4 minutes.
+    ///
+    /// # Errors
+    /// [`SessionError::ToolpathNotFound`] when no toolpath has `index`.
+    pub fn diagnose_toolpath_with_held_trace(
+        &self,
+        index: usize,
+        trace: Option<&std::sync::Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        let report = self.tool_load_report_for(trace);
+        self.diagnose_toolpath_at_depth(
+            index,
+            trace.map(std::sync::Arc::as_ref),
+            DiagnoseDepth::Full,
+            Some(&report),
+        )
     }
 
     /// W2b: the findings of the toolpath at `index` that can refuse
@@ -131,7 +157,7 @@ impl ProjectSession {
         &self,
         index: usize,
     ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
-        self.diagnose_toolpath_at_depth(index, None, DiagnoseDepth::Gate)
+        self.diagnose_toolpath_at_depth(index, None, DiagnoseDepth::Gate, None)
     }
 
     fn diagnose_toolpath_at_depth(
@@ -139,6 +165,7 @@ impl ProjectSession {
         index: usize,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         depth: DiagnoseDepth,
+        memoised_report: Option<&crate::tool_load::ToolLoadReport>,
     ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
         let tc = self
             .toolpath_configs
@@ -167,10 +194,17 @@ impl ProjectSession {
         // can plug in viz-side traces. `build_tool_load_report`
         // applies its own staleness check via `sim_trace_is_fresh_for`.
         let full = depth == DiagnoseDepth::Full;
-        let report = full.then(|| self.build_tool_load_report(sim_trace));
-        let load_verdict = report
-            .as_ref()
-            .and_then(|report| report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id));
+        // A caller that holds the trace `Arc` gives the memoised report
+        // (`diagnose_toolpath_with_held_trace`); else the report is built.
+        let built =
+            (full && memoised_report.is_none()).then(|| self.build_tool_load_report(sim_trace));
+        let report = if full {
+            memoised_report.or(built.as_ref())
+        } else {
+            None
+        };
+        let load_verdict =
+            report.and_then(|report| report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id));
 
         // N4 (2026-09-10): resolve the toolpath's OWN heights, pins and
         // all. P3.1: through THE session rule, so the snapshot holds the
