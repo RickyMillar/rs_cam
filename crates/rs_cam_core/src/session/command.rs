@@ -538,6 +538,13 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
+            (Command, SetFeedModulation, "set_feed_modulation",
+             SetFeedModulationArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Reached,
+             }),
             (Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,
              ToolpathCycleTimeAnswer,
              Surfaces {
@@ -1355,8 +1362,9 @@ pub struct Effects {
     /// other row.
     pub planned: Option<Box<super::MultitoolPlanOutcome>>,
     /// Every toolpath index whose cached result the feed modulation
-    /// rewrote (F115). Only `AdoptSimulation` with a
-    /// [`FeedModulation`] fills it.
+    /// rewrote (F115). `AdoptSimulation` with a [`FeedModulation`] fills
+    /// it. `SetFeedModulation` with the switch off fills it with the
+    /// results that took their dressed path back.
     ///
     /// A modulation moves no generation input, so these indices are not
     /// in [`Self::stale`]. A surface that holds its own copy of a
@@ -2032,6 +2040,18 @@ pub struct SetToolpathEnabledArgs {
 pub struct SetSimulationResolutionArgs {
     /// The new value.
     pub resolution: super::SimulationResolution,
+}
+
+/// The arguments of the `set_feed_modulation` command (operator ruling
+/// 2026-11-15).
+///
+/// The one stored feed modulation switch of the project. A new value drops
+/// the simulation. With the switch off, each modulated result takes its
+/// dressed path back; [`Effects::modulated`] names those results.
+#[derive(Debug, Clone, Copy)]
+pub struct SetFeedModulationArgs {
+    /// The new value.
+    pub switch: super::FeedModulationSwitch,
 }
 
 /// The arguments of the `toolpath_cycle_time` read.
@@ -2976,6 +2996,14 @@ impl ProjectSession {
             Command::SetSimulationResolution(args) => self.try_with_effects(None, move |session| {
                 session.set_simulation_resolution_impl(args.resolution)
             }),
+            Command::SetFeedModulation(args) => {
+                let mut restored = BTreeSet::new();
+                let mut effects = self.with_effects(None, |session| {
+                    restored = session.set_feed_modulation_impl(args.switch);
+                });
+                effects.modulated = restored;
+                Ok(effects)
+            }
             // ── WP15a: the rows of the row-less setters ───────────
             //
             // §25 ruling 1. Every arm below delegates to the setter

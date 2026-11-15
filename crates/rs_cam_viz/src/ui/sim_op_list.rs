@@ -173,6 +173,22 @@ fn draw_run_controls(
                     rs_cam_core::session::SimulationResolution::Fixed(effective_mm)
                 }));
             }
+            // Operator ruling 2026-11-15: feed modulation is on by default
+            // and the operator can switch it off. The ONE stored project
+            // value; the project file saves it.
+            let mut feed_modulation = session.feed_modulation().is_on();
+            if ui
+                .checkbox(&mut feed_modulation, "Feed modulation")
+                .on_hover_text(
+                    "After a simulation, set each move to the highest feed that every limit \
+                     allows. That feed can be above the stated feed.",
+                )
+                .changed()
+            {
+                events.push(AppEvent::SetFeedModulation(
+                    rs_cam_core::session::FeedModulationSwitch::from_enabled(feed_modulation),
+                ));
+            }
             {
                 let sx = session.stock_config().x;
                 let sy = session.stock_config().y;

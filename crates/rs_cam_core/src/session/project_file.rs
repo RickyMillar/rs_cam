@@ -856,19 +856,31 @@ pub struct ProjectJobSection {
     pub machine: crate::machine::MachineProfile,
     /// G-RESTRES: the one stored simulation resolution. A file with no
     /// `[job.simulation]` table, or no `resolution_mm` key, loads as `Auto`.
-    #[serde(default, skip_serializing_if = "ProjectSimulationSection::is_auto")]
+    /// Operator ruling 2026-11-15: the table also holds the feed modulation
+    /// switch; a file with no `feed_modulation` key loads as on.
+    #[serde(
+        default,
+        skip_serializing_if = "ProjectSimulationSection::holds_only_defaults"
+    )]
     pub simulation: ProjectSimulationSection,
 }
 
-/// `[job.simulation]`: the stored simulation resolution.
+/// `[job.simulation]`: the stored simulation resolution and the feed
+/// modulation switch.
 ///
 /// `resolution_mm` present = `SimulationResolution::Fixed`; absent =
 /// `SimulationResolution::Auto`, the documented default.
+///
+/// `feed_modulation` (operator ruling 2026-11-15): absent = on, the
+/// default; `false` = off. The writer leaves the key out while the switch
+/// is on, so a file that never set it does not change on a save.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectSimulationSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_mm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_modulation: Option<bool>,
 }
 
 impl ProjectSimulationSection {
@@ -881,19 +893,35 @@ impl ProjectSimulationSection {
         )
     }
 
-    /// The section for a session value.
+    /// The feed modulation switch of the section: on with no key.
     #[must_use]
-    pub fn of(resolution: super::SimulationResolution) -> Self {
+    pub fn feed_modulation(&self) -> super::FeedModulationSwitch {
+        self.feed_modulation.map_or(
+            super::FeedModulationSwitch::On,
+            super::FeedModulationSwitch::from_enabled,
+        )
+    }
+
+    /// The section for the session values.
+    #[must_use]
+    pub fn of(
+        resolution: super::SimulationResolution,
+        feed_modulation: super::FeedModulationSwitch,
+    ) -> Self {
         Self {
             resolution_mm: match resolution {
                 super::SimulationResolution::Auto => None,
                 super::SimulationResolution::Fixed(mm) => Some(mm),
             },
+            feed_modulation: match feed_modulation {
+                super::FeedModulationSwitch::On => None,
+                super::FeedModulationSwitch::Off => Some(false),
+            },
         }
     }
 
-    fn is_auto(&self) -> bool {
-        self.resolution_mm.is_none()
+    fn holds_only_defaults(&self) -> bool {
+        self.resolution_mm.is_none() && self.feed_modulation.is_none()
     }
 }
 
@@ -2009,6 +2037,7 @@ pub(super) fn build_session_from_project(
         simulation_drop_epochs: [0; super::SimulationDropCause::COUNT],
         simulation: None,
         simulation_resolution: project.job.simulation.resolution(),
+        feed_modulation: project.job.simulation.feed_modulation(),
         load_report_memo: super::load_report::LoadReportMemo::default(),
         selection_status_memo: crate::session::selection_status::SelectionStatusMemo::default(),
         emitted_feeds_memo: super::emitted_feeds::EmittedFeedsMemo::default(),

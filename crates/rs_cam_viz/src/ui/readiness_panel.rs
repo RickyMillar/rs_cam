@@ -200,6 +200,22 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             let worst = worst_limit_rows(&row_set);
             draw_limit_rows(ui, &worst);
 
+            // Operator ruling 2026-11-15: a feed above the stated feed is a
+            // warning. A report line: it does not enter the headline
+            // verdict or the first unmet action, and it never refuses.
+            let above = readiness::feeds_above_stated_rows(&export_warnings);
+            if !above.is_empty() {
+                check_row(
+                    ui,
+                    CheckStatus::Warning,
+                    "Feeds above the stated feed",
+                    &readiness::feeds_above_stated_detail(above.len()),
+                );
+                for warning in above {
+                    caveat_line(ui, &warning.detail, theme::TEXT_MUTED);
+                }
+            }
+
             // Cycle time — information only, never gates the verdict. The row
             // now names its own basis (G-TIMEEST): the same word used to cover
             // a machine-model wall clock and a cutting-only figure ~7× smaller,

@@ -39,8 +39,9 @@ pub enum ToolpathTraceAvailability {
 
 /// **P29-10z (lead ruling Q2): THE feed modulation of the GUI and MCP
 /// simulation run.** The adopt step modulates with it
-/// (`controller/events/compute.rs`); MCP runs its simulation through the
-/// GUI. P30-2: the limit rows no longer read this constant: each toolpath
+/// (`controller/events/compute.rs`) while the feed modulation switch of the
+/// project is on (`ProjectSession::feed_modulation`, operator ruling
+/// 2026-11-15); MCP runs its simulation through the GUI. P30-2: the limit rows no longer read this constant: each toolpath
 /// reads the modulation that its stored result records
 /// (`ProjectSession::run_modulation_of`).
 pub const FEED_MODULATION: rs_cam_core::session::FeedModulation =

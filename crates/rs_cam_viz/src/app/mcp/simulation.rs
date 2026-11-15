@@ -139,8 +139,22 @@ impl RsCamApp {
     pub(super) fn mcp_run_simulation(
         &mut self,
         resolution: Option<f64>,
+        feed_modulation: Option<bool>,
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     ) {
+        // Operator ruling 2026-11-15: `feed_modulation` SETS the ONE stored
+        // switch before the run, through the door of the panel checkbox.
+        // The reply states the value the run used.
+        if let Some(enabled) = feed_modulation
+            && let Err(error) = self.controller.set_feed_modulation(
+                rs_cam_core::session::FeedModulationSwitch::from_enabled(enabled),
+            )
+        {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(json_str(serde_json::json!({ "error": error.to_string() }))),
+            });
+            return;
+        }
         // G-RESTRES, ruling Q3 (2026-09-24): a resolution SETS the ONE
         // stored project value, which every simulation reads. The reply
         // states the value it ran at and that this call set it.

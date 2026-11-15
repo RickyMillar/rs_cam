@@ -478,3 +478,110 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
         );
     }
 }
+
+/// Operator ruling 2026-11-15 (P31 C): the GUI door of the feed modulation
+/// switch. The switch is on by default, so a GUI run modulates. The event
+/// of the panel checkbox with the switch off goes through
+/// `Command::SetFeedModulation`: the session value is off, the project is
+/// edited, the simulation drops, every modulated result takes its planned
+/// feeds back, and the view copy of each toolpath is the session result
+/// again. A GUI run with the switch off modulates nothing.
+#[test]
+fn the_gui_run_follows_the_feed_modulation_switch_p31() {
+    use rs_cam_core::session::{FeedModulationSwitch, FeedStage};
+    let (mut controller, _rough, budget) = generated_fixture();
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    pump_until_settled(&mut controller, &budget, "run simulation");
+
+    let stages = |controller: &AppController| -> Vec<Option<FeedStage>> {
+        let session = controller.state.session();
+        (0..session.toolpath_count())
+            .map(|index| session.feed_stage(index))
+            .collect()
+    };
+    let view_is_the_session = |controller: &AppController| {
+        let session = controller.state.session();
+        for (index, tc) in session.toolpath_configs().iter().enumerate() {
+            let Some(result) = session.result_at(index) else {
+                continue;
+            };
+            let held = controller
+                .state
+                .gui
+                .toolpath_rt
+                .get(&tc.id)
+                .and_then(|rt| rt.run.result())
+                .expect("the view holds the toolpath");
+            assert!(
+                std::sync::Arc::ptr_eq(&held.annotated, result.annotated()),
+                "the view copy of toolpath {index} is the session result"
+            );
+        }
+    };
+
+    assert_eq!(
+        controller.state.session().feed_modulation(),
+        FeedModulationSwitch::On,
+        "on by default"
+    );
+    let on = stages(&controller);
+    assert!(
+        on.iter()
+            .any(|stage| matches!(stage, Some(FeedStage::ModulatedCurrent { .. }))),
+        "non-vacuity: the GUI run modulates a result: {on:?}"
+    );
+    view_is_the_session(&controller);
+
+    let edits = controller.state.gui.edit_counter;
+    controller.handle_internal_event(AppEvent::SetFeedModulation(FeedModulationSwitch::Off));
+    assert_eq!(
+        controller.state.session().feed_modulation(),
+        FeedModulationSwitch::Off
+    );
+    assert_eq!(
+        controller.state.gui.edit_counter,
+        edits + 1,
+        "one project edit"
+    );
+    assert!(
+        controller.state.gui.dirty,
+        "the project has unsaved changes"
+    );
+    assert!(
+        controller.state.session().simulation_result().is_none(),
+        "the simulation drops"
+    );
+    let off = stages(&controller);
+    assert!(
+        off.iter()
+            .all(|stage| matches!(stage, None | Some(FeedStage::Planned))),
+        "every result holds its planned feeds: {off:?}"
+    );
+    // No regeneration: each toolpath that held a result holds one still (the
+    // fixture has a rest op, and a dropped rest result would read `None`).
+    let held = |stages: &[Option<FeedStage>]| -> Vec<bool> {
+        stages.iter().map(Option::is_some).collect()
+    };
+    assert!(
+        held(&on).iter().filter(|h| **h).count() >= 2,
+        "non-vacuity: the face and the rest rough hold a result: {on:?}"
+    );
+    assert_eq!(held(&off), held(&on), "the switch drops no result");
+    view_is_the_session(&controller);
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    pump_until_settled(&mut controller, &budget, "run simulation, switch off");
+    assert!(
+        controller.state.session().simulation_result().is_some(),
+        "non-vacuity: the run landed"
+    );
+    let off_run = stages(&controller);
+    assert!(
+        off_run
+            .iter()
+            .all(|stage| matches!(stage, None | Some(FeedStage::Planned))),
+        "a run with the switch off modulates nothing: {off_run:?}"
+    );
+    assert_eq!(held(&off_run), held(&on), "the run drops no result");
+    view_is_the_session(&controller);
+}

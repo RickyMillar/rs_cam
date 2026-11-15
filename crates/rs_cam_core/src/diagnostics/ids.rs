@@ -638,4 +638,10 @@ diag_ids! {
     /// whatever the limit. One warning per op names the worst row and the
     /// count of the others. A warning, never a refusal.
     pub const EXPORT_STATED_CUT_OVER_LIMIT: &str = "export.stated_cut_over_limit" => warn(Danger::Tool);
+    /// Operator ruling 2026-11-15 (feed modulation "on by default. but
+    /// shown as a warn"): an emitted op holds a fed cutting move above the
+    /// stated feed, or an entry above its stated plunge or ramp feed
+    /// (`session::EmittedFeeds::above_stated_warning`, the one writer of
+    /// the text). One warning per op. A warning, never a refusal.
+    pub const EXPORT_FEED_ABOVE_STATED: &str = "export.feed_above_stated" => warn(Danger::Tool);
 }

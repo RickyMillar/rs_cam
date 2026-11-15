@@ -148,6 +148,7 @@ impl ProjectSession {
             machine: self.machine.clone(),
             simulation: super::project_file::ProjectSimulationSection::of(
                 self.simulation_resolution,
+                self.feed_modulation,
             ),
         };
 

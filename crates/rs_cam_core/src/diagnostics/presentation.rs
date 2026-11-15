@@ -767,6 +767,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         OP,
         "Stated cut over a limit: no measured gate",
     ),
+    (
+        ids::EXPORT_FEED_ABOVE_STATED,
+        OP,
+        "Runs above the stated feed",
+    ),
 ];
 
 fn row(id: &str) -> Option<&'static (&'static str, Anchor, &'static str)> {

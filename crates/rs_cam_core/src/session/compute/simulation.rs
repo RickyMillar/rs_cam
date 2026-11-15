@@ -636,7 +636,9 @@ impl ProjectSession {
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) -> std::collections::BTreeSet<usize> {
-        if !opts.adaptive_feed_modulation {
+        // Operator ruling 2026-11-15: the feed modulation switch of the
+        // project gates every door (`run_simulation`, `AdoptSimulation`).
+        if !opts.adaptive_feed_modulation || !self.feed_modulation.is_on() {
             return std::collections::BTreeSet::new();
         }
         self.apply_adaptive_feed_modulation(cut_trace, opts)
@@ -852,6 +854,14 @@ impl ProjectSession {
                 }
             };
             let source = sources.remove(&toolpath_id).unwrap_or_default();
+            // The dressed path of the result: the path of a first
+            // modulation, else the path that the tag already keeps.
+            let dressed = match &result.provenance {
+                crate::session::ResultProvenance::Dressed => {
+                    crate::session::DressedPath::new(Arc::clone(annotated_arc))
+                }
+                crate::session::ResultProvenance::Modulated { dressed, .. } => dressed.clone(),
+            };
             if let Some(slot) = self.results.get_mut(&idx) {
                 slot.op_data = new_op_data;
                 slot.provenance = crate::session::ResultProvenance::Modulated {
@@ -859,6 +869,7 @@ impl ProjectSession {
                     source,
                     strategy: opts.modulation_strategy,
                     feed_scale: opts.modulation_feed_scale,
+                    dressed,
                 };
                 let _ = rewritten.insert(idx);
             }

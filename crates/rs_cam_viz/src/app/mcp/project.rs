@@ -43,6 +43,10 @@ impl RsCamApp {
             "simulation_resolution": crate::controller::generate_all::ResolutionReport::of(
                 session, false,
             ),
+            // Operator ruling 2026-11-15: the ONE stored feed modulation
+            // switch (`on`, `off`), read-only. `set_feed_modulation` writes
+            // it.
+            "feed_modulation": session.feed_modulation(),
             // P22-0c-3 (operator ruling Q6): the contacts of the contact
             // kernel in the stored simulation, by zone kind; `null` with no
             // simulation.

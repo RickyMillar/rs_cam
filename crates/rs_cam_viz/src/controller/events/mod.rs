@@ -515,6 +515,14 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
             }
+            AppEvent::SetFeedModulation(switch) => {
+                if let Err(error) = self.set_feed_modulation(switch) {
+                    self.push_notification(
+                        format!("Could not set the feed modulation: {error}"),
+                        super::Severity::Warning,
+                    );
+                }
+            }
             AppEvent::GenerateAll => self.handle_generate_all(),
             AppEvent::GenerateSetupOnly(setup_id) => self.handle_generate_setup_only(setup_id),
             AppEvent::CancelGeneration => self.cancel_generation_plan(),

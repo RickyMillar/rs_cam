@@ -676,6 +676,8 @@ pub enum McpRequestKind {
     // `crate::compute::GenerationControl` and never reaches this channel.
     RunSimulation {
         resolution: Option<f64>,
+        /// `Some`: set the stored feed modulation switch before the run.
+        feed_modulation: Option<bool>,
     },
     CollisionCheck {
         index: usize,
@@ -955,6 +957,9 @@ declare_core_requests! {
         /// Row `SetSimulationResolution` (G-RESTRES).
         SetSimulationResolution(rs_cam_mcp::server::SetSimulationResolutionParam)
             => SetSimulationResolution, None;
+        /// Row `SetFeedModulation` (operator ruling 2026-11-15).
+        SetFeedModulation(rs_cam_mcp::server::SetFeedModulationParam)
+            => SetFeedModulation, None;
     }
 }
 

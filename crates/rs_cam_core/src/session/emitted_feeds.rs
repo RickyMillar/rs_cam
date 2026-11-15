@@ -256,6 +256,69 @@ impl EmittedFeeds {
         self.cutting.is_some_and(|c| c.above_stated > 0)
     }
 
+    /// **THE text of the warning `export.feed_above_stated`** (operator
+    /// ruling 2026-11-15: feed modulation is "on by default. but shown as a
+    /// warn"). `Some` when a fed cutting move runs above the stated feed,
+    /// or a plunge, ramp or helix entry runs above its stated feed:
+    /// "runs up to 3000 mm/min, the stated feed is 1000 mm/min (478 of 478
+    /// cutting moves above); feed modulation of simulation run 1". The last
+    /// clause names what set the feeds ([`Self::cause_words`]).
+    ///
+    /// The export door, the GUI line, MCP and the CLI print this one text.
+    /// A warning, never a refusal.
+    #[must_use]
+    pub fn above_stated_warning(&self) -> Option<String> {
+        let mut clauses = Vec::new();
+        if let (Some(cutting), Some(stated)) = (self.cutting.as_ref(), self.stated_mm_min)
+            && cutting.above_stated > 0
+        {
+            clauses.push(format!(
+                "runs up to {} mm/min, the stated feed is {stated} mm/min ({} of {} cutting \
+                 moves above)",
+                cutting.max_mm_min, cutting.above_stated, cutting.moves
+            ));
+        }
+        for (class, stated_name, entry) in [
+            ("plunge entries", "plunge feed", self.plunge),
+            ("ramp entries", "ramp feed", self.ramp),
+        ] {
+            let Some(entry) = entry else {
+                continue;
+            };
+            let Some(stated) = entry.stated_mm_min else {
+                continue;
+            };
+            if entry.max_mm_min > stated {
+                clauses.push(format!(
+                    "{class} run up to {} mm/min, the stated {stated_name} is {stated} mm/min",
+                    entry.max_mm_min
+                ));
+            }
+        }
+        if clauses.is_empty() {
+            return None;
+        }
+        clauses.push(self.cause_words());
+        Some(clauses.join("; "))
+    }
+
+    /// What set the feeds of the result, for the warning text: the feed
+    /// modulation of a simulation run, the feed optimisation dressup, or
+    /// the generator.
+    #[must_use]
+    pub fn cause_words(&self) -> String {
+        match self.stage {
+            FeedStage::Planned if self.feed_optimised => "set by feed optimisation".to_owned(),
+            FeedStage::Planned => "set at generation".to_owned(),
+            FeedStage::ModulatedCurrent { simulation_run } => {
+                format!("feed modulation of simulation run {simulation_run}")
+            }
+            FeedStage::ModulatedSuperseded { simulation_run, .. } => {
+                format!("feed modulation of simulation run {simulation_run}, not current")
+            }
+        }
+    }
+
     /// The stage in words: "as stated", "feed optimisation", "modulated, run
     /// n", "modulated, run n, not current". Short, so the GUI line keeps it
     /// at the rail width; the hover holds the full stage statement.
@@ -396,6 +459,9 @@ impl EmittedFeeds {
     #[must_use]
     pub fn detail(&self) -> String {
         let mut parts = Vec::new();
+        if let Some(warning) = self.above_stated_warning() {
+            parts.push(format!("Warning: {warning}"));
+        }
         if let (Some(cutting), Some(stated)) = (self.cutting.as_ref(), self.stated_mm_min) {
             parts.push(format!(
                 "{} of {} cutting moves run above the stated feed of {stated} mm/min",

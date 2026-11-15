@@ -240,10 +240,13 @@ pub(super) fn draw_feeds_recommendation(
 /// the entry lines). ONE quiet line while the feeds are the stated feeds
 /// ("runs 1258 mm/min · 0 of 144 above 1258 · as stated"); after a feed
 /// stage the numbers and the stage take one line each, because the rail
-/// shows about 55 characters and the stage must not elide. The numbers take
-/// the caution colour only when a cutting move runs above the stated feed;
-/// a stage that is not current takes it too. The Passes tab and the
-/// simulation inspector draw it.
+/// shows about 55 characters and the stage must not elide. Operator ruling
+/// 2026-11-15: a feed above the stated feed is a WARNING. When the record
+/// warns (`EmittedFeeds::above_stated_warning`: a cutting move above the
+/// stated feed, or an entry above its stated feed), the numbers take the
+/// warning colour and the warning glyph, and the hover starts with the
+/// warning text. A stage that is not current takes the colour too. The
+/// Passes tab and the simulation inspector draw it.
 pub(crate) fn draw_emitted_feeds_line(
     ui: &mut egui::Ui,
     feeds: Option<&rs_cam_core::session::EmittedFeeds>,
@@ -253,22 +256,18 @@ pub(crate) fn draw_emitted_feeds_line(
     let Some(feeds) = feeds else {
         return;
     };
-    let numbers_colour = if feeds.runs_above_stated() {
-        CAUTION
-    } else {
-        TEXT_MUTED
-    };
+    let (numbers_colour, glyph) = feeds_line_mark(feeds);
     ui.add_space(SPACE_2);
     if feeds.is_as_stated() {
         let _ = ui.add(
-            OneLine::new(feeds.line())
+            OneLine::new(format!("{glyph}{}", feeds.line()))
                 .color(numbers_colour)
                 .detail(feeds.detail()),
         );
         return;
     }
     let _ = ui.add(
-        OneLine::new(feeds.numbers_line())
+        OneLine::new(format!("{glyph}{}", feeds.numbers_line()))
             .color(numbers_colour)
             .detail(feeds.detail()),
     );
@@ -283,6 +282,23 @@ pub(crate) fn draw_emitted_feeds_line(
             .detail(feeds.detail()),
     );
 }
+
+/// The colour and the glyph prefix of the feeds line: the warning colour and
+/// the warning glyph when the record warns (operator ruling 2026-11-15),
+/// else the muted colour and no glyph.
+pub(crate) fn feeds_line_mark(
+    feeds: &rs_cam_core::session::EmittedFeeds,
+) -> (egui::Color32, &'static str) {
+    if feeds.above_stated_warning().is_some() {
+        (crate::ui::tokens::CAUTION, FEEDS_WARNING_PREFIX)
+    } else {
+        (crate::ui::tokens::TEXT_MUTED, "")
+    }
+}
+
+/// The warning glyph and a space, before the numbers of a feeds line that
+/// warns.
+pub(crate) const FEEDS_WARNING_PREFIX: &str = "\u{26A0} ";
 
 /// The vendor cutting data of the bound tool's family, in its own window
 /// (W3i). With no tool there is no family, so the Passes tab draws no

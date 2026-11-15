@@ -92,5 +92,10 @@ run the server; the live server, GUI dispatch and session ownership are in
 - P29-10 (10g): `get_safe_envelope` gains `plane_marks` ({proposal, stated}), `force_budget_columns` and
   `outside_cut`; a planned row's `subject.own_depth_mm` is `subject.at` ({ae_mm, ap_mm, own_depth}, break).
   Token `envelope_plane_marks`. Reply keys only: the snapshot did not move.
+- P31 C (operator ruling 2026-11-15): new tool `set_feed_modulation { enabled }` (`SetFeedModulationParam`; the ONE stored
+  feed modulation switch, default on) and `SimulationParam.feed_modulation` (`run_simulation` sets the switch before the
+  run); `project_summary` and the `run_simulation` reply carry `feed_modulation` (`on`, `off`); `get_tool_load_report`
+  `emitted_feeds[].warning` (the text of the export warning `export.feed_above_stated`, or null). Tokens
+  `feed_modulation_switch`, `feed_above_stated_warning`. The snapshot was re-blessed (additions only).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

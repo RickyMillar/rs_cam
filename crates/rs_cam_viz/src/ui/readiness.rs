@@ -197,6 +197,28 @@ pub fn rapid_collision_rows(warnings: &[ExportWarning]) -> usize {
         .count()
 }
 
+/// Operator ruling 2026-11-15: the export warnings of the toolpaths that
+/// run above a stated feed (`export.feed_above_stated`, one row per
+/// toolpath), in export order. The Readiness page lists them; the MCP
+/// export text and the CLI `summary.json` give the same rows.
+#[must_use]
+pub fn feeds_above_stated_rows(warnings: &[ExportWarning]) -> Vec<&ExportWarning> {
+    warnings
+        .iter()
+        .filter(|w| w.id == rs_cam_core::diagnostics::ids::EXPORT_FEED_ABOVE_STATED)
+        .collect()
+}
+
+/// The detail of the Readiness line "Feeds above the stated feed": the
+/// count of toolpaths.
+#[must_use]
+pub fn feeds_above_stated_detail(count: usize) -> String {
+    match count {
+        1 => "1 toolpath".to_owned(),
+        n => format!("{n} toolpaths"),
+    }
+}
+
 /// Rapid-traverse collisions: Fail on any `project.rapid_collision` row,
 /// Warning until a simulation has run. `warnings` are the pre-flight
 /// warnings (`io::export::preflight_warnings`), so the card reads the

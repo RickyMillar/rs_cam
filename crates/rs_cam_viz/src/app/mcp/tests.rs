@@ -1265,9 +1265,59 @@ fn one_feed_record_on_every_surface_p30_1() {
             "{state}: MCP"
         );
         assert_eq!(entry["line"], door.line(), "{state}: MCP line");
+        // Operator ruling 2026-11-15 (P31 C): the warning of a feed above
+        // the stated feed is the one core text on every surface.
+        let warning = door.above_stated_warning();
+        assert_eq!(
+            entry["warning"],
+            serde_json::json!(warning),
+            "{state}: MCP warning"
+        );
+        let (colour, glyph) = crate::ui::properties::feeds_line_mark(&door);
+        assert_eq!(
+            (colour, glyph),
+            if warning.is_some() {
+                (
+                    crate::ui::tokens::CAUTION,
+                    crate::ui::properties::FEEDS_WARNING_PREFIX,
+                )
+            } else {
+                (crate::ui::tokens::TEXT_MUTED, "")
+            },
+            "{state}: the GUI line takes the warning colour and glyph only with a warning"
+        );
         let exported = session
             .export_gcode_checked(trace.as_deref())
             .expect("exports");
+        let name = &session.toolpath_configs()[0].name;
+        let export_details: Vec<&str> = exported
+            .warnings
+            .iter()
+            .filter(|w| w.id == rs_cam_core::diagnostics::ids::EXPORT_FEED_ABOVE_STATED)
+            .map(|w| w.detail.as_str())
+            .collect();
+        let expected_detail = warning
+            .as_ref()
+            .map(|text| format!("Toolpath '{name}': {text}"));
+        assert_eq!(
+            export_details,
+            expected_detail
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            "{state}: the export warning"
+        );
+        assert_eq!(
+            crate::ui::readiness::feeds_above_stated_rows(&exported.warnings).len(),
+            usize::from(warning.is_some()),
+            "{state}: the Readiness line counts the same rows"
+        );
+        assert_eq!(
+            exported.gcode.lines().any(|l| l.contains("WARNING")
+                && l.contains(rs_cam_core::diagnostics::ids::EXPORT_FEED_ABOVE_STATED)),
+            warning.is_some(),
+            "{state}: the header line"
+        );
         let row = exported
             .emitted_feeds
             .iter()
@@ -1276,6 +1326,9 @@ fn one_feed_record_on_every_surface_p30_1() {
         assert_eq!(row.feeds, door, "{state}: export");
         let reply = crate::io::export::export_reply_text("G-code exported".to_owned(), &exported);
         assert!(reply.contains(&door.line()), "{state}: the reply: {reply}");
+        if let Some(detail) = expected_detail.as_ref() {
+            assert!(reply.contains(detail), "{state}: the reply: {reply}");
+        }
         door
     };
     let before = check(&session, "before");
@@ -1296,5 +1349,28 @@ fn one_feed_record_on_every_surface_p30_1() {
             rs_cam_core::session::FeedStage::ModulatedCurrent { .. }
         ),
         "non-vacuity: the run modulates: {after:?}"
+    );
+    // P31 C non-vacuity: the modulated record warns, and its text names the
+    // run. The switch off puts the planned feeds back: the record of the
+    // first state on every surface again.
+    let run = session.simulation_run().expect("a run");
+    let text = after.above_stated_warning().expect("the record warns");
+    assert!(
+        text.ends_with(&format!("; feed modulation of simulation run {run}")),
+        "{text}"
+    );
+    let effects = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Off,
+            },
+        ))
+        .expect("the switch applies");
+    assert_eq!(effects.modulated, std::collections::BTreeSet::from([0]));
+    let off = check(&session, "switch off");
+    assert_eq!(off, before, "the planned record is back");
+    assert_eq!(
+        session.run_modulation_of(0),
+        rs_cam_core::dressup::feed_modulation::RunModulation::Off
     );
 }

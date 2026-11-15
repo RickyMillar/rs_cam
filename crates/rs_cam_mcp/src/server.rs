@@ -793,6 +793,11 @@ pub struct SimulationParam {
     /// Optional. SETS the project's one stored simulation resolution, in
     /// mm, and the reply says so. Omit it to simulate at the stored value.
     pub resolution: Option<f64>,
+    /// Optional. SETS the project's one stored feed modulation switch
+    /// before the run (`set_feed_modulation`), and the reply says so. Omit
+    /// it to run with the stored value (on by default).
+    #[serde(default)]
+    pub feed_modulation: Option<bool>,
 }
 
 /// The tool-change handling of one export (`export_gcode`).
@@ -2992,6 +2997,18 @@ pub struct SetToolpathShoeParam {
     pub gap_mm: Option<f64>,
 }
 
+/// The one stored feed modulation switch (operator ruling 2026-11-15).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct SetFeedModulationParam {
+    /// `true`: a simulation sets each move to the highest feed that every
+    /// limit allows, which can be above the stated feed (the default).
+    /// `false`: no simulation changes a feed, and each result that holds
+    /// modulated feeds takes its planned feeds back at once. The project
+    /// file saves the value. A new value drops the simulation.
+    pub enabled: bool,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SetToolpathEnabledParam {
@@ -4106,6 +4123,8 @@ pub fn build_info() -> serde_json::Value {
             // and cut group) and `get_suggest_rationale` `limit_rows` (the
             // RPM rows). The three P29-2 `checks` keys are deleted.
             "limit_rows_every_reply",
+            "feed_modulation_switch",
+            "feed_above_stated_warning",
             // Feeds contract P29-10 (10e): `set_ui_view` `sim_inspector_tab`
             // and `sim_cut_groups` (the reply echoes `sim_inspector`); the
             // lineage `measured.row` (one limit row, `binding` and `judged`

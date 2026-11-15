@@ -32,8 +32,89 @@
 //! toolpath itself stores a new `Dressed` slot, so the own moves need no
 //! record.
 
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
 use super::ProjectSession;
 use crate::compute::source_stock::SourceStock;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
+
+/// **THE feed modulation switch of a project** (operator ruling
+/// 2026-11-15: "Can we have it on by default. but shown as a warn. But
+/// have option to disable it?"). One stored value per project, default
+/// [`Self::On`]; `Command::SetFeedModulation` writes it, and the project
+/// file saves it (`[job.simulation] feed_modulation`).
+///
+/// While it is off no simulation of the session modulates a feed
+/// (`ProjectSession::run_simulation` and `Command::AdoptSimulation` both
+/// read it), every result holds its dressed feeds, and
+/// [`ProjectSession::run_modulation_of`] gives `Off` for every toolpath.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedModulationSwitch {
+    /// A simulation sets each move to the highest feed that every limit
+    /// allows. That feed can be above the stated feed.
+    #[default]
+    On,
+    /// No simulation changes a feed: the export carries the dressed feeds.
+    Off,
+}
+
+impl FeedModulationSwitch {
+    /// `true` for [`Self::On`].
+    #[must_use]
+    pub const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    /// The switch for a checkbox or a wire flag.
+    #[must_use]
+    pub const fn from_enabled(enabled: bool) -> Self {
+        if enabled { Self::On } else { Self::Off }
+    }
+
+    /// `on` or `off`, the word that every surface prints.
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+}
+
+/// The dressed path that a modulated result replaced. The modulated tag
+/// keeps it, so `Command::SetFeedModulation` with the switch off puts the
+/// planned feeds back with no regeneration.
+///
+/// Two values are equal when they hold the same path (pointer identity).
+#[derive(Clone)]
+pub struct DressedPath(Arc<AnnotatedToolpath>);
+
+impl DressedPath {
+    /// Keep `path` as the dressed path of a result.
+    pub(crate) const fn new(path: Arc<AnnotatedToolpath>) -> Self {
+        Self(path)
+    }
+
+    /// The dressed path.
+    #[must_use]
+    pub fn path(&self) -> &Arc<AnnotatedToolpath> {
+        &self.0
+    }
+}
+
+impl PartialEq for DressedPath {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for DressedPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DressedPath({} moves)", self.0.toolpath.moves.len())
+    }
+}
 
 /// The feed stage of a stored toolpath result.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +136,10 @@ pub enum ResultProvenance {
         /// P30-2: the feed scale the run modulated with (a scale above 1
         /// empties the declared list).
         feed_scale: f64,
+        /// The dressed path that the first modulation of this result
+        /// replaced (operator ruling 2026-11-15). A later modulation of
+        /// the same result keeps it.
+        dressed: DressedPath,
     },
 }
 
@@ -166,6 +251,7 @@ impl ProjectSession {
                 source,
                 strategy: _,
                 feed_scale: _,
+                dressed: _,
             } => {
                 let simulation_run = *simulation_run;
                 let current = self
@@ -199,6 +285,8 @@ impl ProjectSession {
     /// feeds memo reads it through the panel inputs, so GUI, MCP and the CLI
     /// give the same rows for the same session state.
     ///
+    /// - The feed modulation switch of the project is off (operator ruling
+    ///   2026-11-15): `Off` for every toolpath. No simulation modulates.
     /// - A disabled toolpath (the run does not simulate it), or no toolpath
     ///   at `index`: `Off`.
     /// - A current modulated result: `Current` with the strategy and scale
@@ -215,7 +303,7 @@ impl ProjectSession {
         let Some(tc) = self.toolpath_configs.get(index) else {
             return RunModulation::Off;
         };
-        if !tc.enabled {
+        if !tc.enabled || !self.feed_modulation.is_on() {
             return RunModulation::Off;
         }
         let Some(result) = self.results.get(&index) else {
@@ -257,10 +345,62 @@ impl ProjectSession {
     ) -> crate::dressup::feed_modulation::RunModulation {
         match self.find_toolpath_config_by_id(tc.id) {
             Some((index, _)) => self.run_modulation_of(index),
-            None if tc.enabled => crate::dressup::feed_modulation::RunModulation::NotRun {
-                export: crate::limits::ExportFeed::Stated,
-            },
+            None if tc.enabled && self.feed_modulation.is_on() => {
+                crate::dressup::feed_modulation::RunModulation::NotRun {
+                    export: crate::limits::ExportFeed::Stated,
+                }
+            }
             None => crate::dressup::feed_modulation::RunModulation::Off,
         }
+    }
+
+    /// The feed modulation switch of the project (operator ruling
+    /// 2026-11-15). Default on.
+    #[must_use]
+    pub const fn feed_modulation(&self) -> FeedModulationSwitch {
+        self.feed_modulation
+    }
+
+    /// The door of `Command::SetFeedModulation`.
+    ///
+    /// A new value drops the simulation
+    /// ([`super::SimulationDropCause::FeedModulation`]): its trace holds
+    /// the feeds and the times of a run under the other value. With the
+    /// switch off, each modulated result takes its dressed path back
+    /// ([`ResultProvenance::Modulated::dressed`]) and reads
+    /// [`FeedStage::Planned`], so an export carries the planned feeds at
+    /// once. It returns the indices of those results; a surface that holds
+    /// its own copy of a toolpath reads them again (`Effects::modulated`).
+    pub(crate) fn set_feed_modulation_impl(
+        &mut self,
+        switch: FeedModulationSwitch,
+    ) -> BTreeSet<usize> {
+        let mut restored = BTreeSet::new();
+        if self.feed_modulation == switch {
+            return restored;
+        }
+        self.feed_modulation = switch;
+        self.drop_simulation(super::SimulationDropCause::FeedModulation);
+        if switch.is_on() {
+            return restored;
+        }
+        for (index, slot) in &mut self.results {
+            let ResultProvenance::Modulated { dressed, .. } = &slot.provenance else {
+                continue;
+            };
+            let path = Arc::clone(dressed.path());
+            slot.op_data = match &slot.op_data {
+                crate::ops::drill_op::OpData::Toolpath(_) => {
+                    crate::ops::drill_op::OpData::Toolpath(path)
+                }
+                crate::ops::drill_op::OpData::DrillOp(drill, _) => {
+                    crate::ops::drill_op::OpData::DrillOp(Arc::clone(drill), path)
+                }
+            };
+            slot.provenance = ResultProvenance::Dressed;
+            let _ = restored.insert(*index);
+        }
+        self.refresh_source_pointers();
+        restored
     }
 }

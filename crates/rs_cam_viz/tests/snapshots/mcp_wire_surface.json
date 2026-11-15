@@ -5423,6 +5423,14 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "feed_modulation": {
+          "default": null,
+          "description": "Optional. SETS the project's one stored feed modulation switch\nbefore the run (`set_feed_modulation`), and the reply says so. Omit\nit to run with the stored value (on by default).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "resolution": {
           "description": "Optional. SETS the project's one stored simulation resolution, in\nmm, and the reply says so. Omit it to simulate at the stored value.",
           "format": "double",
@@ -6309,6 +6317,25 @@
       "type": "object"
     },
     "name": "set_dressup_field"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "The one stored feed modulation switch (operator ruling 2026-11-15).",
+      "properties": {
+        "enabled": {
+          "description": "`true`: a simulation sets each move to the highest feed that every\nlimit allows, which can be above the stated feed (the default).\n`false`: no simulation changes a feed, and each result that holds\nmodulated feeds takes its planned feeds back at once. The project\nfile saves the value. A new value drops the simulation.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "SetFeedModulationParam",
+      "type": "object"
+    },
+    "name": "set_feed_modulation"
   },
   {
     "inputSchema": {

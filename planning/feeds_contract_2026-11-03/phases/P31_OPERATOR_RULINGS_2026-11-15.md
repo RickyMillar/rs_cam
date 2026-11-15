@@ -383,3 +383,103 @@ switch off a capped row loses its modulation caveat ("until modulated") and keep
   feed is 500 mm/min; set by feed optimisation". The clean job of K6 (Suggest speeds) stays clean.
 - The wire snapshot `mcp_wire_surface.json` gains one tool (`set_feed_modulation`) and one field
   (`run_simulation` `feed_modulation`): re-blessed, additions only.
+
+### C: results (measured)
+
+**Where the setting is stored and each door that sets it.**
+
+| Door | How | Read back |
+|---|---|---|
+| Core | `ProjectSession::feed_modulation`; `Command::SetFeedModulation` (wire name `set_feed_modulation`) | `ProjectSession::feed_modulation` |
+| Project file | `[job.simulation] feed_modulation = false`; no key reads as on; no key is written while it is on | the loader |
+| GUI | the checkbox "Feed modulation" in "Setup & run" of the Simulation page (`AppEvent::SetFeedModulation`) | the checkbox |
+| MCP | the tool `set_feed_modulation { enabled }`; the field `feed_modulation` of `run_simulation` | `project_summary` `feed_modulation`; the `run_simulation` reply `feed_modulation` (`on`, `off`) |
+| CLI | `--no-adaptive-feed-modulation` of `project` and `rough-score` sets it off on the in-memory session | `summary.json` `feed_modulation` `{state, source}`, `adaptive_feed_modulation`, `modulation_state` |
+
+**rivmap100 in the release GUI of this tree, through MCP** (`load_project`, `generate_all`,
+`run_simulation`, `export_gcode`; then `set_feed_modulation { enabled: false }`, `run_simulation`,
+`export_gcode`). The exports are in the agent scratchpad (`p31/C/gui_on.nc`, `p31/C/gui_off.nc`).
+
+- Switch ON: the 4 predicted `export.feed_above_stated` warnings, each text equal to the
+  prediction. The `run_simulation` reply holds `feed_modulation: "on"`.
+- `set_feed_modulation { enabled: false }`: the reply is "Feed modulation set to off", with
+  `feed_modulation: "off"`, `restored_toolpaths: [0, 1, 2, 3]` and `stale_toolpaths: []`. No op was
+  generated again.
+- Switch OFF, after one simulation: every op reads "as stated" or "feed optimisation"; the 2
+  predicted warnings (Face 5 "set by feed optimisation", Scallop Finish "set at generation"), each
+  text equal to the prediction. 3D Rough and Project Curve have none.
+- The program lines that are not comments are equal to the CLI programs of the B tree in both
+  states (`diff` of the lines that do not start with a parenthesis: 0 lines). So C moves no F
+  word, no depth and no position with the switch on, and the switch off gives the feeds of
+  `--no-adaptive-feed-modulation`.
+- Readiness cycle time: 3:27:57 with the switch on, 3:53:47 with it off.
+
+**The brief expected no warning with the switch off.** Two stay on rivmap100 (above), and 40 of the
+89 op golden arms warn with no simulation. The rule is the rule of the brief (a feed above a stated
+feed warns); the cause is not the modulation. The lead decides whether the warning must be limited
+to modulated feeds.
+
+**Op golden.** As predicted: the known 46 rows and 42 `gcode_hash` rows against the committed
+file. Header-only proof against the dumped programs of the B tree: each of the 89 programs equals
+its B program when the lines "(WARNING Tool export.feed_above_stated ..." are removed; 40 arms gain
+40 lines, the 40 predicted arms.
+
+**FM1.** 2 passed, no cell moves.
+
+**Tests.** As listed in the predictions. One assertion changed after the first gate run: the
+mirror case of K6 named its warning (the predictions list it).
+
+**Wire changes.**
+
+- New MCP tool `set_feed_modulation { enabled }`; new optional field `run_simulation`
+  `feed_modulation`; reply keys `project_summary.feed_modulation`, `run_simulation`
+  `feed_modulation`, `get_tool_load_report` `emitted_feeds[].warning`. Feature tokens
+  `feed_modulation_switch`, `feed_above_stated_warning`. The wire snapshot was re-blessed
+  (additions only).
+- New warning id `export.feed_above_stated` (Tool; face "Runs above the stated feed") in the
+  G-code header and in every warning list.
+- New project file key `[job.simulation] feed_modulation` (boolean; written only as `false`).
+- CLI `summary.json`: new keys `feed_modulation` `{state, source}` and
+  `per_toolpath[].emitted_feeds_warning`; the `--summary` report prints `WARNING <text>` under a
+  toolpath that warns. `modulation_state` has a third text ("off (the project file: ..)").
+- Core API: `SimulationDropCause::FeedModulation` (the stale label "feed modulation changed");
+  `ResultProvenance::Modulated` holds `dressed`; `Effects::modulated` also names the results that
+  `SetFeedModulation` restored.
+
+**Shots** (`P29-10_shots/after/S14_*.png`, release GUI of this tree, rivmap100, listed in
+`P29-10_shots/INDEX.md`).
+
+**Gates.** On the C tree, one cargo job at a time: fmt check clean. Core sentries:
+`feed_modulation_is_a_project_switch_p31` (4), `a_row_softens_only_under_a_current_modulation_p30_2`
+(4), `a_job_with_each_finding_exports_and_names_it_k6` (3), `a_stated_cut_over_any_limit_warns_review_f4`
+(3), `the_record_states_what_the_gcode_runs_p30_1` (3), `modulated_feeds_read_their_own_prefix_b5`
+(2), `one_record_on_every_surface_p29_10`, `every_limit_judges_every_declared_cut_p29_7`,
+`every_declared_cut_is_judged_at_the_stated_point_p29_10`, `the_exemption_list_only_shrinks_p29_3`,
+`no_limit_reads_the_op_type_p29_last`, `folder_maps_name_real_files_f140`,
+`command_registry_completeness`: pass. The 25 core binaries whose names hold `modulat`, `export`
+or `rubbing`: pass, but for `_litmatrix_rubbing_floor_clamp` (the known red) and
+`feed_modulation_cycle_time_f036c` (not run: 256 s). Core `--lib`: 2822 passed, 1 failed in the
+parallel run (`the_envelope_meets_its_time_budget`, the known timing red; alone 3 of 3 pass).
+`rs_cam_mcp` 39; `rs_cam_cli` all pass (the new test included). Viz `--lib`: 705 passed with no GUI
+running, on the final tree. The 18 viz binaries whose names hold `export`, `modulat`, `readiness`,
+`k6`, `sim`, `mcp_wire`, `mcp_core_arm`, `mcp_authoring`, `mcp_rebind`, `mcp_escape` or
+`mcp_toasts`, and the 7 named viz binaries: pass. FM1: 2 passed. Op golden: as above. Full clippy
+with `--keep-going`: one finding, the red of HEAD in
+`tests/rubbing_floor_diameter_scaling_measurement.rs` (not a file of this step).
+
+One viz `--lib` run did not end: `compute::worker::tests::set_memory_budget_from_no_limit_reads_the_baseline`
+ran for more than eight minutes after the other 706 tests ended, and the agent stopped that test
+process. The test is not in a file of this step. Three other runs of the same binary pass (two
+before it, one after it on the final tree, 705 passed in 82 s). Not diagnosed.
+
+**Open, for the lead.**
+
+- The simulation inspector headline of rivmap100 with the switch off still says "The modulator
+  lifts untagged descents to the lateral band" (an older finding text). It names the modulator in
+  a run that did not modulate. Not changed here.
+- The Readiness line prints the full warning text of each toolpath; each text wraps to two or
+  three rows in the 560-point column.
+- The MCP set path (`CoreRequest::SetFeedModulation` to the reply) has no automated test; it was
+  called on the release GUI (above). The command, the GUI event and the adopt have tests.
+- `generate_all` has no `feed_modulation` field; `set_feed_modulation` before the call sets the
+  switch for the plan.

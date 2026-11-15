@@ -574,7 +574,48 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.panel_side_effects.invalidate_simulation = false;
             self.invalidate_simulation();
         }
+        self.mirror_modulated(&effects.modulated);
         Ok(effects)
+    }
+
+    /// Point the view copy of each toolpath in `modulated` at the session
+    /// result again (`Effects::modulated`: a feed modulation rewrote the
+    /// result, or `SetFeedModulation` with the switch off put its dressed
+    /// path back). The feed-coloured viewport then draws the feeds that an
+    /// export emits. The upload key holds the `Arc` identity of the
+    /// toolpath, so the buffer rebuilds.
+    fn mirror_modulated(&mut self, modulated: &std::collections::BTreeSet<usize>) {
+        if modulated.is_empty() {
+            return;
+        }
+        for &index in modulated {
+            let Some(id) = self
+                .state
+                .session()
+                .toolpath_config_at(index)
+                .map(|tc| tc.id)
+            else {
+                continue;
+            };
+            let Some(annotated) = self
+                .state
+                .session()
+                .result_at(index)
+                .map(|result| std::sync::Arc::clone(result.annotated()))
+            else {
+                continue;
+            };
+            if let Some(held) = self
+                .state
+                .gui
+                .toolpath_rt
+                .get_mut(&id)
+                .and_then(|rt| rt.run.result_mut())
+            {
+                held.annotated = annotated;
+            }
+        }
+        self.pending_upload = true;
     }
 
     /// Every collision marker the viewport draws and picks: the holder

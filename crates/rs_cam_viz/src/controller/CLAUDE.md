@@ -18,7 +18,7 @@
 
 ## Invariants
 
-- The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer. F040: `apply_multitool_plan` applies `PlanMultitoolFinishing`; F115: the sim drain re-points the run result for `Effects::modulated`.
+- The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer. F040: `apply_multitool_plan` applies `PlanMultitoolFinishing`; F115, P31 C: `AppController::apply` re-points the view copy of each toolpath in `Effects::modulated` (`mirror_modulated`: a modulation rewrote the result, or `SetFeedModulation` with the switch off put its dressed path back); `set_feed_modulation` (`events/simulation.rs`) is the GUI and MCP door of the switch, and the adopt modulates only while the session switch is on.
   F096: every controller and MCP write takes `AppController::apply` (the state door, then the view sim clears at once).
   F2: a focus write takes `AppController::set_focus`; a change of focus or of its setup raises `pending_upload`. R7b: `discharge_panel_side_effects` shows each `PanelSideEffects.notes` entry as an Info notice (lib `a_model_change_in_the_panel_drops_the_lost_picks_r7b`).
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new toolpath is a wrong picture.

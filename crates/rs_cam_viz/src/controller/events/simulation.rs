@@ -149,6 +149,31 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(effects)
     }
 
+    /// Write the ONE stored feed modulation switch (operator ruling
+    /// 2026-11-15), through `Command::SetFeedModulation`.
+    ///
+    /// The Simulation panel checkbox and MCP (`set_feed_modulation`, the
+    /// `feed_modulation` field of `run_simulation`) take this door. A new
+    /// value is a project edit: the file carries it and the simulation
+    /// drops. With the switch off, `AppController::apply` reads each
+    /// restored toolpath again (`Effects::modulated`).
+    ///
+    /// # Errors
+    /// The refusal of the session. The command has none today.
+    pub(crate) fn set_feed_modulation(
+        &mut self,
+        switch: rs_cam_core::session::FeedModulationSwitch,
+    ) -> Result<rs_cam_core::session::Effects, rs_cam_core::session::SessionError> {
+        let changed = self.state.session().feed_modulation() != switch;
+        let effects = self.apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs { switch },
+        ))?;
+        if changed {
+            self.state.gui.mark_edited();
+        }
+        Ok(effects)
+    }
+
     /// Build per-setup simulation groups.
     pub(crate) fn build_simulation_groups(
         &self,

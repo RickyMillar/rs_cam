@@ -73,10 +73,10 @@ pub use command::{
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
-    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetDressupFieldArgs, SetFeedModulationArgs, SetFeedsProvenanceArgs, SetMachineArgs,
+    SetMachineHeadArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs,
+    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathFloorArgs, SetToolpathHeightsArgs, SetToolpathModelArgs,
     SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs,
@@ -124,7 +124,7 @@ pub use multitool::{
 pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
-pub use result_provenance::{FeedStage, ResultProvenance};
+pub use result_provenance::{DressedPath, FeedModulationSwitch, FeedStage, ResultProvenance};
 pub use rule_offers::RuleOffer;
 pub use selection_status::{
     BOUNDARY_ITEM_USE, BOUNDARY_OUTLINE_USE, BuildModelFacesHandle, ClickEdit, HoleItem,
@@ -1796,15 +1796,19 @@ pub enum SimulationDropCause {
     /// S2: a stock change of a setup changed. The run carved a stock that
     /// the project no longer starts that setup, or a later one, from.
     StockChanges,
+    /// The feed modulation switch of the project changed
+    /// (`Command::SetFeedModulation`, operator ruling 2026-11-15). The run
+    /// modulated the feeds, or did not, under the other value.
+    FeedModulation,
 }
 
 impl SimulationDropCause {
     /// The number of variants.
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
 
     /// Every variant, in display order.
     pub const ALL: [Self; Self::COUNT] = crate::all_variants!(SimulationDropCause:
-        Operations, Machine, PostSettings, Resolution, Obstacles, StockChanges,
+        Operations, Machine, PostSettings, Resolution, Obstacles, StockChanges, FeedModulation,
     );
 
     /// A short phrase for a stale label, in ASD-STE100.
@@ -1816,6 +1820,7 @@ impl SimulationDropCause {
             Self::Resolution => "simulation resolution changed",
             Self::Obstacles => "obstacles changed",
             Self::StockChanges => "stock changes edited",
+            Self::FeedModulation => "feed modulation changed",
         }
     }
 
@@ -1827,6 +1832,7 @@ impl SimulationDropCause {
             Self::Resolution => 3,
             Self::Obstacles => 4,
             Self::StockChanges => 5,
+            Self::FeedModulation => 6,
         }
     }
 }
@@ -1967,6 +1973,11 @@ pub struct ProjectSession {
     /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
     /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
     pub(crate) simulation_resolution: SimulationResolution,
+    /// The one stored feed modulation switch (operator ruling 2026-11-15:
+    /// "on by default ... have option to disable it"). A simulation
+    /// modulates the feeds only while it is on. Saved as
+    /// `[job.simulation] feed_modulation`; see [`FeedModulationSwitch`].
+    pub(crate) feed_modulation: FeedModulationSwitch,
     /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
     /// starts empty, and the key reads the inputs, not a counter.
     pub(crate) load_report_memo: load_report::LoadReportMemo,
@@ -2024,6 +2035,7 @@ impl ProjectSession {
             simulation_drop_epochs: [0; SimulationDropCause::COUNT],
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
+            feed_modulation: FeedModulationSwitch::On,
             load_report_memo: load_report::LoadReportMemo::default(),
             selection_status_memo: selection_status::SelectionStatusMemo::default(),
             emitted_feeds_memo: emitted_feeds::EmittedFeedsMemo::default(),

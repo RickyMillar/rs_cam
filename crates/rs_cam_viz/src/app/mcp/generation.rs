@@ -1217,8 +1217,9 @@ impl RsCamApp {
 
 /// P30-1: `emitted_feeds` of `get_tool_load_report`: the record of each
 /// toolpath with a result, from the one door
-/// (`ProjectSession::emitted_feeds`), with its id, its name and the line
-/// that the GUI and the CLI print.
+/// (`ProjectSession::emitted_feeds`), with its id, its name, the line
+/// that the GUI and the CLI print, and the warning text of a feed above the
+/// stated feed (`EmittedFeeds::above_stated_warning`).
 pub(super) fn emitted_feeds_json(
     session: &rs_cam_core::session::ProjectSession,
 ) -> serde_json::Value {
@@ -1232,6 +1233,9 @@ pub(super) fn emitted_feeds_json(
                 "toolpath_id": tc.id,
                 "name": tc.name,
                 "line": feeds.line(),
+                // Operator ruling 2026-11-15: the text of the export
+                // warning `export.feed_above_stated`, or null.
+                "warning": feeds.above_stated_warning(),
                 "feeds": feeds,
             }))
         })

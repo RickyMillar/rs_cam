@@ -663,11 +663,9 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// - The view reads the STORED trace back from the session, so the
     ///   viewport and the session share one `Arc`: the modulated trace.
-    /// - Each toolpath that `Effects::modulated` names re-points its
-    ///   `rt.result` to the session's result, so the feed-coloured
-    ///   viewport draws the feeds that export emits. The upload key holds
-    ///   the `Arc` identity of the toolpath, so the buffer rebuilds.
-    fn mirror_adopted_simulation(&mut self, effects: Effects) {
+    /// - `AppController::apply` re-points each toolpath that
+    ///   `Effects::modulated` names (`mirror_modulated`).
+    fn mirror_adopted_simulation(&mut self, effects: &Effects) {
         // Every field is named, so a new `Effects` field must state here
         // whether this door mirrors it.
         let Effects {
@@ -681,7 +679,8 @@ impl<B: ComputeBackend> AppController<B> {
             selection_dropped: _,
             floor_set: _,
             planned: _,
-            modulated,
+            // `AppController::apply` read these toolpaths again.
+            modulated: _,
             picks_dropped: _,
             feeds_warnings: _,
         } = effects;
@@ -693,33 +692,6 @@ impl<B: ComputeBackend> AppController<B> {
             .map(Arc::clone);
         if let Some(results) = self.state.simulation.results.as_mut() {
             results.cut_trace = stored_trace;
-        }
-        for index in modulated {
-            let Some(id) = self
-                .state
-                .session()
-                .toolpath_config_at(index)
-                .map(|tc| tc.id)
-            else {
-                continue;
-            };
-            let Some(annotated) = self
-                .state
-                .session()
-                .result_at(index)
-                .map(|result| Arc::clone(result.annotated()))
-            else {
-                continue;
-            };
-            if let Some(held) = self
-                .state
-                .gui
-                .toolpath_rt
-                .get_mut(&id)
-                .and_then(|rt| rt.run.result_mut())
-            {
-                held.annotated = annotated;
-            }
         }
         self.pending_upload = true;
     }
@@ -965,14 +937,20 @@ impl<B: ComputeBackend> AppController<B> {
                         let args = AdoptSimulationArgs {
                             result: Box::new(adopted),
                             epoch,
-                            // Default-on in the GUI and MCP, as the CLI
-                            // default is. P29-10z: the one value that the
-                            // limit rows state too.
-                            modulation: Some(crate::state::simulation::FEED_MODULATION),
+                            // Operator ruling 2026-11-15: the stored feed
+                            // modulation switch of the project decides (on
+                            // by default, as the CLI). Core gates the pass
+                            // on the same switch.
+                            modulation: self
+                                .state
+                                .session()
+                                .feed_modulation()
+                                .is_on()
+                                .then_some(crate::state::simulation::FEED_MODULATION),
                         };
                         match self.apply(Command::AdoptSimulation(args)) {
                             Ok(effects) => {
-                                self.mirror_adopted_simulation(effects);
+                                self.mirror_adopted_simulation(&effects);
                                 // G-ROUGHCOV A2: the session copy keeps no
                                 // checkpoint (W2-E), so the 3D Rough coverage
                                 // is read HERE, once, from the view's
@@ -2407,6 +2385,12 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = object.insert(
                     "simulation_resolution".to_owned(),
                     serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
+                );
+                // Operator ruling 2026-11-15: the feed modulation switch
+                // this run used (`on`, `off`).
+                let _ = object.insert(
+                    "feed_modulation".to_owned(),
+                    serde_json::json!(self.state.session().feed_modulation()),
                 );
             }
             let _ = sender.send(McpResponse {

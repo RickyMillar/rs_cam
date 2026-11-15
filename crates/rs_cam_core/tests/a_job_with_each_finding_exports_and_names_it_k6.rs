@@ -353,7 +353,7 @@ fn a_clean_job_writes_no_warning_line_k6() {
 /// Operator ruling 2026-11-15 ("Drawer only"): an entry rubbing row writes
 /// no export warning (`tool_load::groups::stated_row_warns_at_export`). It
 /// is the only stated row of this op with the gating tone, so the export
-/// has no warning and the header has no warning line.
+/// has no `export.stated_cut_over_limit` warning and no header line of it.
 #[test]
 fn a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6() {
     let (session, exported) = only_inverted_exported(false);
@@ -377,6 +377,38 @@ fn a_ramp_that_rubs_is_red_in_the_drawer_and_writes_no_export_warning_k6() {
         )],
         "the drawer holds one red row, the ramp rubbing row"
     );
-    assert!(exported.warnings.is_empty(), "{:?}", exported.warnings);
-    assert!(!exported.gcode.contains("WARNING"), "{}", exported.gcode);
+    assert!(
+        exported
+            .warnings
+            .iter()
+            .all(|w| w.id != ids::EXPORT_STATED_CUT_OVER_LIMIT),
+        "{:?}",
+        exported.warnings
+    );
+    assert!(
+        !exported
+            .gcode
+            .lines()
+            .any(|line| line.contains(ids::EXPORT_STATED_CUT_OVER_LIMIT)),
+        "{}",
+        exported.gcode
+    );
+    // Operator ruling 2026-11-15 (P31 C): the fixture keeps the feed
+    // optimisation dressup, which sets 4 of the 16 cutting moves and the
+    // ramp above their stated feeds. That is the one warning of this export
+    // (the clean job above takes the Suggest speeds and has none).
+    let details: Vec<(&str, &str)> = exported
+        .warnings
+        .iter()
+        .map(|w| (w.id, w.detail.as_str()))
+        .collect();
+    assert_eq!(
+        details,
+        vec![(
+            ids::EXPORT_FEED_ABOVE_STATED,
+            "Toolpath 'Inverted': runs up to 1342 mm/min, the stated feed is 1000 mm/min (4 of \
+             16 cutting moves above); ramp entries run up to 1003 mm/min, the stated ramp feed \
+             is 500 mm/min; set by feed optimisation"
+        )]
+    );
 }

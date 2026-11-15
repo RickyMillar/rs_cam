@@ -397,6 +397,23 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::FeedAboveStated => {
+                    // Operator ruling 2026-11-15: a feed above the stated
+                    // feed is a warning on every surface. The record of
+                    // the slot that the program holds writes the text.
+                    for &idx in emitted {
+                        if let Some(text) = self
+                            .emitted_feeds(idx)
+                            .and_then(|feeds| feeds.above_stated_warning())
+                        {
+                            push(
+                                ids::EXPORT_FEED_ABOVE_STATED,
+                                name_at(idx),
+                                format!("Toolpath '{}': {text}", name_at(idx)),
+                            );
+                        }
+                    }
+                }
                 Gate::FluteOverreach => {
                     for &idx in emitted {
                         if let Some(crate::compute::simulate::FluteReach::Over(text)) =

@@ -92,11 +92,15 @@ pub enum Gate {
     /// simulation, only a stated row of a limit with no sample gate
     /// (`tool_load::groups::judged_only_before_the_simulation`).
     StatedCutOverLimit,
+    /// Operator ruling 2026-11-15: the emitted feeds of an op hold a fed
+    /// cutting move above the stated feed, or an entry above its stated
+    /// feed (`session::EmittedFeeds::above_stated_warning`).
+    FeedAboveStated,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::HeightRefuses,
         Self::GougeWarns,
         Self::CentreCutPlunge,
@@ -111,6 +115,7 @@ impl Gate {
         Self::FluteOverreach,
         Self::SimOutsideEnvelope,
         Self::StatedCutOverLimit,
+        Self::FeedAboveStated,
     ];
 }
 

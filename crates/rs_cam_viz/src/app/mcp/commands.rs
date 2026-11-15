@@ -789,6 +789,12 @@ impl RsCamApp {
                 }),
                 Box::new(before),
             ),
+            CoreRequest::SetFeedModulation(p) => CorePlan::Apply(
+                Command::SetFeedModulation(rs_cam_core::session::SetFeedModulationArgs {
+                    switch: rs_cam_core::session::FeedModulationSwitch::from_enabled(p.enabled),
+                }),
+                Box::new(before),
+            ),
         }
     }
 }
@@ -1763,7 +1769,8 @@ impl RsCamApp {
             | CoreRequest::SetDressupField(_)
             | CoreRequest::SetToolpathEnabled(_)
             | CoreRequest::EditToolpathSelection(_)
-            | CoreRequest::SetSimulationResolution(_) => None,
+            | CoreRequest::SetSimulationResolution(_)
+            | CoreRequest::SetFeedModulation(_) => None,
         }
     }
 
@@ -1890,6 +1897,7 @@ impl RsCamApp {
             | CommandId::SetDressupField
             | CommandId::SetToolpathEnabled
             | CommandId::SetSimulationResolution
+            | CommandId::SetFeedModulation
             | CommandId::ReplaceTool
             | CommandId::ReplaceObstacle
             | CommandId::ToolpathCycleTime
@@ -2900,6 +2908,21 @@ impl RsCamApp {
                         report.mm, report.mode
                     ),
                     serde_json::json!({ "simulation_resolution": report }),
+                    stale,
+                    &before.diagnostics,
+                ))
+            }
+            CommandId::SetFeedModulation => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.core_stale(&effects);
+                let switch = self.controller.state().session().feed_modulation();
+                CoreReply::succeeded(self.mcp_mutation_result(
+                    format!("Feed modulation set to {}", switch.word()),
+                    serde_json::json!({
+                        "feed_modulation": switch,
+                        // The results that took their planned feeds back.
+                        "restored_toolpaths": effects.modulated,
+                    }),
                     stale,
                     &before.diagnostics,
                 ))

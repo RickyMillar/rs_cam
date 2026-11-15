@@ -25,6 +25,8 @@ pub mod tool;
 mod toolpath_panel;
 
 pub(crate) use feeds_speeds::draw_emitted_feeds_line;
+#[cfg(test)]
+pub(crate) use feeds_speeds::{FEEDS_WARNING_PREFIX, feeds_line_mark};
 pub use operations::{
     DepthBeyondStock, DiagramFloor, FaceFloor, FloorInputs, FloorRun, ThroughCut,
     ToolpathValidationContext, admit_heights_edit, bottom_z_pin_note, collect_diagnostics,

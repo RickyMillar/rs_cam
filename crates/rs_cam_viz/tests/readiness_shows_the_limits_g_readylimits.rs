@@ -197,3 +197,71 @@ fn a_deep_cut_reddens_the_depth_row_and_refuses_no_export_g_readylimits() {
         warning.iter().map(|s| s.kind).collect::<Vec<_>>()
     );
 }
+
+/// Operator ruling 2026-11-15 (P31 C): a feed above the stated feed is a
+/// warning, and the Readiness page lists it: one line "Feeds above the
+/// stated feed: n toolpaths", then the export warning text of each
+/// toolpath. The line reads the export warnings (`preflight_warnings`), the
+/// rows that the export header and the MCP reply name. A project with no
+/// such warning paints no line.
+#[test]
+fn readiness_lists_the_feeds_above_the_stated_feed_p31() {
+    const LABEL: &str = "Feeds above the stated feed:";
+    let detail_of = |state: &rs_cam_viz::state::AppState| -> Vec<String> {
+        let warnings = rs_cam_viz::io::export::preflight_warnings(
+            state.session(),
+            &state.gui,
+            &state.simulation,
+        );
+        rs_cam_viz::ui::readiness::feeds_above_stated_rows(&warnings)
+            .into_iter()
+            .map(|w| w.detail.clone())
+            .collect()
+    };
+    let mut warned = 0;
+    let mut quiet = 0;
+    for cut in [Cut::InsideTheRigidityCap, Cut::PastTheRigidityCap] {
+        let state = simulated_state(cut);
+        let details = detail_of(&state);
+        let texts = readiness_text(&state);
+        let painted_label = texts.iter().any(|t| t == LABEL);
+        assert_eq!(
+            painted_label,
+            !details.is_empty(),
+            "the line shows exactly when a toolpath warns: {details:?}"
+        );
+        if details.is_empty() {
+            quiet += 1;
+            continue;
+        }
+        warned += 1;
+        let count = match details.len() {
+            1 => "1 toolpath".to_owned(),
+            n => format!("{n} toolpaths"),
+        };
+        assert!(texts.contains(&count), "the count: {texts:?}");
+        for detail in &details {
+            assert!(
+                detail.contains("the stated"),
+                "the row is the feed warning: {detail}"
+            );
+            // The warning text wraps in the 560-point column, so the
+            // painted rows hold its words in order.
+            let painted: String = texts.join(" ");
+            let first = detail.split(';').next().unwrap_or(detail);
+            let head: String = first
+                .split_whitespace()
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(
+                painted.contains(&head),
+                "the page paints {head:?}: {texts:?}"
+            );
+        }
+    }
+    assert!(
+        warned > 0,
+        "non-vacuity: a fixture op runs above its stated feed ({quiet} quiet)"
+    );
+}

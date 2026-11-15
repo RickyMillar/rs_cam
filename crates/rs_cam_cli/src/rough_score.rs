@@ -320,7 +320,9 @@ pub(crate) fn score_session(
         }
         Some(value)
     };
-    let feeds_basis = match (opts.no_sim, opts.adaptive_feed_modulation) {
+    // The switch the walk ran with: the stored value of the project, or off
+    // by the flag (operator ruling 2026-11-15).
+    let feeds_basis = match (opts.no_sim, walk.feed_modulation.state.is_on()) {
         (true, _) => "planned: no closing simulation, so the feeds are the generated feeds",
         (false, true) => "emitted: the IR the export reads, after the closing modulation",
         (false, false) => "emitted: the IR the export reads, modulation off",

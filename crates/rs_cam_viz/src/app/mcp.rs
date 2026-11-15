@@ -480,7 +480,10 @@ impl super::RsCamApp {
                 );
                 self.mcp_generate_all(fixpoint, simulation_resolution_mm, response_tx, progress_tx);
             }
-            McpRequestKind::RunSimulation { resolution } => {
+            McpRequestKind::RunSimulation {
+                resolution,
+                feed_modulation,
+            } => {
                 self.controller
                     .push_notification("MCP: Running simulation...".to_owned(), Severity::Info);
                 self.controller
@@ -489,7 +492,7 @@ impl super::RsCamApp {
                         Workspace::Simulation,
                     )));
                 self.mcp_send_progress(&progress_tx, "Starting simulation...", 0.0, Some(1.0));
-                self.mcp_run_simulation(resolution, response_tx);
+                self.mcp_run_simulation(resolution, feed_modulation, response_tx);
             }
             McpRequestKind::CompareRestWithFresh { index } => {
                 let result = self.mcp_compare_rest_with_fresh(index);

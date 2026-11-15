@@ -160,3 +160,23 @@ modulation"):
   it.
 - A transient "RCH running" job was in the first S4 idx 16 Passes shot; it
   was shot again with no job.
+
+## S14: feed modulation is a switch, and a feed above the stated feed warns (P31 C, 2026-11-15)
+
+Release GUI of the P31 C tree (HEAD `7c28a48c5` plus the patches A to C), rivmap100 only, through
+MCP: `load_project`, `generate_all`, `run_simulation`; then `set_feed_modulation { enabled: false }`
+and `run_simulation`. Nothing was saved.
+
+| File | What it shows | Critique |
+|---|---|---|
+| `after/S14_sim_setup_run_feed_modulation.png` | The Simulation page before the first run: "Setup & run" holds the checkbox "Feed modulation", checked (the default) | The checkbox sits under "Auto from tool size" with the same weight. Nothing says what it does until the hover. The block closes after the first run, so the switch is then one click away |
+| `after/S14_face5_passes_modulation_on.png` | Face 5, Passes, switch on, after `generate_all` (its plan simulations modulated Face 5 in run 1) and before the closing `run_simulation`: the line "runs 2333 to 3000 mm/min · 77 of 77 above 2200" with the warning glyph in the warning colour; "feeds: modulated, run 1" under it | The line reads as a warning and does not elide at the rail. It is one small line under the Limits drawer; the red rubbing line above it is louder |
+| `after/S14_project_curve_passes_modulation_on.png` | Project Curve, Passes, switch on: "runs 3000 mm/min · 478 of 478 above 1000" with the glyph; "feeds: modulated, run 3" | Clear. The stated Feed field above still shows 1000, three times lower than the feed that runs; only this line says so |
+| `after/S14_readiness_modulation_on.png` | Readiness, switch on: "Feeds above the stated feed: 4 toolpaths" in the caution state, then the warning text of each toolpath | The count line is clear. The four texts are long and wrap to two or three rows each in grey; the block is heavier than the Tool load rows above it |
+| `after/S14_face5_passes_modulation_off.png` | Face 5, Passes, switch off, after a simulation: "runs 2272 to 2333 mm/min · 77 of 77 above 2200" still with the glyph; "feeds: feed optimisation" | The warning stays with the switch off, because the feed optimisation dressup sets these feeds. The stage line says so; an operator can read the warning as a modulation that did not go |
+| `after/S14_project_curve_passes_modulation_off.png` | Project Curve, Passes, switch off: one quiet line "runs 1000 mm/min · 0 of 478 above 1000 · as stated" | Correct and quiet |
+| `after/S14_readiness_modulation_off.png` | Readiness, switch off: "Feeds above the stated feed: 2 toolpaths" (Face 5 "set by feed optimisation", Scallop Finish "set at generation") | The causes read well. The cycle time is 3:53:47 against 3:27:57 with the switch on |
+| `after/S14_sim_page_modulation_off.png` | The Simulation page after the run with the switch off: the checkbox unchecked; the inspector line of Face 5 with the glyph | The inspector headline still says "The modulator lifts untagged descents to the lateral band" in a run with no modulation (an older text) |
+
+The first attempt lost the window (the Wayland surface got no frames after the simulation); the
+GUI was started again and the same steps gave the shots.

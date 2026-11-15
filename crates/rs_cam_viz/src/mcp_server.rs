@@ -34,13 +34,13 @@ use rs_cam_mcp::server::{
     PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam,
     RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SelectionStatusParam, SetAlignmentPinsParam, SetBoundaryConfigParam,
-    SetDressupConfigParam, SetDressupFieldParam, SetMachineHeadParam, SetMachineKinematicsParam,
-    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
-    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
-    SetToolpathEnabledParam, SetToolpathFloorParam, SetToolpathHeightsParam, SetToolpathModelParam,
-    SetToolpathParamInput, SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam,
-    SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
-    TabLayoutParam, json_str,
+    SetDressupConfigParam, SetDressupFieldParam, SetFeedModulationParam, SetMachineHeadParam,
+    SetMachineKinematicsParam, SetRestAnalysisConfigParam, SetSetupRotationParam,
+    SetSimulationResolutionParam, SetSpindleStrategyParam, SetStockConfigParam,
+    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathFloorParam,
+    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam,
+    SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam, TabLayoutParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -1137,7 +1137,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "export_gcode",
-        description = "Export G-code to a file path. No finding refuses the export (K6): the reply and the program header name each warning (danger, id, toolpath, face): height planes out of order, a cut into the model, a non-centre-cutting plunge or descent, a tool-load exceedance or an unmodelled load row, and an ENABLED operation left out because it has no current result (not generated, still generating, waiting on upstream stock, failed, or edited since it was generated). Only an emit error (inch units, a feed that is not above zero, controller compensation on a post without it) stops the file. A disabled toolpath is skipped. P30-1: the reply ends with \"Feeds that run:\", one line per emitted toolpath from its feed record (`ProjectSession::emitted_feeds`): the smallest and largest emitted cutting feed, the count of cutting moves above the stated feed and the feed stage, then an entry line where the largest plunge or ramp feed is not the stated one; the program header holds the same record under each op label."
+        description = "Export G-code to a file path. No finding refuses the export (K6): the reply and the program header name each warning (danger, id, toolpath, face): height planes out of order, a cut into the model, a non-centre-cutting plunge or descent, a tool-load exceedance or an unmodelled load row, and an ENABLED operation left out because it has no current result (not generated, still generating, waiting on upstream stock, failed, or edited since it was generated). Only an emit error (inch units, a feed that is not above zero, controller compensation on a post without it) stops the file. A disabled toolpath is skipped. P30-1: the reply ends with \"Feeds that run:\", one line per emitted toolpath from its feed record (`ProjectSession::emitted_feeds`): the smallest and largest emitted cutting feed, the count of cutting moves above the stated feed and the feed stage, then an entry line where the largest plunge or ramp feed is not the stated one; the program header holds the same record under each op label. Operator ruling 2026-11-15: an op whose emitted feeds hold a cutting move above the stated feed, or an entry above its stated plunge or ramp feed, carries the warning export.feed_above_stated (after a simulation with feed modulation, which is on by default; set_feed_modulation switches it off); the detail names the largest feed, the stated feed, the count of moves above it and what set the feeds."
     )]
     async fn export_gcode(&self, Parameters(param): Parameters<ExportParam>) -> String {
         Self::format_result(
@@ -1148,7 +1148,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_tool_load_report",
-        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Each gate uses a typed verdict: ChiploadVerdict (Within carries approach-to-min/max metrics, Exceeds carries ChipSide + ChiploadStatistic + ChipBounds), PowerVerdict (carries peak_kw + available_kw on both arms), DeflectionVerdict (carries peak_mm + DeflectionBounds with 50µm/200µm thresholds). All three states are Within/Exceeds/Unmodeled. `limit_rows` (P29-10, `ProjectSession::limit_rows`): one entry per toolpath, `{toolpath_id, toolpath_name, rows}` (a toolpath with no verdict, a disabled op, gets its no-simulation rows): one row per gate and cut group (`subject` `group` with `group`, `headline`, `samples`, `material`; the not-judged and no-sample cells included), the gantry-push row, one row per drill gate and per own material; each row holds `check` (limit, value, bound, unit, side, margin, state, basis, binding, population), `caveats`, `exemption`, `tone`, `face` and `detail`; it repeats `load_report` in the common row. `load_report.per_toolpath[]` has no `groups` key (P29-10 10e): every gate cell is a `limit_rows` row. `emitted_feeds` (P30-1): one entry per toolpath with a result, `{toolpath_id, name, line, feeds}`; `feeds` is the record of the feeds that an export emits now (`ProjectSession::emitted_feeds`, the record of the G-code header): `stage` (`{kind: planned | modulated_current | modulated_superseded, simulation_run, current_run}`), `feed_optimised`, `stated_mm_min`, `cutting` (`min_mm_min`, `max_mm_min`, `moves`, `above_stated`: fed moves of the body cut kinds, compared as F words), `plunge` and `ramp` (`max_mm_min`, `stated_mm_min`); `line` is the text of the GUI and the CLI."
+        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Each gate uses a typed verdict: ChiploadVerdict (Within carries approach-to-min/max metrics, Exceeds carries ChipSide + ChiploadStatistic + ChipBounds), PowerVerdict (carries peak_kw + available_kw on both arms), DeflectionVerdict (carries peak_mm + DeflectionBounds with 50µm/200µm thresholds). All three states are Within/Exceeds/Unmodeled. `limit_rows` (P29-10, `ProjectSession::limit_rows`): one entry per toolpath, `{toolpath_id, toolpath_name, rows}` (a toolpath with no verdict, a disabled op, gets its no-simulation rows): one row per gate and cut group (`subject` `group` with `group`, `headline`, `samples`, `material`; the not-judged and no-sample cells included), the gantry-push row, one row per drill gate and per own material; each row holds `check` (limit, value, bound, unit, side, margin, state, basis, binding, population), `caveats`, `exemption`, `tone`, `face` and `detail`; it repeats `load_report` in the common row. `load_report.per_toolpath[]` has no `groups` key (P29-10 10e): every gate cell is a `limit_rows` row. `emitted_feeds` (P30-1): one entry per toolpath with a result, `{toolpath_id, name, line, warning, feeds}`; `warning` (operator ruling 2026-11-15) is the text of the export warning export.feed_above_stated of the toolpath, or null when no move runs above a stated feed; `feeds` is the record of the feeds that an export emits now (`ProjectSession::emitted_feeds`, the record of the G-code header): `stage` (`{kind: planned | modulated_current | modulated_superseded, simulation_run, current_run}`), `feed_optimised`, `stated_mm_min`, `cutting` (`min_mm_min`, `max_mm_min`, `moves`, `above_stated`: fed moves of the body cut kinds, compared as F words), `plunge` and `ramp` (`max_mm_min`, `stated_mm_min`); `line` is the text of the GUI and the CLI."
     )]
     async fn get_tool_load_report(&self) -> String {
         Self::format_result(
@@ -1511,6 +1511,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "set_feed_modulation",
+        description = "Set the project's ONE stored feed modulation switch (operator ruling 2026-11-15). enabled: true (the default of every project) lets each simulation (run_simulation, the generate_all plan, the GUI) set each move to the highest feed that every limit allows; that feed can be above the stated feed, and export_gcode then carries the warning export.feed_above_stated for the op. enabled: false: no simulation changes a feed, and each result that holds modulated feeds takes its planned feeds back at once (restored_toolpaths in the reply). A new value drops the simulation. The project file saves the value ([job.simulation] feed_modulation; a file with no key reads as on). project_summary reads it back as feed_modulation."
+    )]
+    async fn set_feed_modulation(
+        &self,
+        Parameters(param): Parameters<SetFeedModulationParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetFeedModulation(param)))
+                .await,
+        )
+    }
+
+    #[tool(
         name = "set_toolpath_enabled",
         description = "Enable or disable a toolpath for generation and simulation."
     )]
@@ -1588,7 +1602,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_all",
-        description = "Generate every enabled toolpath. The call plans the work over the dependency edges: it simulates a setup prefix when an operation starts from remaining stock, then generates that operation. A project reaches a fully generated state in ONE call. Every simulation of the plan runs at the project's ONE stored cell (`set_simulation_resolution`); pass `simulation_resolution_mm` to SET that value. When an enabled operation starts from remaining stock and the stored cell is too coarse for it, the call refuses rather than guess a cell size, because collision counts and engagement both move with it; pass `fixpoint: false` to plan no simulation at all. An operation that already holds a current result is not generated again. The reply counts `generated`, `already_current` (not generated because current) and `enabled` (every enabled operation), separates `errors` (genuine failures) from `awaiting_prior_stock` (operations still waiting, each naming what it waits for), and reports `steps` and `simulations`. The call does not change any toolpath's `debug_options`; `get_generation_debug_trace` answers after it anyway. The call waits indefinitely. Pass `timeout_s` to bound the wait; on timeout the reply says `status: \"running\"` and generation continues. Read `generation_status` for live progress. Call `cancel_generation` to stop it."
+        description = "Generate every enabled toolpath. The call plans the work over the dependency edges: it simulates a setup prefix when an operation starts from remaining stock, then generates that operation. A project reaches a fully generated state in ONE call. Every simulation of the plan runs at the project's ONE stored cell (`set_simulation_resolution`); pass `simulation_resolution_mm` to SET that value. While the project's feed modulation switch is on (the default; `set_feed_modulation`), each simulation of the plan sets each move of the simulated operations to the highest feed that every limit allows, which can be above the stated feed. When an enabled operation starts from remaining stock and the stored cell is too coarse for it, the call refuses rather than guess a cell size, because collision counts and engagement both move with it; pass `fixpoint: false` to plan no simulation at all. An operation that already holds a current result is not generated again. The reply counts `generated`, `already_current` (not generated because current) and `enabled` (every enabled operation), separates `errors` (genuine failures) from `awaiting_prior_stock` (operations still waiting, each naming what it waits for), and reports `steps` and `simulations`. The call does not change any toolpath's `debug_options`; `get_generation_debug_trace` answers after it anyway. The call waits indefinitely. Pass `timeout_s` to bound the wait; on timeout the reply says `status: \"running\"` and generation continues. Read `generation_status` for live progress. Call `cancel_generation` to stop it."
     )]
     async fn generate_all(
         &self,
@@ -1663,17 +1677,23 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "run_simulation",
-        description = "Run tri-dexel stock simulation. Returns air cutting %, engagement, collisions, and verdict."
+        description = "Run tri-dexel stock simulation. Returns air cutting %, engagement, collisions, and verdict. While the project's feed modulation switch is on (the default; set_feed_modulation), the run sets each move to the highest feed that every limit allows, which can be above the stated feed; pass feed_modulation to SET that stored switch before the run (false: the run changes no feed, and each modulated result takes its planned feeds back)."
     )]
     async fn run_simulation(
         &self,
-        Parameters(SimulationParam { resolution }): Parameters<SimulationParam>,
+        Parameters(SimulationParam {
+            resolution,
+            feed_modulation,
+        }): Parameters<SimulationParam>,
         meta: Meta,
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
             self.send_with_progress(
-                McpRequestKind::RunSimulation { resolution },
+                McpRequestKind::RunSimulation {
+                    resolution,
+                    feed_modulation,
+                },
                 meta,
                 Some(peer),
                 None,
