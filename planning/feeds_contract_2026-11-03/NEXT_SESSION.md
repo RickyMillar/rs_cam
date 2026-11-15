@@ -1,5 +1,17 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## State on 2026-11-15, afternoon (read this first)
+
+- P31 A, B, C are committed (`13335e447..d3f630423`), the GUI freeze fix is `84aa45646`. Nothing is pushed.
+- The practical test on the wanaka operator file and five operator rulings are in
+  `phases/P31_OPERATOR_RULINGS_2026-11-15.md` section E.
+- To build, in this order: (1) feed modulation off / cap only / full, default cap only; the force
+  budget never sets a feed; a floor at the rubbing feed; (2) a depth per pass inside Project Curve;
+  (3) Generate All also generates a rest op that waits on a simulation; (4) the 6 mm relief band on
+  the operator file with a measured thickness check; (5) M4-A (D of the P31 note; the baseline
+  binary is stale after step 1).
+- Not run on today's commits: the viz test binaries, the core full gate. The push waits for both.
+
 ## HAND-OVER 2026-11-11 evening, updated 2026-11-12 night (read this section first)
 
 You are the lead of the feeds contract. No agent of the old session exists for you. Start one

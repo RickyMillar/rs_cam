@@ -575,3 +575,65 @@ and run `m4_diff.py`.
 - The sites of `SampleDepth`: `limits/cut.rs`, `limits/sample.rs`, `limits/row.rs` (the caveat and
   six match arms), `limits/mod.rs`, `limits/exemptions.rs` (the row `M4`) and three tests. The
   pins go from 37 / 26 / 37 to 36 / 25 / 36. The wire loses the caveat `sample_depth`.
+
+## E. The practical test on the wanaka operator file, and the rulings that came from it (2026-11-15)
+
+The operator asked for a test in the GUI on the real job ("lets dial in the feeds/speeds on this
+project to test that the new implementation is working in practice, not just test code"). The lead
+ran it through MCP on the release GUI of `d3f630423`, on
+`planning/rivmap_block_job/nz_wanaka_21_operator.toml`. Nothing was saved to the file. The exports
+are in the lead scratchpad (`p31/lead/wanaka_mod_on.nc`, `wanaka_mod_off.nc`; the compare script
+`capsim.py`).
+
+### E: measured
+
+- The feed modulation switch works: with it off, 0 of 593636 fed moves run above a stated feed.
+- With it on, the modulator lifts moves with no load to the machine ceiling (15000 mm/min), also
+  on the 2 mm tool (stated 1010 mm/min; 9251 of 27580 cutting moves above) and on ramp entries.
+- With it on, the fed time of the job is 23526 s against 12834 s with it off (path length over F
+  word, the same moves). "Back bulk rough 18 mm" goes from 224 s to 11160 s: 438 moves under
+  200 mm/min, the lowest at 1 mm/min, one move of 279 mm at 3 mm/min.
+- The cause is the force budget (35.3 N). The edge-force term is 4.595 N per mm of depth (the
+  Suggest force line), so at 10 mm depth it is 46 N and at 14.3 mm it is 66 N: over the budget at
+  any feed. Every card states the budget as advisory, and the modulator sets feeds with it.
+- The typed feeds are over the chip maximum by the simulation with the switch off: back rough
+  31 %, front rough 25 %, front 3D rough 19 %, two 2 mm pockets 27 %. The back rough is 95 % over
+  the spindle power in a full-width slot 10 mm deep.
+- One MCP change with the wanaka simulation held kept the GUI thread busy for about 4 minutes.
+  Fixed in `84aa45646` (the diagnostic snapshot built the load report once per toolpath).
+- Generate All did not generate "Back rest 6 mm" (idx 2); one more generate after the simulation
+  did. Not fixed yet.
+- Job findings of the simulation (not feed findings): one rapid of "Drill light holes" goes 4 mm
+  into stock at X 327.13 Y 412.17; the 2 mm lake pockets and the 20 degree V-bit reach deeper than
+  their flutes (walls 10.6 to 12.5 mm against 8 mm; 463, 110 and 981 contacts with idx 2
+  generated); "River channel 6 mm, pass 7 of 7" is the only pass in the file and cuts 14.3 mm in
+  one pass.
+
+### E: operator rulings (question tool, 2026-11-15)
+
+1. **Feed modulation has three settings: off, cap only, full. The default is cap only.** Cap only:
+   a simulation may lower a feed where a limit is exceeded, and never raises one above the feed
+   that generation gave the move.
+2. **The force budget never sets a feed while it is advisory** ("Warn only"). The modulator caps
+   on the gating limits only. The budget stays a warning row and an export note.
+3. **Multiple passes belong inside the toolpath** ("For multiple passes that should be built into
+   the toolpath, not multiple tool paths!"). The Project Curve op gets a depth per pass.
+4. **The reach problem of the 2 mm tool and the V-bit: a 6 mm relief band** around each lake and
+   along the small rivers, before the 2 mm pockets. "just make sure it doesnt leave too thin
+   sections. the 6mm could cut through to the surface if the river is on a high mountain on the
+   other side". So the band needs a measured thickness check against the front surface. The
+   operator has no 2 mm tool with a longer flute; the V-bit depth is not fixed by the design.
+5. **Job problems first**, then the dial-in of the feeds.
+
+### E: lead rule for the floor (not an operator ruling)
+
+A modulated feed is never lower than the feed at the rubbing floor of the move. A move held at
+that floor did not meet its cap: its row does not soften, and the export counts and warns those
+moves.
+
+### E: open
+
+- Feed optimisation (on by default) also puts a feed above a stated feed with no simulation
+  (rivmap100 Face 5: ramp 2540 against 500). The operator has not answered whether an entry must
+  keep its stated feed. Asked twice; still open.
+- The thickness check of the relief band has no instrument yet.
