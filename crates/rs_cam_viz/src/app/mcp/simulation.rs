@@ -139,16 +139,14 @@ impl RsCamApp {
     pub(super) fn mcp_run_simulation(
         &mut self,
         resolution: Option<f64>,
-        feed_modulation: Option<bool>,
+        feed_modulation: Option<rs_cam_mcp::server::FeedModulationParam>,
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     ) {
-        // Operator ruling 2026-11-15: `feed_modulation` SETS the ONE stored
-        // switch before the run, through the door of the panel checkbox.
+        // Operator rulings 2026-11-15: `feed_modulation` SETS the ONE stored
+        // switch before the run, through the door of the panel control.
         // The reply states the value the run used.
-        if let Some(enabled) = feed_modulation
-            && let Err(error) = self.controller.set_feed_modulation(
-                rs_cam_core::session::FeedModulationSwitch::from_enabled(enabled),
-            )
+        if let Some(mode) = feed_modulation
+            && let Err(error) = self.controller.set_feed_modulation(mode.into())
         {
             let _ = response_tx.send(McpResponse {
                 result: Ok(json_str(serde_json::json!({ "error": error.to_string() }))),

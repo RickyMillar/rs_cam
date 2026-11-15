@@ -414,6 +414,23 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::FeedHeldAtFloor => {
+                    // P32 (lead rule 2026-11-15): the modulation of the
+                    // slot that the program holds held moves at the rubbing
+                    // floor, above a load cap. The record writes the text.
+                    for &idx in emitted {
+                        if let Some(text) = self
+                            .emitted_feeds(idx)
+                            .and_then(|feeds| feeds.held_warning())
+                        {
+                            push(
+                                ids::EXPORT_FEED_HELD_AT_FLOOR,
+                                name_at(idx),
+                                format!("Toolpath '{}': {text}", name_at(idx)),
+                            );
+                        }
+                    }
+                }
                 Gate::FluteOverreach => {
                     for &idx in emitted {
                         if let Some(crate::compute::simulate::FluteReach::Over(text)) =

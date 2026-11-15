@@ -22,6 +22,16 @@
 //! 3. The force-budget rule with no force line: no limit, and the scope
 //!    gives the summary note "force budget: no force line".
 //!
+//! # P32 (operator ruling 2026-11-15, "Warn only")
+//!
+//! The force budget never sets a feed while it is advisory.
+//! `ForceBudgetScope::of` reads the basis of the force-budget bound
+//! (`Basis::force_budget_bound`); while that basis does not gate an export
+//! the scope is `Advisory` and gives no inputs (claim 4). The three cells
+//! above state a basis that gates (`ForceBudgetScope::of_basis`): they
+//! hold what the modulator does when the budget becomes a gating limit.
+//! One predicate, `Basis::gates_export`; no second switch.
+//!
 //! The budget is the rule's own value (`hobby_budget`, derived from the
 //! printed hobby rows). The depth of the fixture is found here: the
 //! deepest depth, halving from the tool's flute length, where the edge term
@@ -44,6 +54,7 @@ use rs_cam_core::dressup::feed_modulation::{
 use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
+use rs_cam_core::feeds::sourced::{Basis, MachineField};
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
@@ -166,9 +177,29 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
         "a Trace slot must carry the force-budget rule: {trace_rule:?}"
     );
 
-    // The scope of the two cells, through the one constructor.
-    let pocket_scope = ForceBudgetScope::of(pocket_rule, Some(line()), cutter());
-    let finish_scope = ForceBudgetScope::of(finish_rule, Some(line()), cutter());
+    // Claim 4 (P32): the basis of the budget does not gate today, so the
+    // one constructor gives `Advisory`: no inputs and no note, with a force
+    // line and with none.
+    let bound = Basis::force_budget_bound();
+    assert!(!bound.gates_export(), "the force budget is advisory today");
+    for line in [Some(line()), None] {
+        let scope = ForceBudgetScope::of(pocket_rule, line, cutter());
+        assert_eq!(scope, ForceBudgetScope::Advisory { budget_n });
+        assert_eq!(scope.inputs(), None, "an advisory budget sets no feed");
+        assert_eq!(scope.note(), None);
+    }
+    // No rule stays out of scope, advisory or not.
+    assert_eq!(
+        ForceBudgetScope::of(finish_rule, Some(line()), cutter()),
+        ForceBudgetScope::OutOfScope
+    );
+
+    // The scope of the cells under a basis that gates (the same predicate
+    // with the other answer): the limit is back.
+    let gating = Basis::Machine(MachineField::PowerCurve);
+    assert!(gating.gates_export());
+    let pocket_scope = ForceBudgetScope::of_basis(pocket_rule, &gating, Some(line()), cutter());
+    let finish_scope = ForceBudgetScope::of_basis(finish_rule, &gating, Some(line()), cutter());
     let inputs = pocket_scope
         .inputs()
         .expect("the force-budget rule with a line gives the limit");
@@ -178,7 +209,7 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
     assert_eq!(pocket_scope.note(), None);
 
     // Cell 3: the force-budget rule with no force line.
-    let no_line = ForceBudgetScope::of(pocket_rule, None, cutter());
+    let no_line = ForceBudgetScope::of_basis(pocket_rule, &gating, None, cutter());
     assert_eq!(no_line.inputs(), None);
     assert_eq!(no_line.note(), Some(FORCE_BUDGET_NO_FORCE_LINE_NOTE));
     assert_eq!(
@@ -212,6 +243,7 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
         radial_thinning: RadialThinning::Applied,
         kinematics: &k,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,

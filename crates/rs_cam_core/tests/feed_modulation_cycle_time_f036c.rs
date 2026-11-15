@@ -109,6 +109,16 @@ const MIN_RATIO: f64 = 0.5;
 
 fn run_back_rough(modulate: bool) -> f64 {
     let mut session = ProjectSession::load(Path::new(WANAKA_TOML)).expect("load wanaka project");
+    // P32: the default switch is cap only; this file pins the cycle time of
+    // the lifted feeds, so it states the full mode. Not run in P32 (the
+    // binary takes over three minutes).
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = 10_000.0;

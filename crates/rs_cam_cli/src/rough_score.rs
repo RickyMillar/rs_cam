@@ -69,7 +69,8 @@ pub(crate) struct ScoreOptions {
     pub no_sim: bool,
     /// `<index>.<param>=<value>` overrides, applied before generation.
     pub set: Vec<String>,
-    pub adaptive_feed_modulation: bool,
+    /// `--feed-modulation`; `None` reads the stored switch of the project.
+    pub feed_modulation: Option<rs_cam_core::session::FeedModulationSwitch>,
 }
 
 /// The machine of the run.
@@ -235,7 +236,7 @@ pub(crate) fn score_session(
             scope,
             resolution: opts.resolution,
             skip_ids: Vec::new(),
-            adaptive_feed_modulation: opts.adaptive_feed_modulation,
+            feed_modulation: opts.feed_modulation,
             modulation_strategy:
                 rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
             modulation_feed_scale: 1.0,
@@ -320,12 +321,22 @@ pub(crate) fn score_session(
         }
         Some(value)
     };
-    // The switch the walk ran with: the stored value of the project, or off
-    // by the flag (operator ruling 2026-11-15).
-    let feeds_basis = match (opts.no_sim, walk.feed_modulation.state.is_on()) {
-        (true, _) => "planned: no closing simulation, so the feeds are the generated feeds",
-        (false, true) => "emitted: the IR the export reads, after the closing modulation",
-        (false, false) => "emitted: the IR the export reads, modulation off",
+    // The switch the walk ran with: the stored value of the project, or
+    // the value of the flag (operator rulings 2026-11-15).
+    let feeds_basis = {
+        use rs_cam_core::session::FeedModulationSwitch;
+        match (opts.no_sim, walk.feed_modulation.state) {
+            (true, _) => "planned: no closing simulation, so the feeds are the generated feeds",
+            (false, FeedModulationSwitch::Full) => {
+                "emitted: the IR the export reads, after the closing modulation (full)"
+            }
+            (false, FeedModulationSwitch::CapOnly) => {
+                "emitted: the IR the export reads, after the closing modulation (cap only)"
+            }
+            (false, FeedModulationSwitch::Off) => {
+                "emitted: the IR the export reads, modulation off"
+            }
+        }
     };
     let scope_label = match target {
         Some((index, id)) => format!("toolpath index {index} (id {id}) and its ancestors"),
@@ -629,7 +640,7 @@ mod tests {
                 resolution: Some(RESOLUTION_MM),
                 no_sim: false,
                 set: vec![OVERRIDE.to_owned()],
-                adaptive_feed_modulation: true,
+                feed_modulation: None,
             },
         )
         .expect("score the pocket")
@@ -853,7 +864,7 @@ mod tests {
                 resolution: Some(RESOLUTION_MM),
                 no_sim: true,
                 set: vec!["7.depth_per_pass=3".to_owned()],
-                adaptive_feed_modulation: true,
+                feed_modulation: None,
             },
         );
         assert!(outcome.is_err(), "index 7 does not exist");

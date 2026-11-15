@@ -226,7 +226,7 @@ pub fn basis_of_bound(source: &BoundSource) -> Basis {
         BoundSource::StockToLeave { .. } => Basis::Operator {
             law: "radial stock to leave",
         },
-        BoundSource::MachineForceBudget { .. } => Basis::Machine(MachineField::Rigidity),
+        BoundSource::MachineForceBudget { .. } => Basis::force_budget_bound(),
         BoundSource::DrillEnvelope => Basis::Derived {
             law: DRILL_ENVELOPE_LAW,
             from: Vec::new(),

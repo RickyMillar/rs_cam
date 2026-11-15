@@ -119,6 +119,15 @@ fn modulated_pocket(feed_max_rate: Option<f64>) -> ProjectSession {
     tc.dressups.feed_max_rate = feed_max_rate;
     let _ = builder.add_toolpath(0, tc).expect("add the pocket");
     let mut session = builder.build();
+    // P32: the default switch is cap only; this file asserts lifted feeds,
+    // so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
     let _ = session

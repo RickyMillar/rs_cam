@@ -360,6 +360,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,

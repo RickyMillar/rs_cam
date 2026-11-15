@@ -242,7 +242,7 @@ pub enum AppEvent {
     /// per edit, not once per drag frame.
     SetSimulationResolution(rs_cam_core::session::SimulationResolution),
     /// Write the ONE stored feed modulation switch (operator ruling
-    /// 2026-11-15) through `Command::SetFeedModulation`. The checkbox of
+    /// 2026-11-15) through `Command::SetFeedModulation`. The three-way control (off, cap only, full; P32) of
     /// the Simulation panel sends it.
     SetFeedModulation(rs_cam_core::session::FeedModulationSwitch),
     /// Make one setup current, and nothing else (operator, 2026-09-19).

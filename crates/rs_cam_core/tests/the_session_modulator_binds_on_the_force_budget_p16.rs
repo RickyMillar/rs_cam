@@ -8,23 +8,33 @@
 //! `modulate_annotated_against_trace`), for the toolpath material and for
 //! each own material.
 //!
+//! # P32 (operator ruling 2026-11-15, "Warn only")
+//!
+//! The force budget never sets a feed while it is advisory. The session
+//! builds the scope through `ForceBudgetScope::of`, which reads the one
+//! predicate of the advisory rows (`Basis::force_budget_bound().gates_export()`).
+//! While that is `false` the scope is `Advisory` and the modulator has no
+//! force-budget arm. So this file now holds the opposite claim of the one
+//! it was written for: the session modulator does NOT bind on the force
+//! budget. The file keeps its name (the history of the claim).
+//!
 //! # The cells
 //!
 //! 1. A deep, wide Pocket roughing slot in generic hardwood on the default
-//!    (hobby) machine. The rule is the force budget, the material has a force
-//!    line, and the cut is deep and wide enough that the budget feed is
-//!    below the chipload cap and the machine ceiling. The cell is the review
-//!    cell P_thin_005 (feeds review 2026-11-06), where the emitted feed fell
-//!    from F2615 to F1099 when the limit landed. After a session simulation
-//!    the modulation summary of the op must name `ForceBudget`.
+//!    (hobby) machine. The rule is the force budget and the material has a
+//!    force line. Before P32 the budget bound moves of this cell (review
+//!    cell P_thin_005: F2615 to F1099). After a session simulation the
+//!    modulation summary of the op must not name `ForceBudget`, in the full
+//!    mode and in cap only.
 //! 2. The same cut in Baltic birch plywood, which has no force line. The
-//!    summary must not name `ForceBudget`, and it must carry the note
-//!    "force budget: no force line".
+//!    summary must not name `ForceBudget`. It carries no note: the note
+//!    "force budget: no force line" explains a missing limit, and no limit
+//!    is expected while the budget is advisory.
 //!
-//! # Red before the fix
+//! # Red on a defect
 //!
-//! With `force_budget_inputs: None` in the session context, cell 1 reads no
-//! `ForceBudget` binding.
+//! With `Basis::force_budget_bound` changed to a basis that gates, cell 1
+//! reads a `ForceBudget` binding again (the pre-P32 behaviour).
 
 #![expect(
     clippy::expect_used,
@@ -43,7 +53,10 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::dressup::feed_modulation::{BindingConstraint, FORCE_BUDGET_NO_FORCE_LINE_NOTE};
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
 use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
-use rs_cam_core::session::{ProjectSession, SimulationOptions, SimulationResolution};
+use rs_cam_core::session::{
+    Command, FeedModulationSwitch, ProjectSession, SetFeedModulationArgs, SimulationOptions,
+    SimulationResolution,
+};
 use rs_cam_core::tool_load::ModulationSummary;
 
 /// The review cell P_thin_005: a 6 mm two-flute flat end mill.
@@ -87,9 +100,9 @@ fn pocket() -> OperationConfig {
     })
 }
 
-/// Build, generate and simulate the cell in `material`; return the
-/// modulation summary of the op.
-fn simulated_summary(material: Material) -> ModulationSummary {
+/// Build, generate and simulate the cell in `material` under `switch`;
+/// return the modulation summary of the op.
+fn simulated_summary(material: Material, switch: FeedModulationSwitch) -> ModulationSummary {
     let stock = StockConfig {
         material,
         ..stock_under(HALF_MM, STOCK_Z_MM)
@@ -101,6 +114,9 @@ fn simulated_summary(material: Material) -> ModulationSummary {
         "Pocket",
         pocket(),
     );
+    let _ = session
+        .apply(Command::SetFeedModulation(SetFeedModulationArgs { switch }))
+        .expect("the switch applies");
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)
@@ -119,7 +135,7 @@ fn simulated_summary(material: Material) -> ModulationSummary {
         .per_toolpath
         .first()
         .and_then(|v| v.modulation_summary.clone())
-        .expect("the default simulation modulates the pocket and records its summary")
+        .expect("the simulation modulates the pocket and records its summary")
 }
 
 #[test]
@@ -139,40 +155,57 @@ fn the_session_modulator_binds_on_the_force_budget_p16() {
         "Pocket roughing on the default machine must carry the force-budget rule: {rule:?}"
     );
 
-    // Cell 1: a force line, the limit binds.
-    let summary = simulated_summary(Material::SolidWood {
-        species: WoodSpecies::GenericHardwood,
-    });
-    let share = summary
-        .binding_constraint_distribution
-        .get(&BindingConstraint::ForceBudget)
-        .copied()
-        .unwrap_or(0.0);
+    // The one predicate: the basis of the budget does not gate an export.
     assert!(
-        share > 0.0,
-        "the force budget must bind some moves of the deep slot through the session: {:?}",
-        summary.binding_constraint_distribution
-    );
-    assert!(
-        summary.notes.is_empty(),
-        "a material with a force line has no force-budget note: {:?}",
-        summary.notes
+        !rs_cam_core::feeds::sourced::Basis::force_budget_bound().gates_export(),
+        "this file states the advisory budget; a gating budget caps again (the other p16 file)"
     );
 
-    // Cell 2: no force line, no limit, and the note.
-    let summary = simulated_summary(Material::Plywood {
-        grade: PlywoodGrade::BalticBirch,
-    });
-    assert!(
-        !summary
-            .binding_constraint_distribution
-            .contains_key(&BindingConstraint::ForceBudget),
-        "no force line, no force-budget limit: {:?}",
-        summary.binding_constraint_distribution
-    );
-    assert_eq!(
-        summary.notes,
-        vec![FORCE_BUDGET_NO_FORCE_LINE_NOTE.to_owned()],
-        "the summary states the missing force line"
-    );
+    for switch in [FeedModulationSwitch::Full, FeedModulationSwitch::CapOnly] {
+        // Cell 1: a force line, and still no force-budget limit.
+        let summary = simulated_summary(
+            Material::SolidWood {
+                species: WoodSpecies::GenericHardwood,
+            },
+            switch,
+        );
+        assert!(
+            !summary
+                .binding_constraint_distribution
+                .contains_key(&BindingConstraint::ForceBudget),
+            "{switch:?}: the advisory force budget sets no feed: {:?}",
+            summary.binding_constraint_distribution
+        );
+        assert!(
+            summary
+                .notes
+                .iter()
+                .all(|n| n != FORCE_BUDGET_NO_FORCE_LINE_NOTE),
+            "{switch:?}: a material with a force line has no force-budget note: {:?}",
+            summary.notes
+        );
+
+        // Cell 2: no force line, no limit, and no note while advisory.
+        let summary = simulated_summary(
+            Material::Plywood {
+                grade: PlywoodGrade::BalticBirch,
+            },
+            switch,
+        );
+        assert!(
+            !summary
+                .binding_constraint_distribution
+                .contains_key(&BindingConstraint::ForceBudget),
+            "{switch:?}: no force line, no force-budget limit: {:?}",
+            summary.binding_constraint_distribution
+        );
+        assert!(
+            summary
+                .notes
+                .iter()
+                .all(|n| n != FORCE_BUDGET_NO_FORCE_LINE_NOTE),
+            "{switch:?}: the note explains a missing limit; none is expected: {:?}",
+            summary.notes
+        );
+    }
 }

@@ -644,4 +644,10 @@ diag_ids! {
     /// (`session::EmittedFeeds::above_stated_warning`, the one writer of
     /// the text). One warning per op. A warning, never a refusal.
     pub const EXPORT_FEED_ABOVE_STATED: &str = "export.feed_above_stated" => warn(Danger::Tool);
+    /// P32 (lead rule 2026-11-15): the feed modulation held moves of an
+    /// emitted op at the rubbing floor, above a load cap (spindle power,
+    /// tool deflection): those moves did not meet their cap
+    /// (`dressup::feed_modulation::HeldMoves::warning`, the one writer of
+    /// the text). One warning per op. A warning, never a refusal.
+    pub const EXPORT_FEED_HELD_AT_FLOOR: &str = "export.feed_held_at_floor" => warn(Danger::Tool);
 }

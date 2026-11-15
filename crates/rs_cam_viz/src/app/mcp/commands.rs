@@ -791,7 +791,7 @@ impl RsCamApp {
             ),
             CoreRequest::SetFeedModulation(p) => CorePlan::Apply(
                 Command::SetFeedModulation(rs_cam_core::session::SetFeedModulationArgs {
-                    switch: rs_cam_core::session::FeedModulationSwitch::from_enabled(p.enabled),
+                    switch: p.mode.into(),
                 }),
                 Box::new(before),
             ),

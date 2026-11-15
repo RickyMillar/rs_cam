@@ -1224,6 +1224,15 @@ fn one_feed_record_on_every_surface_p30_1() {
             },
         ))
         .expect("disable the rest op");
+    // P32: the default switch is cap only; this test asserts a feed above
+    // the stated feed from the modulation, so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let _ = session
         .generate_toolpath(0, &cancel)

@@ -44,7 +44,7 @@ impl RsCamApp {
                 session, false,
             ),
             // Operator ruling 2026-11-15: the ONE stored feed modulation
-            // switch (`on`, `off`), read-only. `set_feed_modulation` writes
+            // switch (`off`, `cap_only`, `full`), read-only. `set_feed_modulation` writes
             // it.
             "feed_modulation": session.feed_modulation(),
             // P22-0c-3 (operator ruling Q6): the contacts of the contact

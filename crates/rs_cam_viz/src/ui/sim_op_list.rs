@@ -173,22 +173,11 @@ fn draw_run_controls(
                     rs_cam_core::session::SimulationResolution::Fixed(effective_mm)
                 }));
             }
-            // Operator ruling 2026-11-15: feed modulation is on by default
-            // and the operator can switch it off. The ONE stored project
-            // value; the project file saves it.
-            let mut feed_modulation = session.feed_modulation().is_on();
-            if ui
-                .checkbox(&mut feed_modulation, "Feed modulation")
-                .on_hover_text(
-                    "After a simulation, set each move to the highest feed that every limit \
-                     allows. That feed can be above the stated feed.",
-                )
-                .changed()
-            {
-                events.push(AppEvent::SetFeedModulation(
-                    rs_cam_core::session::FeedModulationSwitch::from_enabled(feed_modulation),
-                ));
-            }
+            // Operator rulings 2026-11-15 (P32): feed modulation has three
+            // settings, cap only by default. The ONE stored project value;
+            // the project file saves it. Core writes each label and each
+            // hover sentence.
+            feed_modulation_control(ui, session.feed_modulation(), events);
             {
                 let sx = session.stock_config().x;
                 let sy = session.stock_config().y;
@@ -301,6 +290,35 @@ fn draw_run_controls(
             });
         ui.add_space(4.0);
         ui.separator();
+    }
+}
+
+/// **P32 (operator rulings 2026-11-15): the three-way feed modulation
+/// control of "Setup & run".** One `ChoiceRow` over
+/// `FeedModulationSwitch::ALL`; core writes each label
+/// (`FeedModulationSwitch::label`) and the hover holds one sentence per
+/// setting (`FeedModulationSwitch::explanation`). A click sends
+/// `AppEvent::SetFeedModulation`.
+fn feed_modulation_control(
+    ui: &mut egui::Ui,
+    stored: rs_cam_core::session::FeedModulationSwitch,
+    events: &mut Vec<AppEvent>,
+) {
+    use rs_cam_core::session::FeedModulationSwitch;
+    let options = FeedModulationSwitch::ALL.map(|switch| (switch, switch.label()));
+    let hover = FeedModulationSwitch::ALL
+        .map(|switch| format!("{}: {}", switch.label(), switch.explanation()))
+        .join("\n");
+    let mut value = stored;
+    if ui
+        .add(
+            crate::ui::components::ChoiceRow::new("Feed modulation", &mut value, &options)
+                .hover(&hover),
+        )
+        .changed()
+        && value != stored
+    {
+        events.push(AppEvent::SetFeedModulation(value));
     }
 }
 

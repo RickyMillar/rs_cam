@@ -794,10 +794,40 @@ pub struct SimulationParam {
     /// mm, and the reply says so. Omit it to simulate at the stored value.
     pub resolution: Option<f64>,
     /// Optional. SETS the project's one stored feed modulation switch
-    /// before the run (`set_feed_modulation`), and the reply says so. Omit
-    /// it to run with the stored value (on by default).
+    /// before the run (`set_feed_modulation`): `off`, `cap_only` or
+    /// `full`; the reply says so. Omit it to run with the stored value
+    /// (cap only by default).
     #[serde(default)]
-    pub feed_modulation: Option<bool>,
+    pub feed_modulation: Option<FeedModulationParam>,
+}
+
+/// The setting of the one stored feed modulation switch (operator rulings
+/// 2026-11-15, P32). The wire words of
+/// `rs_cam_core::session::FeedModulationSwitch`.
+#[derive(Deserialize, schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum FeedModulationParam {
+    /// No simulation changes a feed. Each result that holds modulated
+    /// feeds takes its planned feeds back at once.
+    Off,
+    /// A simulation lowers a feed where a limit is exceeded, and never
+    /// raises one (the default of every project).
+    #[default]
+    CapOnly,
+    /// A simulation sets each move to the highest feed that every limit
+    /// allows, which can be above the stated feed.
+    Full,
+}
+
+impl From<FeedModulationParam> for rs_cam_core::session::FeedModulationSwitch {
+    fn from(param: FeedModulationParam) -> Self {
+        match param {
+            FeedModulationParam::Off => Self::Off,
+            FeedModulationParam::CapOnly => Self::CapOnly,
+            FeedModulationParam::Full => Self::Full,
+        }
+    }
 }
 
 /// The tool-change handling of one export (`export_gcode`).
@@ -2997,16 +3027,15 @@ pub struct SetToolpathShoeParam {
     pub gap_mm: Option<f64>,
 }
 
-/// The one stored feed modulation switch (operator ruling 2026-11-15).
+/// The one stored feed modulation switch (operator rulings 2026-11-15).
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SetFeedModulationParam {
-    /// `true`: a simulation sets each move to the highest feed that every
-    /// limit allows, which can be above the stated feed (the default).
-    /// `false`: no simulation changes a feed, and each result that holds
-    /// modulated feeds takes its planned feeds back at once. The project
-    /// file saves the value. A new value drops the simulation.
-    pub enabled: bool,
+    /// `off`, `cap_only` (the default of every project) or `full`. The
+    /// project file saves the value. A new value drops the simulation, and
+    /// each result that holds modulated feeds takes its planned feeds back
+    /// at once.
+    pub mode: FeedModulationParam,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -4124,6 +4153,8 @@ pub fn build_info() -> serde_json::Value {
             // RPM rows). The three P29-2 `checks` keys are deleted.
             "limit_rows_every_reply",
             "feed_modulation_switch",
+            "feed_modulation_modes",
+            "feed_held_at_floor_warning",
             "feed_above_stated_warning",
             // Feeds contract P29-10 (10e): `set_ui_view` `sim_inspector_tab`
             // and `sim_cut_groups` (the reply echoes `sim_inspector`); the

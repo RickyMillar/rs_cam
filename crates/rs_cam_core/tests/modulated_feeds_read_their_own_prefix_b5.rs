@@ -116,6 +116,15 @@ fn chain() -> ProjectSession {
             }))
             .expect("the setup accepts a toolpath");
     }
+    // P32: the default switch is cap only; this file asserts lifted feeds,
+    // so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let _ = session
         .apply(Command::SetSimulationResolution(
             SetSimulationResolutionArgs {

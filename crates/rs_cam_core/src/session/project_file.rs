@@ -856,8 +856,8 @@ pub struct ProjectJobSection {
     pub machine: crate::machine::MachineProfile,
     /// G-RESTRES: the one stored simulation resolution. A file with no
     /// `[job.simulation]` table, or no `resolution_mm` key, loads as `Auto`.
-    /// Operator ruling 2026-11-15: the table also holds the feed modulation
-    /// switch; a file with no `feed_modulation` key loads as on.
+    /// Operator rulings 2026-11-15: the table also holds the feed modulation
+    /// switch; a file with no `feed_modulation` key loads as cap only.
     #[serde(
         default,
         skip_serializing_if = "ProjectSimulationSection::holds_only_defaults"
@@ -871,16 +871,18 @@ pub struct ProjectJobSection {
 /// `resolution_mm` present = `SimulationResolution::Fixed`; absent =
 /// `SimulationResolution::Auto`, the documented default.
 ///
-/// `feed_modulation` (operator ruling 2026-11-15): absent = on, the
-/// default; `false` = off. The writer leaves the key out while the switch
-/// is on, so a file that never set it does not change on a save.
+/// `feed_modulation` (operator rulings 2026-11-15, P32): `"off"`,
+/// `"cap_only"` or `"full"`; absent = cap only, the default. The writer
+/// leaves the key out at the default, so a file that never set it does not
+/// change on a save. A boolean value (the form before P32) refuses the
+/// load with a message that names the three words.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectSimulationSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_mm: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feed_modulation: Option<bool>,
+    pub feed_modulation: Option<super::FeedModulationSwitch>,
 }
 
 impl ProjectSimulationSection {
@@ -893,13 +895,10 @@ impl ProjectSimulationSection {
         )
     }
 
-    /// The feed modulation switch of the section: on with no key.
+    /// The feed modulation switch of the section: cap only with no key.
     #[must_use]
     pub fn feed_modulation(&self) -> super::FeedModulationSwitch {
-        self.feed_modulation.map_or(
-            super::FeedModulationSwitch::On,
-            super::FeedModulationSwitch::from_enabled,
-        )
+        self.feed_modulation.unwrap_or_default()
     }
 
     /// The section for the session values.
@@ -913,10 +912,8 @@ impl ProjectSimulationSection {
                 super::SimulationResolution::Auto => None,
                 super::SimulationResolution::Fixed(mm) => Some(mm),
             },
-            feed_modulation: match feed_modulation {
-                super::FeedModulationSwitch::On => None,
-                super::FeedModulationSwitch::Off => Some(false),
-            },
+            feed_modulation: (feed_modulation != super::FeedModulationSwitch::default())
+                .then_some(feed_modulation),
         }
     }
 

@@ -1363,7 +1363,7 @@ pub struct Effects {
     pub planned: Option<Box<super::MultitoolPlanOutcome>>,
     /// Every toolpath index whose cached result the feed modulation
     /// rewrote (F115). `AdoptSimulation` with a [`FeedModulation`] fills
-    /// it. `SetFeedModulation` with the switch off fills it with the
+    /// it. `SetFeedModulation` with a new value fills it with the
     /// results that took their dressed path back.
     ///
     /// A modulation moves no generation input, so these indices are not
@@ -2042,12 +2042,13 @@ pub struct SetSimulationResolutionArgs {
     pub resolution: super::SimulationResolution,
 }
 
-/// The arguments of the `set_feed_modulation` command (operator ruling
+/// The arguments of the `set_feed_modulation` command (operator rulings
 /// 2026-11-15).
 ///
-/// The one stored feed modulation switch of the project. A new value drops
-/// the simulation. With the switch off, each modulated result takes its
-/// dressed path back; [`Effects::modulated`] names those results.
+/// The one stored feed modulation switch of the project (off, cap only,
+/// full). A new value drops the simulation, and each modulated result
+/// takes its dressed path back (P32: for any change of the value);
+/// [`Effects::modulated`] names those results.
 #[derive(Debug, Clone, Copy)]
 pub struct SetFeedModulationArgs {
     /// The new value.

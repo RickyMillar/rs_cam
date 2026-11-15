@@ -82,6 +82,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: None,
         force_budget_inputs: None,

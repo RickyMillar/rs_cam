@@ -677,7 +677,7 @@ pub enum McpRequestKind {
     RunSimulation {
         resolution: Option<f64>,
         /// `Some`: set the stored feed modulation switch before the run.
-        feed_modulation: Option<bool>,
+        feed_modulation: Option<rs_cam_mcp::server::FeedModulationParam>,
     },
     CollisionCheck {
         index: usize,

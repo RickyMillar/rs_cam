@@ -191,6 +191,15 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
     };
     let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
     let mut session = builder.build();
+    // P32: the default switch is cap only; this file asserts lifted feeds,
+    // so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
 
     if attach_kinematics {
         let mut machine = session.machine().clone();

@@ -386,39 +386,40 @@ pub(crate) fn settle_cell_size(
 }
 
 /// The feed modulation switch a run used, and where it came from (operator
-/// ruling 2026-11-15).
+/// rulings 2026-11-15).
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct FeedModulationUsed {
-    /// The switch of the session during the run (`on`, `off`).
+    /// The switch of the session during the run (`off`, `cap_only`,
+    /// `full`).
     pub state: rs_cam_core::session::FeedModulationSwitch,
     /// `project`: the stored value of the project file
-    /// (`[job.simulation] feed_modulation`, on with no key). `override`:
-    /// `--no-adaptive-feed-modulation` set it off for this run.
+    /// (`[job.simulation] feed_modulation`, cap only with no key).
+    /// `override`: `--feed-modulation` set another value for this run.
     pub source: &'static str,
 }
 
 /// Settle the feed modulation switch of a run on the session (operator
 /// ruling 2026-11-15). The project file stores the ONE switch, and the GUI,
-/// MCP and the CLI all read it. `--no-adaptive-feed-modulation`
-/// (`allow == false`) SETS the in-memory session value off through
-/// `SetFeedModulation`, the door the GUI checkbox and MCP take.
+/// MCP and the CLI all read it. `--feed-modulation <off|cap-only|full>`
+/// (`flag`) SETS the in-memory session value through `SetFeedModulation`,
+/// the door the GUI control and MCP take. A flag that states the stored
+/// value changes nothing, and the source stays `project`.
 ///
 /// # Errors
 /// The refusal of the session. The command has none today.
 pub(crate) fn settle_feed_modulation(
     session: &mut ProjectSession,
-    allow: bool,
+    flag: Option<rs_cam_core::session::FeedModulationSwitch>,
 ) -> Result<FeedModulationUsed> {
-    use rs_cam_core::session::{FeedModulationSwitch, SetFeedModulationArgs};
-    let source = if allow || !session.feed_modulation().is_on() {
-        "project"
-    } else {
-        let _ = session
-            .apply(Command::SetFeedModulation(SetFeedModulationArgs {
-                switch: FeedModulationSwitch::Off,
-            }))
-            .map_err(|e| anyhow::anyhow!("--no-adaptive-feed-modulation: {e}"))?;
-        "override"
+    use rs_cam_core::session::SetFeedModulationArgs;
+    let source = match flag {
+        Some(switch) if switch != session.feed_modulation() => {
+            let _ = session
+                .apply(Command::SetFeedModulation(SetFeedModulationArgs { switch }))
+                .map_err(|e| anyhow::anyhow!("--feed-modulation: {e}"))?;
+            "override"
+        }
+        Some(_) | None => "project",
     };
     Ok(FeedModulationUsed {
         state: session.feed_modulation(),
@@ -435,10 +436,10 @@ pub(crate) struct PlanWalkOptions {
     pub resolution: Option<f64>,
     /// Toolpaths the walk does not generate and the simulation skips.
     pub skip_ids: Vec<rs_cam_core::ToolpathId>,
-    /// `false`: `--no-adaptive-feed-modulation`; the walk sets the feed
-    /// modulation switch of the session off. `true`: the walk reads the
-    /// stored switch of the project ([`settle_feed_modulation`]).
-    pub adaptive_feed_modulation: bool,
+    /// `Some`: `--feed-modulation`; the walk sets the feed modulation
+    /// switch of the session to it. `None`: the walk reads the stored
+    /// switch of the project ([`settle_feed_modulation`]).
+    pub feed_modulation: Option<rs_cam_core::session::FeedModulationSwitch>,
     pub modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
     pub modulation_feed_scale: f64,
     /// Run one simulation over the whole project after the last step. The
@@ -475,8 +476,8 @@ pub(crate) fn run_generation_plan(
     let resolution = opts.resolution;
     // Operator ruling 2026-11-15: the ONE stored switch decides; the flag
     // sets it off on the in-memory session.
-    let feed_modulation = settle_feed_modulation(session, opts.adaptive_feed_modulation)?;
-    let adaptive_feed_modulation = feed_modulation.state.is_on();
+    let feed_modulation = settle_feed_modulation(session, opts.feed_modulation)?;
+    let adaptive_feed_modulation = feed_modulation.state.mode().is_some();
     let modulation_strategy = opts.modulation_strategy;
     let modulation_feed_scale = opts.modulation_feed_scale;
     // 2c. W5 item (f): the cell size is REFUSED, never guessed, whenever the
@@ -670,7 +671,8 @@ struct ProjectSummary {
     verdict: rs_cam_core::session::ProjectVerdict,
     /// Checkpoint K (g2) — the operating point `verdict` and every
     /// per-toolpath gate reading were taken at. Default flipped to
-    /// `true` at (g1); `--no-adaptive-feed-modulation` opts out.
+    /// `true` when a simulation of the run modulated the feeds (the
+    /// switch was cap only or full); `feed_modulation.state` names which.
     adaptive_feed_modulation: bool,
     /// Human-readable form of the same fact, including the strategy and
     /// feed scale that shaped the rewritten feeds.
@@ -914,7 +916,6 @@ fn check_toolpath_filters(
 
 #[expect(
     clippy::too_many_arguments,
-    clippy::fn_params_excessive_bools,
     reason = "each parameter is one CLI flag or input, and the one caller in `main.rs` passes each by name from the parsed arguments"
 )]
 pub fn run_project_command(
@@ -925,7 +926,7 @@ pub fn run_project_command(
     resolution: Option<f64>,
     summary: bool,
     emit_gcode: Option<&Path>,
-    adaptive_feed_modulation: bool,
+    feed_modulation: Option<rs_cam_core::session::FeedModulationSwitch>,
     modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
     modulation_feed_scale: f64,
     inject_shapeoko_kinematics: bool,
@@ -1035,7 +1036,7 @@ pub fn run_project_command(
             scope: Scope::Project,
             resolution,
             skip_ids: combined_skip.clone(),
-            adaptive_feed_modulation,
+            feed_modulation,
             modulation_strategy,
             modulation_feed_scale,
             closing_simulation: true,
@@ -1046,7 +1047,7 @@ pub fn run_project_command(
     // The switch the run used: the stored value of the project, or off by
     // the flag. Every report below states this value, not the flag.
     let feed_modulation_used = walk.feed_modulation;
-    let adaptive_feed_modulation = feed_modulation_used.state.is_on();
+    let adaptive_feed_modulation = feed_modulation_used.state.mode().is_some();
     let blocked = walk.blocked;
     let cancel = AtomicBool::new(false);
 
@@ -1308,12 +1309,22 @@ pub fn run_project_command(
     // Printed on stderr beside the verdict AND carried on summary.json,
     // so a script that only reads the JSON is not the one reader left
     // guessing.
-    let modulation_state = match (adaptive_feed_modulation, feed_modulation_used.source) {
-        (true, _) => {
-            format!("on ({modulation_strategy:?}, feed scale {modulation_feed_scale:.2})",)
+    let modulation_state = {
+        use rs_cam_core::session::FeedModulationSwitch;
+        let from = match feed_modulation_used.source {
+            "override" => "--feed-modulation",
+            _ => "the project file",
+        };
+        match feed_modulation_used.state {
+            FeedModulationSwitch::Off => format!("off ({from})"),
+            FeedModulationSwitch::CapOnly => format!(
+                "cap only ({from}; {modulation_strategy:?}, feed scale \
+                 {modulation_feed_scale:.2}; no feed raised)"
+            ),
+            FeedModulationSwitch::Full => format!(
+                "full ({from}; {modulation_strategy:?}, feed scale {modulation_feed_scale:.2})"
+            ),
         }
-        (false, "override") => "off (--no-adaptive-feed-modulation)".to_owned(),
-        (false, _) => "off (the project file: [job.simulation] feed_modulation = false)".to_owned(),
     };
 
     // F113: the project verdict is core's, the one ladder MCP and the GUI

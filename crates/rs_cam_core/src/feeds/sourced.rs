@@ -266,6 +266,17 @@ impl Basis {
         }
     }
 
+    /// **P32: THE basis of the force-budget bound**, the machine rigidity
+    /// value. One constructor: `limits::basis_of_bound` gives it to
+    /// `BoundSource::MachineForceBudget` (the gate row), and the feed
+    /// modulator reads [`Self::gates_export`] of it
+    /// (`dressup::feed_modulation::ForceBudgetScope::of`). While it does
+    /// not gate, the budget is advisory on every row and sets no feed.
+    #[must_use]
+    pub const fn force_budget_bound() -> Self {
+        Self::Machine(MachineField::Rigidity)
+    }
+
     /// P29-2: `false` when a bound with this basis must not refuse an
     /// export: the machine rigidity values (the force budget of a machine
     /// class), as

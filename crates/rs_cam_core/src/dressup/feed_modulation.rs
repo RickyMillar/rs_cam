@@ -5,7 +5,12 @@
 //! - [`ModulationStrategy::ConstrainedMax`] (F-039, default) — solves a
 //!   per-move constrained-optimisation problem. Seven candidate limits
 //!   compete; the smallest wins, scaled by `feed_scale`, then
-//!   floored at the chipload-min band edge. A printed point
+//!   floored at the chipload-min band edge. P32 (operator rulings
+//!   2026-11-15): the force-budget candidate exists only while the budget
+//!   gates an export ([`ForceBudgetScope::Advisory`] gives none today); no
+//!   load cap goes below the rubbing floor of the move ([`HeldMoves`]);
+//!   in [`ModulationMode::CapOnly`] no floor lifts a move and no feed is
+//!   above the dressed feed. A printed point
 //!   ([`ChiploadBand::point`], A2) gets no floor. Each per-move decision
 //!   records the [`BindingConstraint`] that drove it so the diagnostic
 //!   surface can explain *why* a given feed landed where it did.
@@ -84,7 +89,8 @@ pub enum ModulationStrategy {
     BandMid,
     /// F-039 constrained-max solver (default). Computes the smallest
     /// of seven candidate feed limits — chipload-max, deflection-max,
-    /// power-max, force-budget (P16 item 7), machine-max, kinematic-reach,
+    /// power-max, force-budget (P16 item 7; P32: only while the budget
+    /// gates an export), machine-max, kinematic-reach,
     /// chipload-min floor — and emits the binding value scaled by
     /// `feed_scale`.
     #[default]
@@ -100,6 +106,82 @@ impl ModulationStrategy {
             Self::BandMid => crate::tool_load::ModulationStrategyTag::BandMid,
             Self::ConstrainedMax => crate::tool_load::ModulationStrategyTag::ConstrainedMax,
         }
+    }
+}
+
+/// **P32 (operator ruling 2026-11-15, "Cap only"): what a modulation run
+/// can do to the feed of a move.** No `Default`: each caller states it
+/// ([`ModulationContext::mode`]). The session reads the project switch
+/// (`session::FeedModulationSwitch::mode`; the switch has a third value,
+/// off, with which no modulation runs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModulationMode {
+    /// The run lowers a feed where a limit is exceeded. It never raises a
+    /// feed: no move of any class runs above the feed that the dressed path
+    /// gave it.
+    CapOnly,
+    /// The run sets each move to the highest feed that every limit allows.
+    /// That feed can be above the dressed feed and above the stated feed.
+    Full,
+}
+
+/// **P32 (lead rule 2026-11-15): the count of the moves of one toolpath
+/// that a modulation run held above a load cap.** The modulator does not
+/// take a feed below the rubbing floor of the move ([`ChiploadBand::rubbing_floor_mm_per_tooth`]),
+/// or below the dressed feed when that is lower. A move whose load cap
+/// (spindle power, tool deflection, the force budget while it gates) is
+/// below that floor is held: it did not meet its cap. A cap that no feed
+/// meets (the edge term alone is over the budget) holds the move too.
+///
+/// The provenance of the result keeps the count
+/// (`session::ResultProvenance::Modulated`), and the export warns once per
+/// op (`export.feed_held_at_floor`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub struct HeldMoves {
+    /// The count of held moves. A move held above two caps counts once.
+    pub moves: usize,
+    /// The held moves that stay above the spindle power cap.
+    pub power: usize,
+    /// The held moves that stay above the tip deflection cap.
+    pub deflection: usize,
+    /// The held moves that stay above the force-budget cap.
+    pub force_budget: usize,
+}
+
+impl HeldMoves {
+    /// `true` when the run held no move.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.moves == 0
+    }
+
+    /// **THE text of the warning `export.feed_held_at_floor`**, and of the
+    /// line of the "Feeds that run" record. `None` when no move is held.
+    /// The text holds no parenthesis: a G-code comment cannot nest one.
+    #[must_use]
+    pub fn warning(&self) -> Option<String> {
+        if self.is_empty() {
+            return None;
+        }
+        let noun =
+            |binding: BindingConstraint| crate::limits::LimitId::of_binding(binding).text().noun;
+        let limits: Vec<String> = [
+            (self.power, BindingConstraint::PowerMax),
+            (self.deflection, BindingConstraint::DeflectionMax),
+            (self.force_budget, BindingConstraint::ForceBudget),
+        ]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, binding)| format!("{} {count}", noun(binding)))
+        .collect();
+        let moves = if self.moves == 1 { "move" } else { "moves" };
+        Some(format!(
+            "{} {moves} held at the rubbing floor stay over a load limit: {}; no lower feed \
+             is given, so cut less depth or less width",
+            self.moves,
+            limits.join(", ")
+        ))
     }
 }
 
@@ -172,22 +254,38 @@ impl RunModulation {
         }
     }
 
-    /// **THE declared list (lead ruling Q2): the limits whose bound the
-    /// modulator holds on every engaged cutting move that it re-times.**
+    /// **THE declared list (lead ruling Q2): the limits whose ROW bound the
+    /// modulator holds on every engaged cutting move that it re-times.** A
+    /// row of a member can soften. The list is NOT the list of the caps of
+    /// the modulator: [`BindingConstraint`] names every cap (the chip
+    /// maximum, deflection, power, the force budget while it gates, the
+    /// machine ceiling, the reach, the plunge rate, a planner cap), and
+    /// most of them prove no row (P32).
     /// The list holds a limit only where the code of the strategy caps the
     /// move at the bound of that limit; the test
     /// `the_declared_list_is_what_the_modulator_caps_p29_10` ties each
-    /// member to that behaviour.
+    /// member to that behaviour. The list is the same in both modes
+    /// ([`ModulationMode`]): cap only emits `min(cap, dressed feed)`.
     ///
     /// - `ChipMax`: [`constrained_max_move`] step 1 caps the peak chip at
     ///   the band maximum (`band max x lift x rpm x Z`). A feed scale above
     ///   1 multiplies the cap, so the move can pass the band: then the list
     ///   is empty. [`band_mid_feed_for_move`] clamps the advance at the band
     ///   maximum with no lift, which is lower; it ignores the scale.
-    /// - Not in the list: the power, deflection and force-budget arms can
-    ///   pin a move at the chip floor when no feed holds the budget, so the
-    ///   move is not proved inside those limits. `ChipMin`: a point band has
-    ///   no floor, and a load cap wins over the floor (P20g).
+    ///   P32: the rubbing floor of a move is at or below this cap
+    ///   (`rubbing floor <= band min <= band max`; a point `v` gives
+    ///   `min(0.025, v)`), and a move is held only above a LOAD cap
+    ///   ([`HeldMoves`]), so no held move is above the chip cap (the test
+    ///   `the_rubbing_floor_is_never_above_the_chip_cap_p32`).
+    /// - Not in the list: the power and deflection arms hold a move at the
+    ///   rubbing floor when the cap is below it, or when no feed meets the
+    ///   budget ([`HeldMoves`]), so the move is not proved inside those
+    ///   limits; the deflection arm holds 200 um, which is not the row
+    ///   bound of a rough pass (`min(leave, 200 um)`, row `P28-16`). The
+    ///   force budget has no arm while it is advisory
+    ///   ([`ForceBudgetScope::Advisory`]). `ChipMin`: a point band has
+    ///   no floor, a load cap wins over the chip minimum floor (P20g), and
+    ///   cap only does not lift a move to it.
     ///
     /// P30-2: [`Self::NotRun`] reads the list of a default run
     /// (`DEFAULT_RUN`: `ConstrainedMax` at scale 1), the run of the
@@ -398,6 +496,24 @@ impl ChiploadBand {
     #[inline]
     pub fn is_point(&self) -> bool {
         self.point
+    }
+
+    /// **P32: the rubbing floor of this band (mm per tooth)**, by the repo
+    /// rule `feeds::rubbing_floor_at`: `min(0.025, band min)` for a band,
+    /// `min(0.025, v)` for a printed point. It is at or below
+    /// [`Self::max_mm_per_tooth`]. The modulator does not take a feed below
+    /// `floor x lift x rpm x Z` for a load cap.
+    #[must_use]
+    pub fn rubbing_floor_mm_per_tooth(&self) -> f64 {
+        if self.point {
+            crate::feeds::rubbing_floor_at(None, Some(self.max_mm_per_tooth)).0
+        } else {
+            crate::feeds::rubbing_floor(Some(crate::feeds::ChiploadBounds {
+                min_mm_per_tooth: self.min_mm_per_tooth,
+                max_mm_per_tooth: self.max_mm_per_tooth,
+            }))
+            .0
+        }
     }
 
     /// Geometric midpoint of the band — the [`ModulationStrategy::BandMid`]
@@ -651,7 +767,17 @@ pub enum ForceBudgetScope {
     /// line: no limit, and the move summary states
     /// [`FORCE_BUDGET_NO_FORCE_LINE_NOTE`].
     NoForceLine,
-    /// The op's rule is the force budget, with a force line: the limit.
+    /// P32 (operator ruling 2026-11-15, "Warn only"): the op's rule is the
+    /// force budget, and the basis of the budget does not gate an export
+    /// (`feeds::sourced::Basis::force_budget_bound`, the rule that makes
+    /// the force-budget rows advisory). The modulator sets no feed with it:
+    /// no limit. The budget stays a warning row and an export note.
+    Advisory {
+        /// The machine force budget (N) that sets no feed.
+        budget_n: f64,
+    },
+    /// The op's rule is the force budget, with a force line, and the basis
+    /// of the budget gates an export: the limit.
     Limit(ForceBudgetLimitInputs),
 }
 
@@ -659,14 +785,41 @@ impl ForceBudgetScope {
     /// **The one scope rule.** The limit applies only where
     /// `rule == Some(DepthCapRule { budget_n })`, the rule the depth
     /// gate reads (`RigidityProfile::force_budget_of`, the facts of the cut).
+    ///
+    /// P32: the basis of the budget is the one basis of the force-budget
+    /// bound ([`crate::feeds::sourced::Basis::force_budget_bound`]); see
+    /// [`Self::of_basis`].
     #[must_use]
     pub fn of(
         rule: Option<crate::machine::DepthCapRule>,
         line: Option<crate::material::force_line::ForceLine>,
         cutter: ModulationCutter,
     ) -> Self {
+        Self::of_basis(
+            rule,
+            &crate::feeds::sourced::Basis::force_budget_bound(),
+            line,
+            cutter,
+        )
+    }
+
+    /// [`Self::of`] with the basis of the budget stated. **One predicate
+    /// (P32, ruling 2): `basis.gates_export()`**, the predicate that gives
+    /// the force-budget rows their advisory tone. A basis that does not
+    /// gate gives [`Self::Advisory`]; a basis that gates gives the limit
+    /// again, with no second switch.
+    #[must_use]
+    pub fn of_basis(
+        rule: Option<crate::machine::DepthCapRule>,
+        basis: &crate::feeds::sourced::Basis,
+        line: Option<crate::material::force_line::ForceLine>,
+        cutter: ModulationCutter,
+    ) -> Self {
         use crate::machine::DepthCapRule;
         match (rule, line) {
+            (Some(DepthCapRule { budget_n }), _) if !basis.gates_export() => {
+                Self::Advisory { budget_n }
+            }
             (Some(DepthCapRule { budget_n }), Some(line)) => Self::Limit(ForceBudgetLimitInputs {
                 line,
                 cutter,
@@ -682,7 +835,7 @@ impl ForceBudgetScope {
     pub fn inputs(self) -> Option<ForceBudgetLimitInputs> {
         match self {
             Self::Limit(inputs) => Some(inputs),
-            Self::OutOfScope | Self::NoForceLine => None,
+            Self::OutOfScope | Self::NoForceLine | Self::Advisory { .. } => None,
         }
     }
 
@@ -691,7 +844,7 @@ impl ForceBudgetScope {
     pub fn note(self) -> Option<&'static str> {
         match self {
             Self::NoForceLine => Some(FORCE_BUDGET_NO_FORCE_LINE_NOTE),
-            Self::OutOfScope | Self::Limit(_) => None,
+            Self::OutOfScope | Self::Limit(_) | Self::Advisory { .. } => None,
         }
     }
 }
@@ -744,6 +897,11 @@ pub struct ModulationContext<'a> {
     pub kinematics: &'a MachineKinematics,
     /// F-039 — which algorithm to run.
     pub strategy: ModulationStrategy,
+    /// P32 — cap only or full ([`ModulationMode`]). The feed of each move
+    /// of the input toolpath is its DRESSED feed (the session modulates the
+    /// dressed path of a result, also on a second simulation), so cap only
+    /// emits no feed above it.
+    pub mode: ModulationMode,
     /// F-039 — the feed scale (default 1.0). The constrained-max solver
     /// multiplies the smallest candidate feed limit by this value, then
     /// applies the chipload-min floor. `1.0` emits at the binding limit;
@@ -818,6 +976,8 @@ pub struct ModulationOutcome {
     /// [`FORCE_BUDGET_NO_FORCE_LINE_NOTE`]). The session adds them; the
     /// summary carries them.
     pub notes: Vec<&'static str>,
+    /// P32: the moves that the run held above a load cap ([`HeldMoves`]).
+    pub held: HeldMoves,
 }
 
 /// P20f: a move counts as touched when its emitted feed differs from the
@@ -931,15 +1091,24 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 /// chipload cap is `v × rpm × flutes`, the pin arms pin to `v`, and the
 /// step-7 floor is skipped. The feed scale still applies.
 ///
-/// P20g: the third value is `true` when a load cap took the move below the
-/// chip-min floor (the rub risk the summary notes).
+/// P20g: [`MoveFeed::below_floor`] is `true` when a load cap took the move
+/// below the chip-min floor (the rub risk the summary notes).
+///
+/// P32: `dressed_mm_min` is the feed that the dressed path gave the move.
+/// No load cap takes the move below its rubbing floor
+/// (`min(rubbing floor x lift x rpm x Z, dressed feed)`); the machine caps
+/// (the ceiling and the reach here; the plunge guard, the planner cap and
+/// the per-axis rate in the caller) still can. In
+/// [`ModulationMode::CapOnly`] the feed is at most `dressed_mm_min`, and no
+/// chip-min floor lifts it.
 fn constrained_max_move(
     engagement: PerMoveEngagement,
     move_samples: Option<&MoveSampleEngagements>,
     band: ChiploadBand,
     ctx: &ModulationContext<'_>,
     predicted_cap_mm_min: f64,
-) -> (f64, BindingConstraint, bool) {
+    dressed_mm_min: f64,
+) -> MoveFeed {
     let flutes = ctx.flute_count.max(1) as f64;
 
     // Effective WOC fraction: clamped to a small floor because the deflection
@@ -990,6 +1159,15 @@ fn constrained_max_move(
     let (sample_list, mean_binds): (&[SampleEngagement], bool) =
         move_samples.map_or((&[], false), |m| (m.samples.as_slice(), m.mean_binds));
     let floor_feed = floor_chipload * ctx.spindle_rpm * flutes;
+    // P32 (lead rule 2026-11-15): the rubbing floor of the move. The PEAK
+    // chip at the rubbing floor (the quantity the `RubbingFloor` row judges)
+    // is the advance `floor x lift`; a dressed feed below it stays.
+    let rubbing_floor_feed = (band.rubbing_floor_mm_per_tooth() * lift * ctx.spindle_rpm * flutes)
+        .min(dressed_mm_min)
+        .max(0.0);
+    // The feed that meets each load cap of the move (0 for a pin: no feed
+    // meets it). The caller counts a move that ends above one as held.
+    let mut load_caps = LoadCaps::default();
 
     // 2. Deflection cap (feed-aware, gate-consistent). The lateral force
     // is the PEAK resultant engaged-edge force (P11a, L5), and tip
@@ -1020,11 +1198,12 @@ fn constrained_max_move(
             || Some(defl.cutter.engagement(axial_mm, woc_eff)),
             |e| force_arm_reading(e, defl.line, ctx, budget_n),
         );
-        arm.push_into(
+        load_caps.deflection = arm.push_into(
             &mut limits,
             &mut pinned,
             &mut lowest_load_cap,
             floor_feed,
+            rubbing_floor_feed,
             BindingConstraint::DeflectionMax,
         );
     }
@@ -1074,11 +1253,12 @@ fn constrained_max_move(
                 }
             },
         );
-        arm.push_into(
+        load_caps.power = arm.push_into(
             &mut limits,
             &mut pinned,
             &mut lowest_load_cap,
             floor_feed,
+            rubbing_floor_feed,
             BindingConstraint::PowerMax,
         );
     }
@@ -1099,11 +1279,12 @@ fn constrained_max_move(
             || Some(fb.cutter.engagement(axial_mm, woc_eff)),
             |e| force_arm_reading(e, fb.line, ctx, fb.budget_n),
         );
-        arm.push_into(
+        load_caps.force_budget = arm.push_into(
             &mut limits,
             &mut pinned,
             &mut lowest_load_cap,
             floor_feed,
+            rubbing_floor_feed,
             BindingConstraint::ForceBudget,
         );
     }
@@ -1142,12 +1323,48 @@ fn constrained_max_move(
     let scale = ctx.feed_scale.max(0.0);
     let after_scale = limit * scale;
 
+    // P32 (operator ruling 2026-11-15): cap only. The feed is the lowest
+    // cap, at most the dressed feed. No chip-min floor lifts it. The
+    // rubbing floor of the move holds against the feed scale too, under the
+    // machine caps of this function (the ceiling and the reach). The
+    // binding names the lowest limit of the move; the move is AT that limit
+    // only where its feed moved.
+    match ctx.mode {
+        ModulationMode::Full => {}
+        ModulationMode::CapOnly => {
+            let mut hard = ctx.cutting_ceiling.mm_min();
+            if predicted_cap_mm_min.is_finite() && predicted_cap_mm_min > 0.0 {
+                hard = hard.min(predicted_cap_mm_min);
+            }
+            let feed = after_scale
+                .min(dressed_mm_min)
+                .max(rubbing_floor_feed.min(hard));
+            let chip_floor = (floor_chipload * ctx.spindle_rpm * flutes).min(hard);
+            // P20g note: a load cap, not the dressed feed, took the move
+            // under the chip-min floor. A point has no chip-min floor.
+            let below_floor = !band.is_point()
+                && feed < chip_floor
+                && lowest_load_cap.is_some_and(|cap| cap < dressed_mm_min && cap < chip_floor);
+            return MoveFeed {
+                feed,
+                binding,
+                below_floor,
+                load_caps,
+            };
+        }
+    }
+
     // A2 (point mode): no floor for a point. Nothing printed a minimum,
     // so the feed scale can take the feed below the point. The binding
     // tag stays the tag of the smallest cap (Q7: a move held at the
     // point keeps `ChiploadMax`).
     if band.is_point() {
-        return (after_scale, binding, false);
+        return MoveFeed {
+            feed: after_scale,
+            binding,
+            below_floor: false,
+            load_caps,
+        };
     }
 
     // 7. Chipload-min floor — the matched row's own `band.min`, NOT
@@ -1174,6 +1391,8 @@ fn constrained_max_move(
     // burn advisory. Where the floor sits above the lowest load cap, the
     // floor drops to that cap, the binding stays the load arm, and the move
     // reports `below_floor` (the summary note, the chip gate's low side).
+    // P32: each load cap is already at or above the rubbing floor of the
+    // move (`LoadArm::push_into`), so the floor drops no lower than that.
     let floor = floor_chipload * ctx.spindle_rpm * flutes;
     let floor_under_ceiling = floor.min(ctx.cutting_ceiling.mm_min());
     let effective_floor =
@@ -1185,13 +1404,62 @@ fn constrained_max_move(
         } else {
             binding
         };
-        (effective_floor, new_binding, below_floor)
+        MoveFeed {
+            feed: effective_floor,
+            binding: new_binding,
+            below_floor,
+            load_caps,
+        }
     } else {
-        (
-            after_scale,
+        MoveFeed {
+            feed: after_scale,
             binding,
-            below_floor && after_scale < floor_under_ceiling,
-        )
+            below_floor: below_floor && after_scale < floor_under_ceiling,
+            load_caps,
+        }
+    }
+}
+
+/// The feed of one engaged move from [`constrained_max_move`].
+struct MoveFeed {
+    /// The feed (mm/min).
+    feed: f64,
+    /// The lowest limit of the move.
+    binding: BindingConstraint,
+    /// P20g: a load cap took the move below the chip-min floor.
+    below_floor: bool,
+    /// P32: the feed that meets each load cap of the move.
+    load_caps: LoadCaps,
+}
+
+/// P32: the feed (mm/min) that meets each load cap of one move; `None` for
+/// an arm with no signal, 0 for an arm that no feed meets (a pin). The cap
+/// is the cap BEFORE the rubbing floor, so a move that ends above it did
+/// not meet it.
+#[derive(Debug, Clone, Copy, Default)]
+struct LoadCaps {
+    deflection: Option<f64>,
+    power: Option<f64>,
+    force_budget: Option<f64>,
+}
+
+impl LoadCaps {
+    /// Count the move in `held` when `feed` is above a load cap.
+    fn count_held(&self, feed: f64, held: &mut HeldMoves) {
+        // A feed is above a cap when it exceeds it by more than the float
+        // noise of the solver (relative 1e-9, absolute 1e-6 mm/min).
+        let over = |cap: Option<f64>| cap.is_some_and(|cap| feed > cap * (1.0 + 1e-9) + 1e-6);
+        let (power, deflection, force_budget) = (
+            over(self.power),
+            over(self.deflection),
+            over(self.force_budget),
+        );
+        if power || deflection || force_budget {
+            held.moves += 1;
+            held.power += usize::from(power);
+            held.deflection += usize::from(deflection);
+            held.force_budget += usize::from(force_budget);
+        }
     }
 }
 
@@ -1204,9 +1472,17 @@ fn max_safe_feed_for_move(
     ctx: &ModulationContext<'_>,
     predicted_cap_mm_min: f64,
 ) -> (f64, BindingConstraint) {
-    let (feed, binding, _) =
-        constrained_max_move(engagement, move_samples, band, ctx, predicted_cap_mm_min);
-    (feed, binding)
+    // The test door states a dressed feed above every cap: the rubbing
+    // floor of the move is then the floor of the band alone.
+    let out = constrained_max_move(
+        engagement,
+        move_samples,
+        band,
+        ctx,
+        predicted_cap_mm_min,
+        f64::INFINITY,
+    );
+    (out.feed, out.binding)
 }
 
 /// Feeds contract P20g: the reading of one load arm at one engagement.
@@ -1231,15 +1507,21 @@ struct LoadArm {
 impl LoadArm {
     /// Push the arm's limits: the lowest cap, then the floor pin if any
     /// engagement pinned the move (the pre-P20g order of one engagement).
+    ///
+    /// P32: the cap enters at or above `rubbing_floor_feed`, the rubbing
+    /// floor of the move. It returns the feed that meets the arm: the cap
+    /// before that floor, 0 for a pin, `None` with no signal.
     fn push_into(
         self,
         limits: &mut Vec<(f64, BindingConstraint)>,
         pinned: &mut Option<(f64, BindingConstraint)>,
         lowest_load_cap: &mut Option<f64>,
         floor_feed: f64,
+        rubbing_floor_feed: f64,
         tag: BindingConstraint,
-    ) {
+    ) -> Option<f64> {
         if let Some(cap) = self.cap {
+            let cap = cap.max(rubbing_floor_feed);
             limits.push((cap, tag));
             *lowest_load_cap = Some(lowest_load_cap.map_or(cap, |prev| prev.min(cap)));
         }
@@ -1247,7 +1529,9 @@ impl LoadArm {
             let pin = (floor_feed.max(1e-9), tag);
             *pinned = pinned.or(Some(pin));
             limits.push(pin);
+            return Some(0.0);
         }
+        self.cap
     }
 }
 
@@ -1670,6 +1954,8 @@ pub fn adaptive_feed_modulate_with_materials(
             }
         };
 
+        // P32: the load caps of an engaged ConstrainedMax move.
+        let mut move_load_caps = LoadCaps::default();
         let (mut new_feed, mut binding) = match (ctx.strategy, ctx.chipload_band) {
             // BANDLESS (wanaka200 IMPLEMENTATION_PLAN work item A,
             // 2026-09-19): no vendor chipload row, so no chipload
@@ -1718,16 +2004,18 @@ pub fn adaptive_feed_modulate_with_materials(
                         .map_or(predicted_cap, |r| r.max(1e-3));
                     no_engagement_feed(commanded, ctx.cutting_ceiling.mm_min(), reach)
                 } else {
-                    let (feed, binding, below) = constrained_max_move(
+                    let out = constrained_max_move(
                         engagement,
                         ctx.sample_engagements.get(i),
                         band,
                         ctx,
                         predicted_cap,
+                        commanded,
                     );
                     // P20g: a load cap took the move below the chip floor.
-                    below_chip_floor |= below;
-                    (feed, binding)
+                    below_chip_floor |= out.below_floor;
+                    move_load_caps = out.load_caps;
+                    (out.feed, out.binding)
                 }
             }
         };
@@ -1792,6 +2080,18 @@ pub fn adaptive_feed_modulate_with_materials(
             }
         }
 
+        // P32 (operator ruling 2026-11-15, "Cap only"): no move runs above
+        // the feed that the dressed path gave it. The input feed IS the
+        // dressed feed (`ModulationContext::mode`). This is the one clamp
+        // of every strategy arm; the binding keeps the name of the lowest
+        // limit of the move.
+        match ctx.mode {
+            ModulationMode::Full => {}
+            ModulationMode::CapOnly => new_feed = new_feed.min(commanded),
+        }
+        // P32: a move that ends above a load cap did not meet it.
+        move_load_caps.count_held(new_feed, &mut outcome.held);
+
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
             toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);
@@ -1840,6 +2140,7 @@ mod tests {
             radial_thinning: RadialThinning::Applied,
             kinematics: k,
             strategy: ModulationStrategy::BandMid,
+            mode: ModulationMode::Full,
             feed_scale: 1.0,
             deflection_inputs: None,
             power_inputs: None,
@@ -2791,22 +3092,33 @@ mod tests {
             ctx.strategy = strategy;
             ctx.feed_scale = feed_scale;
             let run = RunModulation::current_for_tests(strategy, feed_scale);
-            let mut tp = straight_toolpath(3, commanded);
-            let engagements = vec![engaged; tp.moves.len()];
-            let out = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
-            assert!(!out.per_move.is_empty(), "non-vacuity");
-            let worst = out
-                .per_move
-                .values()
-                .map(|(feed, _)| peak_chip(*feed))
-                .fold(0.0_f64, f64::max);
+            // P32: the list is one list for both modes, so cap only must
+            // hold each member too. This fixture states a feed over the
+            // band, so cap only gives the feeds of the full mode.
+            let mut worst_of = |mode: ModulationMode| {
+                ctx.mode = mode;
+                let mut tp = straight_toolpath(3, commanded);
+                let engagements = vec![engaged; tp.moves.len()];
+                let out = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+                assert!(!out.per_move.is_empty(), "non-vacuity");
+                out.per_move
+                    .values()
+                    .map(|(feed, _)| peak_chip(*feed))
+                    .fold(0.0_f64, f64::max)
+            };
+            let worst = worst_of(ModulationMode::Full);
+            let worst_cap_only = worst_of(ModulationMode::CapOnly);
             for limit in run.capped_limits() {
                 match limit {
-                    LimitId::ChipMax => assert!(
-                        worst <= band.max_mm_per_tooth * (1.0 + 1e-9),
-                        "{strategy:?} x {feed_scale}: the modulated peak chip {worst} \
-                         holds the band maximum"
-                    ),
+                    LimitId::ChipMax => {
+                        for (mode, worst) in [("full", worst), ("cap only", worst_cap_only)] {
+                            assert!(
+                                worst <= band.max_mm_per_tooth * (1.0 + 1e-9),
+                                "{strategy:?} x {feed_scale}, {mode}: the modulated peak chip \
+                                 {worst} holds the band maximum"
+                            );
+                        }
+                    }
                     other => panic!("{other:?}: a declared limit has no proof here"),
                 }
             }
@@ -2835,5 +3147,196 @@ mod tests {
                 RunModulation::DEFAULT_RUN.capped_limits()
             );
         }
+    }
+
+    // ── P32: cap only, the rubbing floor, the advisory force budget ─────
+
+    /// A band whose minimum (0.04) is above the repo rubbing floor (0.025):
+    /// chip floor 1440 mm/min, rubbing floor 900 mm/min at 18000 rpm, two
+    /// flutes and lift 1 (a full slot).
+    fn p32_band() -> ChiploadBand {
+        ChiploadBand::new(0.04, 1.0).unwrap()
+    }
+
+    /// One full-slot move at `dressed` mm/min with a spindle power of
+    /// `available_kw`; the outcome and the emitted feed.
+    fn p32_run(
+        mode: ModulationMode,
+        band: ChiploadBand,
+        dressed: f64,
+        available_kw: Option<f64>,
+    ) -> (f64, BindingConstraint, ModulationOutcome) {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, band);
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.mode = mode;
+        ctx.plunge_rate_mm_min = f64::INFINITY;
+        ctx.power_inputs = available_kw.map(|available_kw| PowerLimitInputs {
+            line: oak_line(),
+            cutter: flat_cutter(),
+            available_kw,
+        });
+        let mut tp = straight_toolpath(1, dressed);
+        let engagements = vec![full_slot(); tp.moves.len()];
+        let out = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+        let (feed, binding) = out.per_move[&1];
+        assert_eq!(tp.moves[1].move_type.feed_rate(), Some(feed));
+        (feed, binding, out)
+    }
+
+    /// The spindle power (kW) whose cap on the fixture move is `target`
+    /// mm/min: a bisection on the solver under a band with no floor in the
+    /// way (the cap is the feed).
+    fn p32_kw_for_cap(target: f64) -> f64 {
+        let open = ChiploadBand::new(1.0e-5, 1.0).unwrap();
+        let cap = |kw: f64| p32_run(ModulationMode::Full, open, 3000.0, Some(kw)).0;
+        let (mut lo, mut hi) = (1.0e-6, 50.0);
+        assert!(cap(lo) < target && cap(hi) > target, "the bracket holds");
+        for _ in 0..80 {
+            let mid = 0.5 * (lo + hi);
+            if cap(mid) < target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let kw = 0.5 * (lo + hi);
+        assert!(
+            (cap(kw) - target).abs() < 1e-3,
+            "cap {} for {target}",
+            cap(kw)
+        );
+        kw
+    }
+
+    /// P32: the rubbing floor of a band is the repo rule and is never above
+    /// the chip cap, so a move held at the floor is never above the one
+    /// declared limit (`ChipMax`).
+    #[test]
+    fn the_rubbing_floor_is_never_above_the_chip_cap_p32() {
+        use crate::feeds::RUBBING_FLOOR_MM_TOOTH;
+        for (min, max) in [(0.04, 1.0), (0.02, 0.08), (0.0036, 0.0072), (0.03, 0.03)] {
+            let band = ChiploadBand::new(min, max).unwrap();
+            let floor = band.rubbing_floor_mm_per_tooth();
+            assert!((floor - RUBBING_FLOOR_MM_TOOTH.min(min)).abs() < 1e-15);
+            assert!(floor <= band.max_mm_per_tooth);
+        }
+        for v in [0.05, 0.01] {
+            let point = ChiploadBand::point(v).unwrap();
+            let floor = point.rubbing_floor_mm_per_tooth();
+            assert!((floor - RUBBING_FLOOR_MM_TOOTH.min(v)).abs() < 1e-15);
+            assert!(floor <= point.max_mm_per_tooth);
+        }
+    }
+
+    /// P32 (lead rule): a load cap wins over the chip MINIMUM floor (P20g)
+    /// and stops at the rubbing floor of the move. A move held there did
+    /// not meet its cap and is counted. A dressed feed below the floor
+    /// stays. Both modes.
+    #[test]
+    fn a_load_cap_stops_at_the_rubbing_floor_p32() {
+        let band = p32_band();
+        let (chip_floor, rubbing_floor) = (0.04 * 36_000.0, 0.025 * 36_000.0);
+        let between = p32_kw_for_cap(1200.0);
+        let below = p32_kw_for_cap(500.0);
+        for mode in [ModulationMode::Full, ModulationMode::CapOnly] {
+            // A cap between the two floors: the cap wins (P20g), no hold.
+            let (feed, binding, out) = p32_run(mode, band, 3000.0, Some(between));
+            assert!((feed - 1200.0).abs() < 1e-2, "{mode:?}: {feed}");
+            assert!(feed < chip_floor && feed > rubbing_floor);
+            assert_eq!(binding, BindingConstraint::PowerMax);
+            assert!(out.held.is_empty(), "{mode:?}: the cap is met");
+            assert!(out.notes.contains(&LOAD_CAP_BELOW_CHIP_FLOOR_NOTE));
+
+            // A cap below the rubbing floor: the move is held at the floor.
+            let (feed, binding, out) = p32_run(mode, band, 3000.0, Some(below));
+            assert!(
+                (feed - rubbing_floor).abs() < 1e-9,
+                "{mode:?}: held at the rubbing floor {rubbing_floor}, got {feed}"
+            );
+            assert_eq!(binding, BindingConstraint::PowerMax);
+            assert_eq!((out.held.moves, out.held.power), (1, 1), "{mode:?}");
+            assert_eq!(out.held.deflection + out.held.force_budget, 0);
+            let text = out.held.warning().unwrap();
+            assert!(
+                text.starts_with("1 move held at the rubbing floor") && !text.contains('('),
+                "{text}"
+            );
+
+            // A dressed feed already under the floor stays as it is.
+            let (feed, _, out) = p32_run(mode, band, 700.0, Some(below));
+            assert!((feed - 700.0).abs() < 1e-9, "{mode:?}: {feed}");
+            assert_eq!(out.changed, 0, "{mode:?}: the dressed feed stays");
+            assert_eq!(out.held.power, 1, "{mode:?}: it is above the cap of 500");
+
+            // No feed meets the power (the edge term alone is over it): the
+            // move takes no feed below the floor, and it is held.
+            let (feed, _, out) = p32_run(mode, band, 3000.0, Some(1.0e-9));
+            assert!(feed >= rubbing_floor, "{mode:?}: {feed}");
+            assert_eq!(out.held.power, 1, "{mode:?}: a pin is not a met cap");
+        }
+        assert!(HeldMoves::default().warning().is_none());
+    }
+
+    /// P32 (operator ruling "Cap only"): cap only never raises a feed and
+    /// full can. No limit binds this move below its dressed feed.
+    #[test]
+    fn cap_only_keeps_a_feed_that_no_limit_lowers_p32() {
+        let band = p32_band();
+        let dressed = 2000.0;
+        let (full, _, _) = p32_run(ModulationMode::Full, band, dressed, None);
+        assert!(full > dressed, "full lifts the move: {full}");
+        let (capped, _, out) = p32_run(ModulationMode::CapOnly, band, dressed, None);
+        assert!(
+            (capped - dressed).abs() < 1e-9,
+            "cap only keeps {dressed}: {capped}"
+        );
+        assert_eq!(out.changed, 0);
+        // The chip minimum floor (1440) lifts no move in cap only.
+        let (low, _, out) = p32_run(ModulationMode::CapOnly, band, 1000.0, None);
+        assert!(
+            (low - 1000.0).abs() < 1e-9,
+            "no lift to the chip floor: {low}"
+        );
+        assert_eq!(out.changed, 0);
+        let (lifted, binding, _) = p32_run(ModulationMode::Full, band, 1000.0, None);
+        assert!(lifted > 1000.0, "full lifts it: {lifted} ({binding:?})");
+    }
+
+    /// P32 (operator ruling "Warn only"): the scope of the force budget
+    /// follows ONE predicate, `Basis::gates_export` of the basis of the
+    /// bound. Advisory today: no inputs. A basis that gates: the limit.
+    #[test]
+    fn the_force_budget_scope_follows_the_advisory_predicate_p32() {
+        use crate::feeds::sourced::{Basis, MachineField};
+        let rule = Some(crate::machine::DepthCapRule { budget_n: 35.0 });
+        let bound = Basis::force_budget_bound();
+        assert_eq!(
+            crate::limits::basis_of_bound(
+                &crate::tool_load::verdict::BoundSource::MachineForceBudget {
+                    budget_n: 35.0,
+                    ae_mm: 6.0,
+                    fz_mm: 0.05,
+                    depth_mm: 3.0,
+                }
+            ),
+            bound,
+            "the gate row and the modulator read one basis"
+        );
+        let of = ForceBudgetScope::of(rule, Some(oak_line()), flat_cutter());
+        if bound.gates_export() {
+            assert!(of.inputs().is_some(), "a gating budget caps");
+        } else {
+            assert_eq!(of, ForceBudgetScope::Advisory { budget_n: 35.0 });
+            assert_eq!(of.inputs(), None, "an advisory budget sets no feed");
+        }
+        let gating = Basis::Machine(MachineField::PowerCurve);
+        assert!(gating.gates_export());
+        assert!(
+            ForceBudgetScope::of_basis(rule, &gating, Some(oak_line()), flat_cutter())
+                .inputs()
+                .is_some(),
+            "the same predicate with the other answer gives the limit back"
+        );
     }
 }

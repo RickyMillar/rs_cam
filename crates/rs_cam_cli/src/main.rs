@@ -83,6 +83,26 @@ impl From<SuggestPickArg> for rs_cam_core::feeds::envelope::PickRequest {
     }
 }
 
+/// The `--feed-modulation` token of the project's feed modulation switch
+/// (`rs_cam_core::session::FeedModulationSwitch`; operator ruling
+/// 2026-11-15): `off`, `cap-only`, `full`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum FeedModulationArg {
+    Off,
+    CapOnly,
+    Full,
+}
+
+impl From<FeedModulationArg> for rs_cam_core::session::FeedModulationSwitch {
+    fn from(arg: FeedModulationArg) -> Self {
+        match arg {
+            FeedModulationArg::Off => Self::Off,
+            FeedModulationArg::CapOnly => Self::CapOnly,
+            FeedModulationArg::Full => Self::Full,
+        }
+    }
+}
+
 /// The `project --spindle-strategy` token of [`SpindleStrategyKind`]. The
 /// token is the core serde token (`match_chart`, `constant_chip`), the one
 /// the project file holds. Feeds contract P21b: `max_speed` is gone.
@@ -345,37 +365,26 @@ enum Commands {
 
         /// F-036c calibration helper: emit G-code (concatenated across
         /// enabled toolpaths) to this path after simulation. Reads the
-        /// modulated `Toolpath` IR when `--adaptive-feed-modulation`
-        /// is set, so the emitted feeds match what the GUI export
+        /// modulated `Toolpath` IR when the feed modulation of the run is
+        /// not off, so the emitted feeds match what the GUI export
         /// would produce in the same state.
         #[arg(long)]
         emit_gcode: Option<PathBuf>,
 
-        /// Disable F-036's per-segment adaptive feed modulation during
-        /// simulation.
+        /// Set the feed modulation of this run: `off` (no simulation
+        /// changes a feed), `cap-only` (a simulation lowers a feed where a
+        /// limit is exceeded, and never raises one) or `full` (a simulation
+        /// sets each move to the highest feed that every limit allows,
+        /// which can be above the stated feed).
         ///
-        /// **Checkpoint K (g1), 2026-08-13 — the default flipped to
-        /// ON.** Checkpoint J flipped
-        /// `SimulationOptions::default().adaptive_feed_modulation` to
-        /// `true` and the GUI pins `true`, but this flag defaulted to
-        /// `false`, so the same project got a *different operating
-        /// point* — and therefore different `Within`/`Exceeds`
-        /// verdicts and different reported feeds — depending on which
-        /// front end asked. Modulation is what parks a feed on the band
-        /// ceiling (A-5 measured `ConstrainedMax` rewriting 100 % of
-        /// moves), so the divergence was not cosmetic.
-        ///
-        /// This **moves CLI numbers for every existing invocation**.
-        /// `--no-adaptive-feed-modulation` reproduces the old behaviour
-        /// exactly, which A-5's own evidence needed. `cli smoke` pins
-        /// `false` explicitly and does not inherit this default (it is a
-        /// fingerprint harness).
-        ///
-        /// Modulation still requires `MachineProfile.kinematics` — for
-        /// projects predating F-034 combine with
-        /// `--inject-shapeoko-kinematics`, or the pass is a no-op.
-        #[arg(long = "no-adaptive-feed-modulation", action = clap::ArgAction::SetTrue)]
-        no_adaptive_feed_modulation: bool,
+        /// With no flag the run reads the stored value of the project file
+        /// (`[job.simulation] feed_modulation`; cap only with no key), the
+        /// value the GUI and MCP read. The flag sets the value on the
+        /// in-memory session only; it replaces `--no-adaptive-feed-modulation`
+        /// (operator ruling 2026-11-15, P32). `cli smoke` runs with no
+        /// modulation (it is a fingerprint harness).
+        #[arg(long = "feed-modulation", value_enum)]
+        feed_modulation: Option<FeedModulationArg>,
 
         /// F-039 — modulation algorithm: `constrained-max` (default;
         /// per-move binding-constraint solver) or `band-mid` (F-036's
@@ -557,10 +566,11 @@ enum Commands {
         #[arg(long = "set")]
         set: Vec<String>,
 
-        /// Disable the per-segment adaptive feed modulation of the closing
-        /// simulation. Default ON, the same as `project` and the GUI.
-        #[arg(long = "no-adaptive-feed-modulation", action = clap::ArgAction::SetTrue)]
-        no_adaptive_feed_modulation: bool,
+        /// Set the feed modulation of the run (`off`, `cap-only`, `full`),
+        /// as `project --feed-modulation` does. With no flag the run reads
+        /// the stored value of the project file (cap only with no key).
+        #[arg(long = "feed-modulation", value_enum)]
+        feed_modulation: Option<FeedModulationArg>,
     },
 }
 
@@ -674,7 +684,7 @@ fn main() -> Result<()> {
             resolution,
             summary,
             emit_gcode,
-            no_adaptive_feed_modulation,
+            feed_modulation,
             modulation_strategy,
             modulation_feed_scale,
             inject_shapeoko_kinematics,
@@ -696,8 +706,8 @@ fn main() -> Result<()> {
                 resolution,
                 summary,
                 emit_gcode.as_deref(),
-                // Checkpoint K (g1) — default ON, opt out explicitly.
-                !no_adaptive_feed_modulation,
+                // P32: `None` reads the stored switch of the project.
+                feed_modulation.map(Into::into),
                 modulation_strategy.into(),
                 modulation_feed_scale,
                 inject_shapeoko_kinematics,
@@ -748,7 +758,7 @@ fn main() -> Result<()> {
             resolution,
             no_sim,
             set,
-            no_adaptive_feed_modulation,
+            feed_modulation,
         } => {
             rough_score::run_rough_score(
                 &input,
@@ -757,7 +767,7 @@ fn main() -> Result<()> {
                     resolution,
                     no_sim,
                     set,
-                    adaptive_feed_modulation: !no_adaptive_feed_modulation,
+                    feed_modulation: feed_modulation.map(Into::into),
                 },
             )?;
         }

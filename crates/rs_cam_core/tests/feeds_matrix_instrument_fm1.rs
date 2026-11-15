@@ -1254,6 +1254,17 @@ fn run_sim_cell(cell: &SimCell, machine: &MachineProfile) -> Result<Vec<String>,
             }
         },
     );
+    // P32: the committed sim subset reads the feeds of the full feed
+    // modulation (the default of the session when the matrix was written).
+    // The default is cap only now, so the instrument states the full mode
+    // and its numbers do not move.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .map_err(|e| format!("feed modulation: {e}"))?;
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

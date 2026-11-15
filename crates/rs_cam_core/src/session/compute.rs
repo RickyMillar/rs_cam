@@ -1926,6 +1926,11 @@ fn optimized_candidate(
     // same path the user gets after a default sim.
     let strategy = crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax;
     let feed_scale = 1.0;
+    // P32: the advisor compares candidates at the highest feed that every
+    // limit allows, so it states the full mode whatever the project switch
+    // says. It is a planning figure, not the feeds of an export: under the
+    // default switch (cap only) the export runs the dressed feeds or lower.
+    let mode = crate::dressup::feed_modulation::ModulationMode::Full;
 
     let (modulated, outcome) = modulate_annotated_against_trace(
         &FeedContext {
@@ -1943,6 +1948,7 @@ fn optimized_candidate(
         max_feed,
         rapid_feed,
         strategy,
+        mode,
         feed_scale,
     )?;
     let regime = outcome
@@ -2007,6 +2013,8 @@ fn modulate_annotated_against_trace(
     max_feed: crate::machine::CuttingCeilingMmMin,
     rapid_feed: f64,
     strategy: crate::dressup::feed_modulation::ModulationStrategy,
+    // P32: cap only or full. The feeds of `annotated` are the dressed feeds.
+    mode: crate::dressup::feed_modulation::ModulationMode,
     feed_scale: f64,
 ) -> Option<(
     crate::toolpath::Toolpath,
@@ -2282,6 +2290,9 @@ fn modulate_annotated_against_trace(
     };
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
+    // P32 (operator ruling 2026-11-15, "Warn only"): the scope is
+    // `Advisory` while the basis of the budget does not gate an export, so
+    // the modulator then has no force-budget arm.
     // Feeds contract P16 item 7 (D6): the force-budget limit applies only
     // where the depth gate applies the force budget. Both read the one rule:
     // P29-3, the depth limit of the op's body cut (`OperationConfig::cuts`),
@@ -2388,6 +2399,7 @@ fn modulate_annotated_against_trace(
         radial_thinning,
         kinematics: &kinematics,
         strategy,
+        mode,
         feed_scale,
         deflection_inputs,
         power_inputs,

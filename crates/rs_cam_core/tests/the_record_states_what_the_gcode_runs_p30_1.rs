@@ -233,6 +233,15 @@ fn feed_optimisation_feeds_are_the_gcode_feeds_p30_1() {
 #[test]
 fn modulated_feeds_are_the_gcode_feeds_p30_1() {
     let mut session = pocket_session(false);
+    // P32: the default switch is cap only; this file asserts lifted feeds,
+    // so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let before = assert_record_is_the_gcode(&session, "before modulation");
     session
         .run_simulation(

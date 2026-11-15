@@ -239,6 +239,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
         radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: None,
         force_budget_inputs: None,

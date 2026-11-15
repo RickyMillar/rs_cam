@@ -772,6 +772,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         OP,
         "Runs above the stated feed",
     ),
+    (
+        ids::EXPORT_FEED_HELD_AT_FLOOR,
+        OP,
+        "Feeds held at the rubbing floor",
+    ),
 ];
 
 fn row(id: &str) -> Option<&'static (&'static str, Anchor, &'static str)> {

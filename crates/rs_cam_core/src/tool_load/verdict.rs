@@ -89,6 +89,11 @@ pub enum BindingConstraint {
     /// (`RigidityProfile::force_budget_of`) carries this limit. With the edge
     /// term alone over the budget, the move pins to the chipload-min floor
     /// with this tag.
+    ///
+    /// P32 (operator ruling 2026-11-15, "Warn only"): no move carries this
+    /// tag while the budget is advisory. The session gives the modulator
+    /// the force-budget inputs only when the basis of the bound gates an
+    /// export (`dressup::feed_modulation::ForceBudgetScope::of`).
     ForceBudget,
 }
 

@@ -593,6 +593,7 @@ impl ProjectSession {
         max_feed: crate::machine::CuttingCeilingMmMin,
         rapid_feed: f64,
         strategy: crate::dressup::feed_modulation::ModulationStrategy,
+        mode: crate::dressup::feed_modulation::ModulationMode,
         feed_scale: f64,
     ) -> Option<(
         crate::toolpath::Toolpath,
@@ -614,6 +615,7 @@ impl ProjectSession {
             max_feed,
             rapid_feed,
             strategy,
+            mode,
             feed_scale,
         )
     }
@@ -636,12 +638,16 @@ impl ProjectSession {
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) -> std::collections::BTreeSet<usize> {
-        // Operator ruling 2026-11-15: the feed modulation switch of the
-        // project gates every door (`run_simulation`, `AdoptSimulation`).
-        if !opts.adaptive_feed_modulation || !self.feed_modulation.is_on() {
+        // Operator rulings 2026-11-15: the feed modulation switch of the
+        // project gates every door (`run_simulation`, `AdoptSimulation`),
+        // and states the mode of the run (P32: cap only or full).
+        let Some(mode) = self.feed_modulation.mode() else {
+            return std::collections::BTreeSet::new();
+        };
+        if !opts.adaptive_feed_modulation {
             return std::collections::BTreeSet::new();
         }
-        self.apply_adaptive_feed_modulation(cut_trace, opts)
+        self.apply_adaptive_feed_modulation(cut_trace, opts, mode)
     }
 
     /// N2 — integrate ONE toolpath's stored motion on the caller's clock.
@@ -712,6 +718,7 @@ impl ProjectSession {
         &mut self,
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
+        mode: crate::dressup::feed_modulation::ModulationMode,
     ) -> std::collections::BTreeSet<usize> {
         // F115: every index whose result slot the loop below rewrites.
         let mut rewritten = std::collections::BTreeSet::new();
@@ -749,12 +756,24 @@ impl ProjectSession {
         let rapid_feed = self.post.rapid_feed_mm_min(&self.machine);
 
         // Toolpath indices to walk: enabled, with a result, with at least
-        // one cut sample in the trace.
+        // one sample in the trace. P32: the run modulates the DRESSED path
+        // of a result, so a toolpath that this simulation did not run (a
+        // skipped id, a toolpath outside a prefix run) must stay out: with
+        // no sample every move reads "no engagement", and the pass would
+        // write the dressed feeds over the feeds of the run that did
+        // simulate it.
+        let simulated: std::collections::HashSet<ToolpathId> = cut_trace_ref
+            .samples
+            .iter()
+            .map(|s| s.toolpath_id)
+            .collect();
         let candidate_indices: Vec<(usize, ToolpathId)> = self
             .toolpath_configs
             .iter()
             .enumerate()
-            .filter(|(idx, tc)| tc.enabled && self.results.contains_key(idx))
+            .filter(|(idx, tc)| {
+                tc.enabled && self.results.contains_key(idx) && simulated.contains(&tc.id)
+            })
             .map(|(idx, tc)| (idx, tc.id))
             .collect();
 
@@ -788,7 +807,19 @@ impl ProjectSession {
             let Some(result) = self.results.get(&idx) else {
                 continue;
             };
-            let annotated_arc = result.annotated();
+            // P32: the run modulates the DRESSED path of the result, also
+            // when the slot holds the feeds of an earlier modulation. So
+            // the feed of each input move is its dressed feed (cap only
+            // emits no feed above it), and a run does not read the feeds
+            // that another run wrote.
+            let slot_arc = result.annotated();
+            let dressed = match &result.provenance {
+                crate::session::ResultProvenance::Dressed => {
+                    crate::session::DressedPath::new(Arc::clone(slot_arc))
+                }
+                crate::session::ResultProvenance::Modulated { dressed, .. } => dressed.clone(),
+            };
+            let annotated_arc = dressed.path();
             // S11: an op with no feed has no commanded feed to modulate.
             let Some(commanded_feed_for_summary) = tc.operation.feed_rate() else {
                 continue;
@@ -812,6 +843,7 @@ impl ProjectSession {
                 max_feed,
                 rapid_feed,
                 opts.modulation_strategy,
+                mode,
                 opts.modulation_feed_scale,
             ) else {
                 continue;
@@ -830,20 +862,54 @@ impl ProjectSession {
             ) {
                 modulation_summaries.insert(toolpath_id, summary);
             }
-            if outcome.changed == 0 {
+            // P32: a result with no visited move (a drill cycle, a path
+            // of skipped intents) is not modulated: it stays as it is.
+            if outcome.per_move.is_empty() {
                 continue;
             }
-            let new_annotated = crate::trace::toolpath_spans::AnnotatedToolpath {
-                toolpath: modulated_toolpath,
-                spans: annotated_arc.spans.clone(),
-                spans_valid: annotated_arc.spans_valid,
-                // Modulation rewrites feeds, not geometry: the planner
-                // engagement samples stay valid by position, and the rest
-                // grid, rest regions and area regions are toolpath-wide
-                // metadata. Carry the side channel through unchanged.
-                produced: annotated_arc.produced.clone(),
+            // B5: a modulated slot that already holds exactly these feeds,
+            // from a run with the same settings, keeps its path and its tag
+            // (the run that wrote it, and the stock record of that run). A
+            // generation plan simulates a prefix per rest operation; a later
+            // run that gives an earlier toolpath the same feeds is not a new
+            // modulation of it.
+            if let crate::session::ResultProvenance::Modulated {
+                strategy,
+                feed_scale,
+                mode: slot_mode,
+                held,
+                ..
+            } = &result.provenance
+                && *strategy == opts.modulation_strategy
+                && feed_scale.to_bits() == opts.modulation_feed_scale.to_bits()
+                && *slot_mode == mode
+                && *held == outcome.held
+                && same_feeds(&slot_arc.toolpath, &modulated_toolpath)
+            {
+                continue;
+            }
+            // P32: a result that the modulator visited takes the modulated
+            // tag, also when no feed changed (the common case in cap only:
+            // an op inside every limit). Its rows then read the modulation
+            // of this run, not "until modulated" with no end. With no
+            // changed feed the slot holds the dressed path itself.
+            let new_arc = if outcome.changed == 0 {
+                Arc::clone(annotated_arc)
+            } else {
+                Arc::new(crate::trace::toolpath_spans::AnnotatedToolpath {
+                    toolpath: modulated_toolpath,
+                    spans: annotated_arc.spans.clone(),
+                    spans_valid: annotated_arc.spans_valid,
+                    // Modulation rewrites feeds, not geometry: the planner
+                    // engagement samples stay valid by position, and the
+                    // rest grid, rest regions and area regions are
+                    // toolpath-wide metadata. Carry the side channel
+                    // through unchanged.
+                    produced: annotated_arc.produced.clone(),
+                })
             };
-            let new_arc = Arc::new(new_annotated);
+            // F115: the slot is rewritten when it holds another path now.
+            let slot_moves = !Arc::ptr_eq(&new_arc, slot_arc);
             // Rebuild the op_data variant with the swapped Arc.
             let new_op_data = match &result.op_data {
                 crate::ops::drill_op::OpData::Toolpath(_) => {
@@ -854,14 +920,6 @@ impl ProjectSession {
                 }
             };
             let source = sources.remove(&toolpath_id).unwrap_or_default();
-            // The dressed path of the result: the path of a first
-            // modulation, else the path that the tag already keeps.
-            let dressed = match &result.provenance {
-                crate::session::ResultProvenance::Dressed => {
-                    crate::session::DressedPath::new(Arc::clone(annotated_arc))
-                }
-                crate::session::ResultProvenance::Modulated { dressed, .. } => dressed.clone(),
-            };
             if let Some(slot) = self.results.get_mut(&idx) {
                 slot.op_data = new_op_data;
                 slot.provenance = crate::session::ResultProvenance::Modulated {
@@ -870,8 +928,12 @@ impl ProjectSession {
                     strategy: opts.modulation_strategy,
                     feed_scale: opts.modulation_feed_scale,
                     dressed,
+                    mode,
+                    held: outcome.held,
                 };
-                let _ = rewritten.insert(idx);
+                if slot_moves {
+                    let _ = rewritten.insert(idx);
+                }
             }
         }
         // The swaps above give new `Arc`s with the same moves. Point every
@@ -1105,4 +1167,13 @@ impl ProjectSession {
         }
         rewritten
     }
+}
+
+/// `true` when `a` and `b` hold the same count of moves and each pair of
+/// moves has the same feed (bit for bit; a rapid pairs with a rapid).
+fn same_feeds(a: &crate::toolpath::Toolpath, b: &crate::toolpath::Toolpath) -> bool {
+    a.moves.len() == b.moves.len()
+        && a.moves.iter().zip(&b.moves).all(|(x, y)| {
+            x.move_type.feed_rate().map(f64::to_bits) == y.move_type.feed_rate().map(f64::to_bits)
+        })
 }

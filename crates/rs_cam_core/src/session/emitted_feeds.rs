@@ -43,6 +43,7 @@ use std::sync::{Arc, Mutex, Weak};
 use serde::Serialize;
 
 use super::{FeedStage, ProjectSession};
+use crate::dressup::feed_modulation::{HeldMoves, ModulationMode};
 use crate::toolpath::{MoveIntent, Toolpath};
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 
@@ -201,10 +202,24 @@ pub struct EmittedFeeds {
     pub lead: Option<EntryFeeds>,
     /// The fed links, retracts and obstacle clearances; `None` with none.
     pub link: Option<EntryFeeds>,
+    /// P32: the mode of the modulation run that wrote the result
+    /// (`cap_only`, `full`); `None` for planned feeds. In cap only no feed
+    /// is above its dressed feed, so the modulation is never the cause of a
+    /// feed above the stated feed.
+    pub modulation_mode: Option<ModulationMode>,
+    /// P32: the moves that the modulation held at the rubbing floor, above
+    /// a load cap; all zero for planned feeds.
+    pub held: HeldMoves,
 }
 
 impl EmittedFeeds {
-    const fn from_figures(figures: Figures, stage: FeedStage, feed_optimised: bool) -> Self {
+    const fn from_figures(
+        figures: Figures,
+        stage: FeedStage,
+        feed_optimised: bool,
+        modulation_mode: Option<ModulationMode>,
+        held: HeldMoves,
+    ) -> Self {
         let Figures {
             stated_mm_min,
             cutting,
@@ -226,6 +241,35 @@ impl EmittedFeeds {
             approach,
             lead,
             link,
+            modulation_mode,
+            held,
+        }
+    }
+
+    /// **P32: THE text of the warning `export.feed_held_at_floor`**: the
+    /// text of [`HeldMoves::warning`], then the run. `None` when the
+    /// modulation held no move, or the feeds are planned.
+    #[must_use]
+    pub fn held_warning(&self) -> Option<String> {
+        let text = self.held.warning()?;
+        Some(match self.stage {
+            FeedStage::Planned => return None,
+            FeedStage::ModulatedCurrent { simulation_run } => {
+                format!("{text}; simulation run {simulation_run}")
+            }
+            FeedStage::ModulatedSuperseded { simulation_run, .. } => {
+                format!("{text}; simulation run {simulation_run}, not current")
+            }
+        })
+    }
+
+    /// The words of the generation stage that set a feed: the feed
+    /// optimisation dressup, or the generator.
+    const fn generation_cause(&self) -> &'static str {
+        if self.feed_optimised {
+            "set by feed optimisation"
+        } else {
+            "set at generation"
         }
     }
 
@@ -306,16 +350,66 @@ impl EmittedFeeds {
     /// modulation of a simulation run, the feed optimisation dressup, or
     /// the generator.
     #[must_use]
+    ///
+    /// P32: a cap-only run raises no feed, so a feed above the stated feed
+    /// of a cap-only result has the cause of the dressed path, and the
+    /// words say that the run only lowers.
     pub fn cause_words(&self) -> String {
-        match self.stage {
-            FeedStage::Planned if self.feed_optimised => "set by feed optimisation".to_owned(),
-            FeedStage::Planned => "set at generation".to_owned(),
-            FeedStage::ModulatedCurrent { simulation_run } => {
+        let generation = self.generation_cause();
+        match (self.stage, self.modulation_mode) {
+            (FeedStage::Planned, _) => generation.to_owned(),
+            (FeedStage::ModulatedCurrent { simulation_run }, Some(ModulationMode::CapOnly)) => {
+                format!("{generation}; simulation run {simulation_run} only lowers feeds")
+            }
+            (
+                FeedStage::ModulatedSuperseded { simulation_run, .. },
+                Some(ModulationMode::CapOnly),
+            ) => format!(
+                "{generation}; simulation run {simulation_run}, not current, only lowers feeds"
+            ),
+            (FeedStage::ModulatedCurrent { simulation_run }, Some(ModulationMode::Full) | None) => {
                 format!("feed modulation of simulation run {simulation_run}")
             }
-            FeedStage::ModulatedSuperseded { simulation_run, .. } => {
+            (
+                FeedStage::ModulatedSuperseded { simulation_run, .. },
+                Some(ModulationMode::Full) | None,
+            ) => {
                 format!("feed modulation of simulation run {simulation_run}, not current")
             }
+        }
+    }
+
+    /// The stage in one sentence, for the G-code header and the hover:
+    /// [`FeedStage::statement`], and for a cap-only result "feeds: capped
+    /// from simulation run n, no feed raised" (P32).
+    #[must_use]
+    pub fn stage_statement(&self) -> String {
+        match (self.stage, self.modulation_mode) {
+            (FeedStage::ModulatedCurrent { simulation_run }, Some(ModulationMode::CapOnly)) => {
+                format!("feeds: capped from simulation run {simulation_run}, no feed raised")
+            }
+            (
+                FeedStage::ModulatedSuperseded {
+                    simulation_run,
+                    current_run,
+                },
+                Some(ModulationMode::CapOnly),
+            ) => match current_run {
+                Some(current) => format!(
+                    "feeds: capped from simulation run {simulation_run}, no feed raised; \
+                     the current simulation is run {current}"
+                ),
+                None => format!(
+                    "feeds: capped from simulation run {simulation_run}, no feed raised; \
+                     no simulation is current"
+                ),
+            },
+            (
+                FeedStage::Planned
+                | FeedStage::ModulatedCurrent { .. }
+                | FeedStage::ModulatedSuperseded { .. },
+                Some(ModulationMode::CapOnly | ModulationMode::Full) | None,
+            ) => self.stage.statement(),
         }
     }
 
@@ -323,15 +417,21 @@ impl EmittedFeeds {
     /// n", "modulated, run n, not current". Short, so the GUI line keeps it
     /// at the rail width; the hover holds the full stage statement.
     #[must_use]
+    ///
+    /// P32: a cap-only result reads "capped, run n".
     pub fn stage_words(&self) -> String {
+        let verb = match self.modulation_mode {
+            Some(ModulationMode::CapOnly) => "capped",
+            Some(ModulationMode::Full) | None => "modulated",
+        };
         match self.stage {
             FeedStage::Planned if self.feed_optimised => "feed optimisation".to_owned(),
             FeedStage::Planned => "as stated".to_owned(),
             FeedStage::ModulatedCurrent { simulation_run } => {
-                format!("modulated, run {simulation_run}")
+                format!("{verb}, run {simulation_run}")
             }
             FeedStage::ModulatedSuperseded { simulation_run, .. } => {
-                format!("modulated, run {simulation_run}, not current")
+                format!("{verb}, run {simulation_run}, not current")
             }
         }
     }
@@ -434,7 +534,7 @@ impl EmittedFeeds {
     /// nest one.
     #[must_use]
     pub fn header_lines(&self) -> Vec<String> {
-        let mut out = vec![self.stage.statement()];
+        let mut out = vec![self.stage_statement()];
         if let Some(cutting) = self.cutting.as_ref() {
             let range = Self::range_words(cutting);
             let mut line = match self.stated_mm_min {
@@ -444,13 +544,27 @@ impl EmittedFeeds {
                 ),
                 None => format!("feeds run {range}, the op states no cutting feed"),
             };
-            if self.feed_optimised && matches!(self.stage, FeedStage::Planned) {
+            // The dressed path set the feeds of a planned result and the
+            // upper feeds of a cap-only result (P32).
+            let dressed_sets_the_range = match (self.stage, self.modulation_mode) {
+                (FeedStage::Planned, _) => true,
+                (
+                    FeedStage::ModulatedCurrent { .. } | FeedStage::ModulatedSuperseded { .. },
+                    Some(ModulationMode::CapOnly),
+                ) => true,
+                (
+                    FeedStage::ModulatedCurrent { .. } | FeedStage::ModulatedSuperseded { .. },
+                    Some(ModulationMode::Full) | None,
+                ) => false,
+            };
+            if self.feed_optimised && dressed_sets_the_range {
                 line.push_str(", set by feed optimisation");
             }
             out.push(line);
         }
         out.extend(self.drill_line());
         out.extend(self.entry_lines());
+        out.extend(self.held_warning());
         out
     }
 
@@ -468,9 +582,10 @@ impl EmittedFeeds {
                 cutting.above_stated, cutting.moves
             ));
         }
-        parts.push(self.stage.statement());
+        parts.push(self.stage_statement());
         parts.extend(self.drill_line());
         parts.extend(self.entry_lines());
+        parts.extend(self.held_warning());
         parts.join("\n")
     }
 }
@@ -501,6 +616,7 @@ pub fn emitted_feeds_report(rows: &[NamedEmittedFeeds]) -> Option<String> {
             .drill_line()
             .into_iter()
             .chain(row.feeds.entry_lines())
+            .chain(row.feeds.held_warning())
         {
             report.push_str(&format!("\n    {entry}"));
         }
@@ -672,10 +788,16 @@ impl ProjectSession {
                 figures
             }
         };
+        let (modulation_mode, held) = match &result.provenance {
+            super::ResultProvenance::Dressed => (None, HeldMoves::default()),
+            super::ResultProvenance::Modulated { mode, held, .. } => (Some(*mode), *held),
+        };
         Some(EmittedFeeds::from_figures(
             figures,
             stage,
             Self::feed_optimisation_ran(tc),
+            modulation_mode,
+            held,
         ))
     }
 }

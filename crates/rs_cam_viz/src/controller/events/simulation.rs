@@ -152,10 +152,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// Write the ONE stored feed modulation switch (operator ruling
     /// 2026-11-15), through `Command::SetFeedModulation`.
     ///
-    /// The Simulation panel checkbox and MCP (`set_feed_modulation`, the
+    /// The Simulation panel control (off, cap only, full; P32) and MCP (`set_feed_modulation`, the
     /// `feed_modulation` field of `run_simulation`) take this door. A new
     /// value is a project edit: the file carries it and the simulation
-    /// drops. With the switch off, `AppController::apply` reads each
+    /// drops. For any new value, `AppController::apply` reads each
     /// restored toolpath again (`Effects::modulated`).
     ///
     /// # Errors

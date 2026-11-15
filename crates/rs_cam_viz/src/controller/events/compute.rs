@@ -937,16 +937,16 @@ impl<B: ComputeBackend> AppController<B> {
                         let args = AdoptSimulationArgs {
                             result: Box::new(adopted),
                             epoch,
-                            // Operator ruling 2026-11-15: the stored feed
-                            // modulation switch of the project decides (on
-                            // by default, as the CLI). Core gates the pass
-                            // on the same switch.
+                            // Operator rulings 2026-11-15: the stored feed
+                            // modulation switch of the project decides (cap
+                            // only by default, as the CLI). Core gates the
+                            // pass on the same switch and reads its mode.
                             modulation: self
                                 .state
                                 .session()
                                 .feed_modulation()
-                                .is_on()
-                                .then_some(crate::state::simulation::FEED_MODULATION),
+                                .mode()
+                                .map(|_| crate::state::simulation::FEED_MODULATION),
                         };
                         match self.apply(Command::AdoptSimulation(args)) {
                             Ok(effects) => {
@@ -2387,7 +2387,7 @@ impl<B: ComputeBackend> AppController<B> {
                     serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
                 );
                 // Operator ruling 2026-11-15: the feed modulation switch
-                // this run used (`on`, `off`).
+                // this run used (`off`, `cap_only`, `full`).
                 let _ = object.insert(
                     "feed_modulation".to_owned(),
                     serde_json::json!(self.state.session().feed_modulation()),

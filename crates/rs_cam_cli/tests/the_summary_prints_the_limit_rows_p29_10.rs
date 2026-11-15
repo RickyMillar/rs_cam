@@ -35,7 +35,8 @@ fn the_summary_prints_the_limit_rows_p29_10() {
         .arg(project())
         .arg("--output-dir")
         .arg(&out)
-        .arg("--no-adaptive-feed-modulation")
+        .arg("--feed-modulation")
+        .arg("off")
         .output()
         .expect("the CLI runs");
     let stderr = String::from_utf8_lossy(&run.stderr);

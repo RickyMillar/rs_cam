@@ -176,6 +176,15 @@ fn pocket_session() -> ProjectSession {
     };
     let _ = builder.add_toolpath(0, tc).expect("add the pocket");
     let mut session = builder.build();
+    // P32: the default switch is cap only, whose stage line says "capped".
+    // This file pins the stage line of the full mode, so it states it.
+    let _ = session
+        .apply(Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
     let _ = session

@@ -1973,10 +1973,11 @@ pub struct ProjectSession {
     /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
     /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
     pub(crate) simulation_resolution: SimulationResolution,
-    /// The one stored feed modulation switch (operator ruling 2026-11-15:
-    /// "on by default ... have option to disable it"). A simulation
-    /// modulates the feeds only while it is on. Saved as
-    /// `[job.simulation] feed_modulation`; see [`FeedModulationSwitch`].
+    /// The one stored feed modulation switch (operator rulings 2026-11-15:
+    /// off, cap only, full; cap only by default). A simulation modulates
+    /// the feeds in the mode it states, and not at all while it is off.
+    /// Saved as `[job.simulation] feed_modulation`; see
+    /// [`FeedModulationSwitch`].
     pub(crate) feed_modulation: FeedModulationSwitch,
     /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
     /// starts empty, and the key reads the inputs, not a counter.
@@ -2035,7 +2036,7 @@ impl ProjectSession {
             simulation_drop_epochs: [0; SimulationDropCause::COUNT],
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
-            feed_modulation: FeedModulationSwitch::On,
+            feed_modulation: FeedModulationSwitch::default(),
             load_report_memo: load_report::LoadReportMemo::default(),
             selection_status_memo: selection_status::SelectionStatusMemo::default(),
             emitted_feeds_memo: emitted_feeds::EmittedFeedsMemo::default(),

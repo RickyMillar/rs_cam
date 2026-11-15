@@ -580,7 +580,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Point the view copy of each toolpath in `modulated` at the session
     /// result again (`Effects::modulated`: a feed modulation rewrote the
-    /// result, or `SetFeedModulation` with the switch off put its dressed
+    /// result, or `SetFeedModulation` with a new value put its dressed
     /// path back). The feed-coloured viewport then draws the feeds that an
     /// export emits. The upload key holds the `Arc` identity of the
     /// toolpath, so the buffer rebuilds.

@@ -1,9 +1,14 @@
 //! Operator ruling 2026-11-15 (P31 C): "Can we have it on by default. but
 //! shown as a warn. But have option to disable it?"
 //!
-//! 1. **On by default.** A new session has the feed modulation switch on.
-//!    A simulation modulates the feeds, and an export of an op that runs a
-//!    cutting move above the stated feed carries one warning,
+//! P32 (operator ruling of the same day, "Cap only"): the switch has three
+//! settings, `off`, `cap_only` (the default) and `full`. This file keeps
+//! the P31 claims for the setting that P31 called "on", which is `full`
+//! now; each test states it. `feed_modulation_has_three_modes_p32` holds
+//! the claims of cap only and of a change between any two settings.
+//!
+//! 1. **Full.** A simulation modulates the feeds, and an export of an op
+//!    that runs a cutting move above the stated feed carries one warning,
 //!    `export.feed_above_stated`, in the warning list and in the header.
 //!    The text is the text of `EmittedFeeds::above_stated_warning`.
 //! 2. **Off.** `Command::SetFeedModulation` with the switch off drops the
@@ -14,12 +19,13 @@
 //!    above its stated feed, the header says "feeds: as planned, not
 //!    modulated", and the export has no `export.feed_above_stated` warning.
 //!    The limit rows read `RunModulation::Off`.
-//! 3. **Back on.** The command drops the simulation again; the result stays
-//!    planned and its rows read "until modulated" until the next simulation
-//!    modulates it.
-//! 4. **The project file.** A file with no key reads as on; the writer
-//!    leaves the key out while the switch is on and writes
-//!    `feed_modulation = false` when it is off.
+//! 3. **Back to full.** The command drops the simulation again; the result
+//!    stays planned and its rows read "until modulated" until the next
+//!    simulation modulates it.
+//! 4. **The project file.** A file with no key reads as cap only; the
+//!    writer leaves the key out at cap only and writes
+//!    `feed_modulation = "off"` or `"full"`. A boolean value (the P31 form)
+//!    refuses the load, and the message names the three words.
 //!
 //! The test parses the G-code: each fed line (`G1`, `G2`, `G3`) takes the
 //! modal F word, and the fed lines pair one to one with the fed moves of the
@@ -29,6 +35,7 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -205,9 +212,11 @@ fn header_warns(gcode: &str) -> bool {
 }
 
 #[test]
-fn the_switch_is_on_by_default_and_a_feed_above_the_stated_feed_warns_p31() {
+fn in_full_a_feed_above_the_stated_feed_warns_p31() {
     let mut session = stated_pocket();
-    assert_eq!(session.feed_modulation(), FeedModulationSwitch::On);
+    // P32: the default is cap only; this test states full.
+    assert_eq!(session.feed_modulation(), FeedModulationSwitch::CapOnly);
+    let _ = set_switch(&mut session, FeedModulationSwitch::Full);
     // Before the simulation every feed is at or below its stated feed: no
     // warning.
     let before = program(&session);
@@ -271,6 +280,7 @@ fn the_switch_is_on_by_default_and_a_feed_above_the_stated_feed_warns_p31() {
 #[test]
 fn the_switch_off_puts_the_planned_feeds_back_and_no_run_modulates_p31() {
     let mut session = stated_pocket();
+    let _ = set_switch(&mut session, FeedModulationSwitch::Full);
     let planned = program(&session);
     simulate(&mut session);
     assert!(matches!(
@@ -330,13 +340,13 @@ fn the_switch_off_puts_the_planned_feeds_back_and_no_run_modulates_p31() {
 }
 
 #[test]
-fn the_switch_back_on_reads_not_run_until_the_next_simulation_p31() {
+fn the_switch_back_to_full_reads_not_run_until_the_next_simulation_p31() {
     let mut session = stated_pocket();
     let _ = set_switch(&mut session, FeedModulationSwitch::Off);
     simulate(&mut session);
     assert_eq!(session.feed_stage(0), Some(FeedStage::Planned));
 
-    let restored = set_switch(&mut session, FeedModulationSwitch::On);
+    let restored = set_switch(&mut session, FeedModulationSwitch::Full);
     assert!(restored.is_empty(), "no result holds a modulated path");
     assert!(
         session.simulation_result().is_none(),
@@ -371,28 +381,61 @@ fn the_project_file_keeps_the_switch_p31() {
     std::fs::create_dir_all(&dir).expect("a temp dir");
     let path = dir.join("switch.toml");
     let mut session = ProjectSession::new_empty();
-    assert_eq!(session.feed_modulation(), FeedModulationSwitch::On);
+    assert_eq!(session.feed_modulation(), FeedModulationSwitch::CapOnly);
 
-    // On: the writer leaves the key out, and a file with no key reads on.
+    // Cap only (the default): the writer leaves the key out, and a file
+    // with no key reads cap only.
     session.save(&path).expect("the project saves");
     let text = std::fs::read_to_string(&path).expect("the file");
     assert!(!text.contains("feed_modulation"), "{text}");
     let loaded = ProjectSession::load(&path).expect("the project loads");
-    assert_eq!(loaded.feed_modulation(), FeedModulationSwitch::On);
+    assert_eq!(loaded.feed_modulation(), FeedModulationSwitch::CapOnly);
 
-    // Off: the key is written and read back.
-    let _ = set_switch(&mut session, FeedModulationSwitch::Off);
-    session.save(&path).expect("the project saves");
-    let text = std::fs::read_to_string(&path).expect("the file");
-    assert!(
-        text.lines().any(|l| l.trim() == "feed_modulation = false"),
-        "{text}"
+    // Off and full: the key is written as the wire word and read back.
+    for (switch, word) in [
+        (FeedModulationSwitch::Off, "off"),
+        (FeedModulationSwitch::Full, "full"),
+    ] {
+        assert_eq!(switch.word(), word);
+        let _ = set_switch(&mut session, switch);
+        session.save(&path).expect("the project saves");
+        let text = std::fs::read_to_string(&path).expect("the file");
+        assert!(
+            text.lines()
+                .any(|l| l.trim() == format!("feed_modulation = \"{word}\"")),
+            "{text}"
+        );
+        let loaded = ProjectSession::load(&path).expect("the project loads");
+        assert_eq!(loaded.feed_modulation(), switch);
+
+        // The boolean form of P31 refuses, and the message names the words
+        // (the break of P32: no alias).
+        let boolean = text.replace(
+            &format!("feed_modulation = \"{word}\""),
+            "feed_modulation = false",
+        );
+        let bool_path = dir.join("boolean.toml");
+        std::fs::write(&bool_path, boolean).expect("the file writes");
+        let error = match ProjectSession::load(&bool_path) {
+            Ok(_) => panic!("a boolean feed_modulation must refuse the load"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("\"off\", \"cap_only\" or \"full\"") && error.contains("no longer read"),
+            "{error}"
+        );
+    }
+    // The word "cap_only" reads too (a hand-written file).
+    let cap_only = std::fs::read_to_string(&path).expect("the file").replace(
+        "feed_modulation = \"full\"",
+        "feed_modulation = \"cap_only\"",
     );
+    std::fs::write(&path, cap_only).expect("the file writes");
     let loaded = ProjectSession::load(&path).expect("the project loads");
-    assert_eq!(loaded.feed_modulation(), FeedModulationSwitch::Off);
+    assert_eq!(loaded.feed_modulation(), FeedModulationSwitch::CapOnly);
 
-    // Back on: the key goes again.
-    let _ = set_switch(&mut session, FeedModulationSwitch::On);
+    // Back to cap only: the key goes again.
+    let _ = set_switch(&mut session, FeedModulationSwitch::CapOnly);
     session.save(&path).expect("the project saves");
     let text = std::fs::read_to_string(&path).expect("the file");
     assert!(!text.contains("feed_modulation"), "{text}");

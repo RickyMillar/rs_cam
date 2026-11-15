@@ -228,6 +228,7 @@ fn modulate_in_band(
         radial_thinning: RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: arms.deflection,
         power_inputs: arms.power,
@@ -445,10 +446,18 @@ fn the_modulator_and_the_gate_build_one_sample_engagement_p20g() {
     }
 }
 
+/// P20g (e), then P32 (lead rule 2026-11-15): a load cap wins over the chip
+/// MINIMUM floor, and it stops at the RUBBING floor of the move. This
+/// fixture has its power cap (`SLOT_FIT_FEED`) below the rubbing floor, so
+/// the move is held at the rubbing floor: it did not meet its cap, the
+/// outcome counts it, and the gate still grades it over the power.
+/// The case of a cap between the two floors (the cap wins, P20g) is the lib
+/// test `a_load_cap_stops_at_the_rubbing_floor_p32`.
 #[test]
 fn a_load_cap_wins_over_the_chip_floor_p20g() {
-    // (e) the floor 0.03 x lift 1 (the slot sample) x 18000 x 2 = 1080
-    // mm/min is above the power cap of the slot sample (SLOT_FIT_FEED).
+    // The chip floor 0.03 x lift 1 (the slot sample) x 18000 x 2 = 1080
+    // mm/min and the rubbing floor 0.025 x 18000 x 2 = 900 mm/min are both
+    // above the power cap of the slot sample (SLOT_FIT_FEED).
     let tool = build_cutter(&end_mill()).expect("a valid tool");
     let line = white_oak()
         .force_line()
@@ -456,20 +465,36 @@ fn a_load_cap_wins_over_the_chip_floor_p20g() {
     let (arms, available_kw) = power_arms();
     let band = ChiploadBand::new(0.03, 1.0).expect("a valid band");
     let floor = band.min_mm_per_tooth * f64::from(RPM) * f64::from(FLUTES);
+    let rubbing_floor =
+        rs_cam_core::feeds::RUBBING_FLOOR_MM_TOOTH * f64::from(RPM) * f64::from(FLUTES);
+    assert_eq!(
+        band.rubbing_floor_mm_per_tooth(),
+        rs_cam_core::feeds::RUBBING_FLOOR_MM_TOOTH,
+        "fixture: the band minimum is above the repo rubbing floor"
+    );
     assert!(
-        floor > SLOT_FIT_FEED * 1.5,
-        "fixture: the floor {floor} is above the cap"
+        rubbing_floor > SLOT_FIT_FEED * 1.2 && floor > rubbing_floor,
+        "fixture: the cap {SLOT_FIT_FEED} is below the rubbing floor {rubbing_floor}, which is \
+         below the chip floor {floor}"
     );
 
     let outcome = modulate_in_band(&mixed_samples(), true, arms, band);
     let (feed, binding) = *outcome.per_move.get(&1).expect("the cut is modulated");
+    assert!(
+        (feed - rubbing_floor).abs() <= 1e-9 * rubbing_floor,
+        "P32: the load cap stops at the rubbing floor {rubbing_floor}, under the chip floor \
+         {floor}; feed {feed}"
+    );
     let graded = rs_cam_core::tool_load::power::sample_power_kw(&tool, &line, &slot(), feed)
         .expect("the slot sample has a power grade");
     assert!(
-        graded <= available_kw * (1.0 + 1e-9),
-        "P20g (e): the load cap wins over the chip floor {floor}: the gate grades the slot \
-         sample at {graded} kW at the feed {feed}; the available power is {available_kw} kW"
+        graded > available_kw,
+        "P32: the held move did not meet its cap: the gate grades the slot sample at {graded} \
+         kW at the feed {feed}; the available power is {available_kw} kW"
     );
+    assert_eq!(outcome.held.moves, 1, "P32: the held move is counted");
+    assert_eq!(outcome.held.power, 1, "P32: it is held above the power cap");
+    assert_eq!(outcome.held.deflection + outcome.held.force_budget, 0);
     assert_eq!(
         binding,
         BindingConstraint::PowerMax,

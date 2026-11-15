@@ -96,11 +96,15 @@ pub enum Gate {
     /// cutting move above the stated feed, or an entry above its stated
     /// feed (`session::EmittedFeeds::above_stated_warning`).
     FeedAboveStated,
+    /// P32 (lead rule 2026-11-15): the feed modulation held moves of an
+    /// emitted op at the rubbing floor, above a load cap
+    /// (`session::EmittedFeeds::held_warning`).
+    FeedHeldAtFloor,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::HeightRefuses,
         Self::GougeWarns,
         Self::CentreCutPlunge,
@@ -116,6 +120,7 @@ impl Gate {
         Self::SimOutsideEnvelope,
         Self::StatedCutOverLimit,
         Self::FeedAboveStated,
+        Self::FeedHeldAtFloor,
     ];
 }
 

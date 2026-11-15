@@ -172,6 +172,7 @@ fn the_modulator_keeps_the_lifted_feed_at_the_suggest_engagement_p11b2() {
             radial_thinning: RadialThinning::Applied,
             kinematics: &kinematics,
             strategy: ModulationStrategy::ConstrainedMax,
+            mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
             feed_scale: 1.0,
             deflection_inputs: None,
             power_inputs: None,

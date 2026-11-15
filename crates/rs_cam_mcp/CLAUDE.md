@@ -97,5 +97,10 @@ run the server; the live server, GUI dispatch and session ownership are in
   run); `project_summary` and the `run_simulation` reply carry `feed_modulation` (`on`, `off`); `get_tool_load_report`
   `emitted_feeds[].warning` (the text of the export warning `export.feed_above_stated`, or null). Tokens
   `feed_modulation_switch`, `feed_above_stated_warning`. The snapshot was re-blessed (additions only).
+- P32 (operator rulings 2026-11-15, a BREAK, no alias): `set_feed_modulation { mode }` and `SimulationParam.feed_modulation`
+  take `FeedModulationParam` (`off`, `cap_only`, `full`; inline schema); `enabled` and the boolean are gone. The replies
+  carry `feed_modulation` as `off`, `cap_only` or `full`. `emitted_feeds[].feeds` gains `modulation_mode` and `held`
+  (`moves`, `power`, `deflection`, `force_budget`); new export warning id `export.feed_held_at_floor`. Tokens
+  `feed_modulation_modes`, `feed_held_at_floor_warning`. The snapshot was re-blessed (the break only).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

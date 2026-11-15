@@ -172,6 +172,7 @@ fn the_modulator_floor_does_not_lift_a_move_above_its_axis_rate_p20c() {
         radial_thinning: RadialThinning::Applied,
         kinematics: &k,
         strategy: ModulationStrategy::ConstrainedMax,
+        mode: rs_cam_core::dressup::feed_modulation::ModulationMode::Full,
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,

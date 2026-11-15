@@ -39,53 +39,127 @@ use super::ProjectSession;
 use crate::compute::source_stock::SourceStock;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 
-/// **THE feed modulation switch of a project** (operator ruling
+/// **THE feed modulation switch of a project** (operator rulings
 /// 2026-11-15: "Can we have it on by default. but shown as a warn. But
-/// have option to disable it?"). One stored value per project, default
-/// [`Self::On`]; `Command::SetFeedModulation` writes it, and the project
-/// file saves it (`[job.simulation] feed_modulation`).
+/// have option to disable it?", then "Cap only (Recommended)"). One stored
+/// value per project with three settings, default [`Self::CapOnly`];
+/// `Command::SetFeedModulation` writes it, and the project file saves it
+/// (`[job.simulation] feed_modulation = "off" | "cap_only" | "full"`).
 ///
-/// While it is off no simulation of the session modulates a feed
-/// (`ProjectSession::run_simulation` and `Command::AdoptSimulation` both
-/// read it), every result holds its dressed feeds, and
-/// [`ProjectSession::run_modulation_of`] gives `Off` for every toolpath.
+/// No reader tests it as a boolean: [`Self::mode`] gives the mode of a
+/// modulation run, and each reader names every variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedModulationSwitch {
+    /// No simulation changes a feed: the export carries the dressed feeds,
+    /// and [`ProjectSession::run_modulation_of`] gives `Off` for every
+    /// toolpath.
+    Off,
+    /// A simulation lowers a feed where a limit is exceeded. It never
+    /// raises one: no move runs above the feed that the dressed path gave
+    /// it (`dressup::feed_modulation::ModulationMode::CapOnly`).
+    #[default]
+    CapOnly,
     /// A simulation sets each move to the highest feed that every limit
     /// allows. That feed can be above the stated feed.
-    #[default]
-    On,
-    /// No simulation changes a feed: the export carries the dressed feeds.
-    Off,
+    Full,
 }
 
 impl FeedModulationSwitch {
-    /// `true` for [`Self::On`].
+    /// Every setting, in the order a surface lists them.
+    pub const ALL: [Self; 3] = crate::all_variants!(FeedModulationSwitch: Off, CapOnly, Full,);
+
+    /// The mode of a modulation run under this setting; `None` for
+    /// [`Self::Off`], with which no simulation modulates.
     #[must_use]
-    pub const fn is_on(self) -> bool {
-        matches!(self, Self::On)
+    pub const fn mode(self) -> Option<crate::dressup::feed_modulation::ModulationMode> {
+        use crate::dressup::feed_modulation::ModulationMode;
+        match self {
+            Self::Off => None,
+            Self::CapOnly => Some(ModulationMode::CapOnly),
+            Self::Full => Some(ModulationMode::Full),
+        }
     }
 
-    /// The switch for a checkbox or a wire flag.
-    #[must_use]
-    pub const fn from_enabled(enabled: bool) -> Self {
-        if enabled { Self::On } else { Self::Off }
-    }
-
-    /// `on` or `off`, the word that every surface prints.
+    /// `off`, `cap_only` or `full`: the word of the project file, of MCP
+    /// and of `summary.json` (the serde token).
     #[must_use]
     pub const fn word(self) -> &'static str {
         match self {
-            Self::On => "on",
             Self::Off => "off",
+            Self::CapOnly => "cap_only",
+            Self::Full => "full",
+        }
+    }
+
+    /// The setting of a wire word; `None` for another word.
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.word() == word)
+    }
+
+    /// The label of the GUI control: "Off", "Cap only", "Full".
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::CapOnly => "Cap only",
+            Self::Full => "Full",
+        }
+    }
+
+    /// One sentence that says what a simulation does to the feeds under
+    /// this setting (the GUI hover, the MCP and CLI help).
+    #[must_use]
+    pub const fn explanation(self) -> &'static str {
+        match self {
+            Self::Off => "No simulation changes a feed.",
+            Self::CapOnly => {
+                "A simulation lowers a feed where a limit is exceeded, and never raises one."
+            }
+            Self::Full => {
+                "A simulation sets each move to the highest feed that every limit allows; \
+                 that feed can be above the stated feed."
+            }
         }
     }
 }
 
+/// The project file reads the setting as one of the three words. A boolean
+/// (the form of the first day of the switch) is refused with a message
+/// that names the words: no alias (operator standing ruling, breaking is
+/// OK in early development).
+impl<'de> serde::Deserialize<'de> for FeedModulationSwitch {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct WordVisitor;
+        const EXPECTED: &str = "feed_modulation = \"off\", \"cap_only\" or \"full\"";
+        impl serde::de::Visitor<'_> for WordVisitor {
+            type Value = FeedModulationSwitch;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(EXPECTED)
+            }
+
+            fn visit_str<E: serde::de::Error>(self, word: &str) -> Result<Self::Value, E> {
+                FeedModulationSwitch::from_word(word)
+                    .ok_or_else(|| E::custom(format!("\"{word}\" is not a setting: {EXPECTED}")))
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Err(E::custom(format!(
+                    "the boolean form `feed_modulation = {value}` is no longer read: {EXPECTED} \
+                     (true was \"full\", false was \"off\")"
+                )))
+            }
+        }
+        deserializer.deserialize_any(WordVisitor)
+    }
+}
+
 /// The dressed path that a modulated result replaced. The modulated tag
-/// keeps it, so `Command::SetFeedModulation` with the switch off puts the
-/// planned feeds back with no regeneration.
+/// keeps it, so `Command::SetFeedModulation` with a new setting puts the
+/// planned feeds back with no regeneration, and each modulation run reads
+/// the dressed feeds (P32).
 ///
 /// Two values are equal when they hold the same path (pointer identity).
 #[derive(Clone)]
@@ -138,8 +212,17 @@ pub enum ResultProvenance {
         feed_scale: f64,
         /// The dressed path that the first modulation of this result
         /// replaced (operator ruling 2026-11-15). A later modulation of
-        /// the same result keeps it.
+        /// the same result keeps it and reads it (P32).
         dressed: DressedPath,
+        /// P32: the mode the run modulated with. In cap only no feed of
+        /// the result is above its dressed feed, so the feed record names
+        /// feed optimisation or the generator as the cause of a feed above
+        /// the stated feed.
+        mode: crate::dressup::feed_modulation::ModulationMode,
+        /// P32: the moves that the run held above a load cap at the
+        /// rubbing floor. The export warns once per op while it is not
+        /// empty (`export.feed_held_at_floor`).
+        held: crate::dressup::feed_modulation::HeldMoves,
     },
 }
 
@@ -252,6 +335,8 @@ impl ProjectSession {
                 strategy: _,
                 feed_scale: _,
                 dressed: _,
+                mode: _,
+                held: _,
             } => {
                 let simulation_run = *simulation_run;
                 let current = self
@@ -287,6 +372,8 @@ impl ProjectSession {
     ///
     /// - The feed modulation switch of the project is off (operator ruling
     ///   2026-11-15): `Off` for every toolpath. No simulation modulates.
+    ///   Cap only and full give the same value (P32): the declared list of
+    ///   capped limits does not read the mode.
     /// - A disabled toolpath (the run does not simulate it), or no toolpath
     ///   at `index`: `Off`.
     /// - A current modulated result: `Current` with the strategy and scale
@@ -303,7 +390,7 @@ impl ProjectSession {
         let Some(tc) = self.toolpath_configs.get(index) else {
             return RunModulation::Off;
         };
-        if !tc.enabled || !self.feed_modulation.is_on() {
+        if !tc.enabled || self.feed_modulation.mode().is_none() {
             return RunModulation::Off;
         }
         let Some(result) = self.results.get(&index) else {
@@ -345,7 +432,7 @@ impl ProjectSession {
     ) -> crate::dressup::feed_modulation::RunModulation {
         match self.find_toolpath_config_by_id(tc.id) {
             Some((index, _)) => self.run_modulation_of(index),
-            None if tc.enabled && self.feed_modulation.is_on() => {
+            None if tc.enabled && self.feed_modulation.mode().is_some() => {
                 crate::dressup::feed_modulation::RunModulation::NotRun {
                     export: crate::limits::ExportFeed::Stated,
                 }
@@ -354,8 +441,8 @@ impl ProjectSession {
         }
     }
 
-    /// The feed modulation switch of the project (operator ruling
-    /// 2026-11-15). Default on.
+    /// The feed modulation switch of the project (operator rulings
+    /// 2026-11-15). Default cap only.
     #[must_use]
     pub const fn feed_modulation(&self) -> FeedModulationSwitch {
         self.feed_modulation
@@ -365,12 +452,15 @@ impl ProjectSession {
     ///
     /// A new value drops the simulation
     /// ([`super::SimulationDropCause::FeedModulation`]): its trace holds
-    /// the feeds and the times of a run under the other value. With the
-    /// switch off, each modulated result takes its dressed path back
-    /// ([`ResultProvenance::Modulated::dressed`]) and reads
-    /// [`FeedStage::Planned`], so an export carries the planned feeds at
-    /// once. It returns the indices of those results; a surface that holds
-    /// its own copy of a toolpath reads them again (`Effects::modulated`).
+    /// the feeds and the times of a run under the other value. P32: for
+    /// ANY change of the value, each modulated result takes its dressed
+    /// path back ([`ResultProvenance::Modulated::dressed`]) and reads
+    /// [`FeedStage::Planned`]: the feeds of another setting are not the
+    /// feeds of this one. An export then carries the planned feeds at
+    /// once, and with a setting that modulates the rows read "until
+    /// modulated" until the next simulation. It returns the indices of
+    /// those results; a surface that holds its own copy of a toolpath
+    /// reads them again (`Effects::modulated`).
     pub(crate) fn set_feed_modulation_impl(
         &mut self,
         switch: FeedModulationSwitch,
@@ -381,9 +471,6 @@ impl ProjectSession {
         }
         self.feed_modulation = switch;
         self.drop_simulation(super::SimulationDropCause::FeedModulation);
-        if switch.is_on() {
-            return restored;
-        }
         for (index, slot) in &mut self.results {
             let ResultProvenance::Modulated { dressed, .. } = &slot.provenance else {
                 continue;

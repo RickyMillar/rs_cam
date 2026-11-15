@@ -479,9 +479,10 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
     }
 }
 
-/// Operator ruling 2026-11-15 (P31 C): the GUI door of the feed modulation
-/// switch. The switch is on by default, so a GUI run modulates. The event
-/// of the panel checkbox with the switch off goes through
+/// Operator rulings 2026-11-15 (P31 C, P32): the GUI door of the feed
+/// modulation switch. The switch is cap only by default, so a GUI run
+/// modulates (it only lowers). The event of the panel control with the
+/// switch off goes through
 /// `Command::SetFeedModulation`: the session value is off, the project is
 /// edited, the simulation drops, every modulated result takes its planned
 /// feeds back, and the view copy of each toolpath is the session result
@@ -521,8 +522,8 @@ fn the_gui_run_follows_the_feed_modulation_switch_p31() {
 
     assert_eq!(
         controller.state.session().feed_modulation(),
-        FeedModulationSwitch::On,
-        "on by default"
+        FeedModulationSwitch::CapOnly,
+        "cap only by default"
     );
     let on = stages(&controller);
     assert!(
@@ -583,5 +584,30 @@ fn the_gui_run_follows_the_feed_modulation_switch_p31() {
         "a run with the switch off modulates nothing: {off_run:?}"
     );
     assert_eq!(held(&off_run), held(&on), "the run drops no result");
+    view_is_the_session(&controller);
+
+    // P32: the third setting through the same door. A GUI run in the full
+    // mode modulates, and the view copy follows.
+    controller.handle_internal_event(AppEvent::SetFeedModulation(FeedModulationSwitch::Full));
+    assert_eq!(
+        controller.state.session().feed_modulation(),
+        FeedModulationSwitch::Full
+    );
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    pump_until_settled(&mut controller, &budget, "run simulation, full");
+    let full = stages(&controller);
+    assert!(
+        full.iter()
+            .any(|stage| matches!(stage, Some(FeedStage::ModulatedCurrent { .. }))),
+        "the GUI run in the full mode modulates a result: {full:?}"
+    );
+    let session = controller.state.session();
+    assert!(
+        (0..session.toolpath_count()).any(|index| session
+            .emitted_feeds(index)
+            .is_some_and(|feeds| feeds.modulation_mode
+                == Some(rs_cam_core::dressup::feed_modulation::ModulationMode::Full))),
+        "a record names the full mode"
+    );
     view_is_the_session(&controller);
 }

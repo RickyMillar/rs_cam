@@ -569,7 +569,17 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     measured.heights = heights;
     measured.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, measured).expect("add measured op");
-    builder.build()
+    let mut session = builder.build();
+    // P32: the default switch is cap only; this file asserts lifted feeds,
+    // so it states the full mode.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
+    session
 }
 
 // ── Suggest-side read ───────────────────────────────────────────────────

@@ -5424,12 +5424,32 @@
       "additionalProperties": false,
       "properties": {
         "feed_modulation": {
-          "default": null,
-          "description": "Optional. SETS the project's one stored feed modulation switch\nbefore the run (`set_feed_modulation`), and the reply says so. Omit\nit to run with the stored value (on by default).",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "The setting of the one stored feed modulation switch (operator rulings\n2026-11-15, P32). The wire words of\n`rs_cam_core::session::FeedModulationSwitch`.",
+              "oneOf": [
+                {
+                  "const": "off",
+                  "description": "No simulation changes a feed. Each result that holds modulated\nfeeds takes its planned feeds back at once.",
+                  "type": "string"
+                },
+                {
+                  "const": "cap_only",
+                  "description": "A simulation lowers a feed where a limit is exceeded, and never\nraises one (the default of every project).",
+                  "type": "string"
+                },
+                {
+                  "const": "full",
+                  "description": "A simulation sets each move to the highest feed that every limit\nallows, which can be above the stated feed.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional. SETS the project's one stored feed modulation switch\nbefore the run (`set_feed_modulation`): `off`, `cap_only` or\n`full`; the reply says so. Omit it to run with the stored value\n(cap only by default)."
         },
         "resolution": {
           "description": "Optional. SETS the project's one stored simulation resolution, in\nmm, and the reply says so. Omit it to simulate at the stored value.",
@@ -6322,15 +6342,31 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "The one stored feed modulation switch (operator ruling 2026-11-15).",
+      "description": "The one stored feed modulation switch (operator rulings 2026-11-15).",
       "properties": {
-        "enabled": {
-          "description": "`true`: a simulation sets each move to the highest feed that every\nlimit allows, which can be above the stated feed (the default).\n`false`: no simulation changes a feed, and each result that holds\nmodulated feeds takes its planned feeds back at once. The project\nfile saves the value. A new value drops the simulation.",
-          "type": "boolean"
+        "mode": {
+          "description": "`off`, `cap_only` (the default of every project) or `full`. The\nproject file saves the value. A new value drops the simulation, and\neach result that holds modulated feeds takes its planned feeds back\nat once.",
+          "oneOf": [
+            {
+              "const": "off",
+              "description": "No simulation changes a feed. Each result that holds modulated\nfeeds takes its planned feeds back at once.",
+              "type": "string"
+            },
+            {
+              "const": "cap_only",
+              "description": "A simulation lowers a feed where a limit is exceeded, and never\nraises one (the default of every project).",
+              "type": "string"
+            },
+            {
+              "const": "full",
+              "description": "A simulation sets each move to the highest feed that every limit\nallows, which can be above the stated feed.",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
-        "enabled"
+        "mode"
       ],
       "title": "SetFeedModulationParam",
       "type": "object"
