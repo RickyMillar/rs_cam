@@ -250,7 +250,12 @@ fn one_mm_cells_flag_only_the_known_coverage_union_residue() {
         coarse,
         // P6.0b (b0a13361) caps the merge on a finished edge, so the pocket
         // has more moves; the residue is the same three rapids at one XY.
-        vec![119, 279, 440],
+        // P29-8 8b (35f8e1a56): the ramp angle of `DressupConfig::for_op` is
+        // the rule (5 degrees in hardwood, was 3), so each ramp has fewer
+        // moves. Measured 2026-11-15: at a stated 3 degrees the set is
+        // [119, 279, 440]; at the rule it is the same three Z-only rapids
+        // at (59.97, 18.60) to -3.5, -7.5 and -11.5.
+        vec![113, 267, 422],
         "the 1.0 mm residue set moved; if conservative_top now resolves \
          union-cleared cells, re-pin this test"
     );

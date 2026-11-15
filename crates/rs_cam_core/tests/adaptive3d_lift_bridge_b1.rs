@@ -109,13 +109,19 @@ fn build_adaptive3d_session() -> ProjectSession {
         ..Adaptive3dConfig::default()
     };
 
+    // S11 (74af0f8e1) and P10 (84bfeab68): an op with no feeds, no stepover
+    // and no depth per pass refuses. The fixture values are the struct
+    // defaults from before those commits (depth per pass 3, as above).
+    let mut operation = OperationConfig::Adaptive3d(cfg);
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
+
     let tc = ToolpathConfig {
         shoe: Default::default(),
         feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Adaptive3d".to_owned(),
         enabled: true,
-        operation: OperationConfig::Adaptive3d(cfg),
+        operation,
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights: HeightsConfig::default(),
         tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),

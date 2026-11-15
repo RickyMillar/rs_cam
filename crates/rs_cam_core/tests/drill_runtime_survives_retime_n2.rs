@@ -237,6 +237,9 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Simple,
         feed_rate: Some(300.0),
+        // S11 (74af0f8e1): a Drill with no RPM refuses. The fixture value is
+        // the RPM that an op with no RPM read before S11.
+        spindle_rpm: Some(rs_cam_core::compute::fixture_values::FIXTURE_SPINDLE_RPM),
         ..DrillConfig::default()
     };
     ToolpathConfig {
@@ -295,6 +298,17 @@ fn build_session() -> ProjectSession {
         .add_toolpath(0, drill_toolpath(tool_id, drill_model_id.raw()))
         .expect("add drill toolpath");
     let mut session = builder.build();
+    // P32 (8d5f677e1): the default switch is cap only, and a cap-only run
+    // lowers a feed only to what the machine reaches, so no runtime moves.
+    // This file asserts a runtime that the re-time moves, so it states the
+    // full mode.
+    let _ = session
+        .apply(Command::SetFeedModulation(
+            rs_cam_core::session::SetFeedModulationArgs {
+                switch: rs_cam_core::session::FeedModulationSwitch::Full,
+            },
+        ))
+        .expect("the full mode applies");
 
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());

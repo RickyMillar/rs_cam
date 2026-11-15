@@ -245,6 +245,9 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Simple,
         feed_rate: Some(300.0),
+        // S11 (74af0f8e1): a Drill with no RPM refuses. The fixture value is
+        // the RPM that an op with no RPM read before S11.
+        spindle_rpm: Some(rs_cam_core::compute::fixture_values::FIXTURE_SPINDLE_RPM),
         ..DrillConfig::default()
     };
     ToolpathConfig {

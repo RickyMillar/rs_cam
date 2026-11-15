@@ -363,6 +363,21 @@ fn session_with_fine_tier(mesh: TriangleMesh, half: f64) -> (ProjectSession, usi
             source: StockSource::Fresh,
         }))
         .unwrap();
+    // S11 (74af0f8e1): Suggest has no basis for a 2 mm ball nose
+    // (extrapolation G1), so the planner emits the tier with no feeds, and
+    // an op with no feeds refuses. The fixture values are the config
+    // defaults that the tier kept before S11. `fill_unset` keeps the
+    // planner's stepover and Z step: they are set.
+    let mut operation = session.toolpath_config_at(index).unwrap().operation.clone();
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
+    let _ = session
+        .apply(Command::SetToolpathOperation(
+            rs_cam_core::session::SetToolpathOperationArgs {
+                index,
+                operation: Box::new(operation),
+            },
+        ))
+        .unwrap();
     (session, index)
 }
 

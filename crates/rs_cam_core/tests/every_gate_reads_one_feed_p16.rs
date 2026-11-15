@@ -31,7 +31,12 @@
 //!    the read, the count, and one reason. An entry that the scan does not
 //!    find exactly `count` times fails, so the list cannot go stale.
 //! 2. Non-vacuity: the door itself reads the sample field (two reads), and
-//!    the depth gate (`depth.rs`, `evaluate`) calls the door.
+//!    the depth gate reaches the door. Since P29-11 11-5 (`f210f23c7`) the
+//!    gate reads its chip through the one operating point of the force
+//!    reading, so the test holds each link: `depth.rs` `judge` calls
+//!    `sample_cut` (the population and the X-VAC fallback filter),
+//!    `sample_cut` calls `deflection::deflection_feed_per_tooth_mm`, and
+//!    that function calls the door.
 //! 3. No production line under `src/tool_load/` names the struct pattern
 //!    `SimulationCutSample {`: a destructure would read the field without a
 //!    dot.
@@ -191,7 +196,10 @@ fn every_gate_reads_one_feed_p16() {
     }
 
     let mut door_reads = 0_usize;
-    let mut depth_door_calls = 0_usize;
+    // Claim 2: the three links from the depth gate to the door.
+    let mut depth_cut_calls = 0_usize;
+    let mut cut_chip_calls = 0_usize;
+    let mut chip_door_calls = 0_usize;
     let mut allowed_hits = vec![0_usize; ALLOWED.len()];
     let mut offenders: Vec<String> = Vec::new();
     // Claim 4.
@@ -222,7 +230,13 @@ fn every_gate_reads_one_feed_p16() {
                 }
             }
             if file == "depth.rs" && func == "judge" {
-                depth_door_calls += line.code.matches("effective_feed_for_sample(").count();
+                depth_cut_calls += line.code.matches("sample_cut(").count();
+            }
+            if file == "depth.rs" && func == "sample_cut" {
+                cut_chip_calls += line.code.matches("deflection_feed_per_tooth_mm(").count();
+            }
+            if file == "deflection.rs" && func == "deflection_feed_per_tooth_mm" {
+                chip_door_calls += line.code.matches("effective_feed_for_sample(").count();
             }
             if line.code.contains("SimulationCutSample {") {
                 offenders.push(format!(
@@ -284,9 +298,18 @@ fn every_gate_reads_one_feed_p16() {
         "the depth gate walks the trace once, for its X-VAC first-cut fallback"
     );
     assert!(
-        depth_door_calls >= 2,
-        "the depth gate (`depth.rs` `judge`) must read the door for its chip and \
-         for its X-VAC fallback filter; found {depth_door_calls} calls"
+        depth_cut_calls >= 2,
+        "the depth gate (`depth.rs` `judge`) must read `sample_cut` for its chip and \
+         for its X-VAC fallback filter; found {depth_cut_calls} calls"
+    );
+    assert_eq!(
+        cut_chip_calls, 1,
+        "`depth.rs` `sample_cut` must read its chip from \
+         `deflection::deflection_feed_per_tooth_mm`, the one operating point"
+    );
+    assert_eq!(
+        chip_door_calls, 1,
+        "`deflection.rs` `deflection_feed_per_tooth_mm` must read the door `{DOOR_FN}`"
     );
     for (a, hits) in ALLOWED.iter().zip(&allowed_hits) {
         assert_eq!(

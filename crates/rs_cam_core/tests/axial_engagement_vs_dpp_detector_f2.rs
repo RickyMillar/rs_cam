@@ -109,7 +109,13 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         .map(|m| m.id)
         .expect("ux_2d_pocket.toml must load demo_pocket.svg");
 
-    let matrix = op_matrix();
+    // S11 (74af0f8e1) and P10 (84bfeab68): an op with no feeds or no
+    // stepover refuses. The fixture values are the struct defaults from
+    // before those commits; a value that the matrix states stays.
+    let mut matrix = op_matrix();
+    for (_, op) in &mut matrix {
+        rs_cam_core::compute::fixture_values::fill_unset(op);
+    }
     for (i, (name, op)) in matrix.iter().enumerate() {
         let op_type = op.op_type();
         let tc = ToolpathConfig {
