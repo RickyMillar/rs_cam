@@ -1554,7 +1554,8 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         // narration names this dial as their lever.
         relink_dial: Some("chain_distance_mm"),
         axial_envelope: AxialEnvelope::CurveRough,
-        rest_use: RestUse::LinkSafetyOnly,
+        // P35: the remaining stock sets the top of the pass ladder.
+        rest_use: RestUse::LadderTop,
         territory_xy: TerritoryXy::Regions,
         plans_bands: false,
         supports_scallop_override: false,

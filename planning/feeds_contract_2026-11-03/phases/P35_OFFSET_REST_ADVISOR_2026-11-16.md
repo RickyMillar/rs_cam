@@ -175,3 +175,76 @@ Decisions for the lead (part A):
 2. A loop that splits refuses the op. The other choice is to cut each ring of the split.
 3. The tab side rule of a NESTED ring of side `on` reads the moved ring as its outline (the drawn
    ring before). The exterior ring reads the drawn outline.
+
+## 5. Part B: what is built, and the results
+
+- `compute/execute/curve.rs`: `ladder_top_z` and `stock_top_under` (rule 2). `run_curve` gives the
+  result to `CurveOp::passes` in place of `heights.top_z`.
+- `RestUse::LadderTop` (rule 4), on the Project Curve row. `Territory::unguarded_stock` names the
+  new reader in its closed list.
+- No cull is built. The air-cut filter of the dressup pipeline is the cull (rule 1).
+
+The fixture (`project_curve_passes_read_the_remaining_stock_p35`, simulation cell 0.5 mm, step
+2.0 mm), measured with the simulation:
+
+| Arm | Levels (Z) | Deepest sample | Fed moves above the floor over the floor part | Air share of the fed time |
+|---|---|---|---|---|
+| Fresh, top 20 | 18 to 8 (6) | 1.75 mm | 321 | 0.558 |
+| Fresh, top 12 | 10, 8 | 8.75 mm | 0 | 0.203 |
+| Remaining stock, top 20, before the code | 18 to 8 (6) | 1.75 mm | 0 | 0.223 |
+| Remaining stock, top 12, before the code | 10, 8 | 8.75 mm | 0 | 0.061 |
+| Remaining stock, top 20 or top 12, after the code | 18 to 8 (6) | 1.75 mm | 0 | 0.223 |
+| Remaining stock, a curve under the floor, before the code | 12, 10, 8 | 1.75 mm | 0 | 0.383 |
+| Remaining stock, a curve under the floor, after the code | 10, 8 | 1.75 mm | 0 | 0.105 |
+
+| # | Result |
+|---|---|
+| B1 | See section 7 (the op golden runs once on the full tree). |
+| B2 | Held. Green before the code: the filter drops the passes above the floor. |
+| B3 | Held. Red before the code (8.75 mm at X 17.8, bound 2.5 mm); green after it. |
+| B4 | WRONG in the count before the code: 3 levels (12, 10, 8), not 6. The filter drops the passes at 18, 16 and 14, and it keeps the pass at Z 12 on the floor at Z 12. After the code: 2 levels, as predicted. |
+| B5 | Held. `every_op_conforms_w4` check 2 and check 2b are green (11 passed; check 6 is the known red). `every_op_states_its_capabilities_w2_4` moves by the one cell. |
+| B6 | WRONG in the cut length (it is lower). See the table below. |
+
+A limit of the filter, found by the fixture: a move is air only when the whole cutter has 0.1 mm of
+clearance over the stock. A pass that runs ON a floor (the same Z) is fed. That is the air share
+that stays in the rows "top 20" (0.223). On the operator job no pass level is on the cavity floor.
+
+### The wanaka river op (read only)
+
+Instrument: the release CLI of this tree, `rs_cam_cli project <copy> --setup "1 Back" --skip
+25,26,27,12,13,14,15,16 --summary`, on two copies of
+`planning/rivmap_block_job/nz_wanaka_21_lead_proposal.toml` in the scratch folder (the model paths
+of the file are absolute). The copy "rest" differs in one line: `stock_source =
+"from_remaining_stock"` on toolpath 11. Simulation cell 0.2 mm (the project value), feed modulation
+cap only (the project value). Each run took about 60 s and 8.1 GB. The op time is the simulated
+time of the setup less the time of a third run that also skips toolpath 11 (1594 s).
+
+| "River channel 6 mm, pass 7 of 7" | As committed (fresh, top 25.5) | Remaining stock |
+|---|---|---|
+| Moves | 121519 | 48023 |
+| Cut length | 39094 mm | 13273 mm |
+| Rapid length | 41154 mm | 49903 mm |
+| Plunges | 1141 | 438 |
+| Simulated op time | 2012 s | 1185 s |
+| Deepest body sample (the depth row of the force budget) | 2.045 mm | 2.045 mm |
+| Samples that cut | 57130 of 401164 | 57130 of 284651 |
+| Collisions, rapid collisions | 0, 0 | 0, 0 |
+| Feeds above the stated feed | 0 | 0 |
+
+- The first column is the figure of the proposal (121519 moves, 39094 mm, 41154 mm), so the
+  instrument is the instrument of the lead.
+- The samples that cut are the same 57130, and the deepest sample is the same. The op from
+  remaining stock removes the same material in 827 s less.
+- The cut length is 13273 mm, below the predicted 22000 to 27000 mm. The prediction counted 7 of
+  12 passes. The rest op before the river also cut the hollow and the lake pockets below the cavity
+  floor, so samples of the lower passes are in air too.
+- The rapid length is 8749 mm more: a retract bridge replaces each long run in air.
+- The stock top under the curve is 25.5, the stated top, so the ladder of this op did not move.
+
+Decisions for the lead (part B):
+
+1. Rule 6 of section 2.2: no exemption of the deepest pass from the filter.
+2. The proposal file is not changed. The change is the one line above.
+3. With remaining stock a stated top Z is not read by the ladder (rule 2). A stated top above the
+   stock adds no pass; a stated top below the stock no longer cuts deep.

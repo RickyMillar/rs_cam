@@ -892,14 +892,16 @@ fn prepare_outline<O: LayeredOp>(
         (RestUse::None, _) => whole_plan(),
         // No Layered op has these rules: 2D Adaptive (`LevelMask`) and
         // Drill (`StockColumn`) keep their own loops (ruling C9), 3D Rough
-        // (`Planner`) is Volumetric, and `Reference` and `LinkSafetyOnly`
-        // are finish rules. The runner cuts every level for them.
+        // (`Planner`) is Volumetric, `Reference` and `LinkSafetyOnly` are
+        // finish rules, and `LadderTop` (P35) is the Curve runner's. The
+        // runner cuts every level for them.
         (
             RestUse::LevelMask
             | RestUse::StockColumn
             | RestUse::Planner
             | RestUse::Reference
-            | RestUse::LinkSafetyOnly,
+            | RestUse::LinkSafetyOnly
+            | RestUse::LadderTop,
             _,
         ) => whole_plan(),
     };

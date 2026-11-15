@@ -468,6 +468,14 @@ pub enum RestUse {
     /// The remaining stock only builds the link ceiling of the op's links
     /// (ruling R1). The cut paths do not read it.
     LinkSafetyOnly,
+    /// P35 (operator ruling 2026-11-15): the remaining stock sets the top
+    /// of the op's pass ladder, the highest stock top in the tool
+    /// footprint under the planned curve (`curve::run_curve`), and builds
+    /// the link ceiling. `heights.top_z` is then not the ladder top. With
+    /// one pass the planned cut is the Fresh cut. The air-cut filter of
+    /// the dressup pipeline drops the samples in air, as for every op from
+    /// remaining stock. Project Curve.
+    LadderTop,
 }
 
 impl RestUse {
@@ -489,7 +497,8 @@ impl RestUse {
             | Self::LevelMask
             | Self::StockColumn
             | Self::Planner
-            | Self::LinkSafetyOnly => false,
+            | Self::LinkSafetyOnly
+            | Self::LadderTop => false,
         }
     }
 }

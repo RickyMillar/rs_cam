@@ -625,6 +625,8 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 ///   claim: a Fresh link that feeds along the surface cleans a cusp that a
 ///   rest link, lifted over the stock, leaves (Scallop: 0.31 mm in 2 cells,
 ///   measured 2026-10-15).
+/// - `LadderTop` (P35): the claim of `LinkSafetyOnly`, because the fixture
+///   op has one pass.
 /// - `Reference`: no claim beyond check 2b. The op reads the stock as its
 ///   rest reference, so its cut differs from the Fresh cut by design.
 ///   Measured 2026-10-15 inside the rest cut: Pencil leaves 0.09 mm and
@@ -755,10 +757,14 @@ fn check2_rest_rule_per_op() {
                 stock_left(&mut defects, true);
                 cuts_less(&mut defects);
             }
-            RestUse::LinkSafetyOnly => {
+            // P35 `LadderTop`: the fixture op has one pass (no
+            // `depth_per_pass`), and with one pass the planned cut is the
+            // Fresh cut. The ladder itself is held by
+            // `project_curve_passes_read_the_remaining_stock_p35`.
+            RestUse::LinkSafetyOnly | RestUse::LadderTop => {
                 if cut_targets(fresh) != cut_targets(rest) {
                     defects.push(format!(
-                        "{key}/rest (LinkSafetyOnly): the rest cutting moves differ from \
+                        "{key}/rest ({rule:?}): the rest cutting moves differ from \
                          the Fresh cutting moves"
                     ));
                 }

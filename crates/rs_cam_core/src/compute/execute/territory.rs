@@ -242,7 +242,8 @@ impl<'a> Territory<'a> {
     ///   `StockColumn` (Drill and Bore, P6.6);
     /// - the RAW seed of a `Planner` op (`volumetric::run_volumetric`);
     /// - the Pencil entry ramps (`PencilStock::remaining`);
-    /// - `BuriedCurveFinding` (`curve::run_curve`).
+    /// - `BuriedCurveFinding` (`curve::run_curve`);
+    /// - the ladder top of a `LadderTop` op (`curve::stock_top_under`, P35).
     /// - the UX-1c buried-face check of a one-depth op
     ///   (`prologue::buried_face`).
     ///

@@ -22,7 +22,10 @@
 //!   before the link;
 //! - the record of the link totals, only when the link stage ran
 //!   (G-LINKVISIBLE, D2);
-//! - the cut-run spans and the depth-run annotation.
+//! - the cut-run spans and the depth-run annotation;
+//! - P35: the top of the pass ladder ([`ladder_top_z`]): the op top Z, or
+//!   the stock top under the curve for an op from remaining stock whose
+//!   rest rule is `RestUse::LadderTop`.
 
 use crate::compute::catalog::OperationType;
 use crate::compute::toolpath_stats::BuriedCurveFinding;
@@ -91,8 +94,10 @@ pub(crate) trait CurveOp {
 
     /// P33: the passes of the op over the planned curves, the first pass
     /// first. `planned` is every curve at the full depth, and `top_z` is
-    /// the op top Z. The last pass is the full depth. The default is one
-    /// pass, `planned` itself.
+    /// the top of the pass ladder: the op top Z, or (P35) the stock top
+    /// under the curve for an op from remaining stock ([`ladder_top_z`]).
+    /// The last pass is the full depth. The default is one pass, `planned`
+    /// itself.
     fn passes(&self, planned: Toolpath, _top_z: f64, _frame: CurveFrame) -> Vec<Toolpath> {
         vec![planned]
     }
@@ -139,11 +144,8 @@ pub(crate) fn run_curve<O: CurveOp>(
     let mut linked = Toolpath::new();
     let mut totals: Option<RelinkTotals> = None;
     let mut later_pass_starts: Vec<usize> = Vec::new();
-    for (pass_index, pass) in op
-        .passes(planned, ctx.heights.top_z, frame)
-        .into_iter()
-        .enumerate()
-    {
+    let top_z = ladder_top_z(op_type, ctx, prepared, &planned);
+    for (pass_index, pass) in op.passes(planned, top_z, frame).into_iter().enumerate() {
         if pass_index > 0 {
             later_pass_starts.push(linked.moves.len());
         }
@@ -173,6 +175,65 @@ pub(crate) fn run_curve<O: CurveOp>(
         generated_with_spans(linked, spans)
     };
     Ok(with_depth_run_annotation(generated, ctx.semantic_ctx))
+}
+
+/// P35: the top of the pass ladder of a curve op.
+///
+/// A Fresh op, and an op whose rest rule is not `RestUse::LadderTop`: the
+/// op top Z (`heights.top_z`), as before. A `LadderTop` op from remaining
+/// stock: the stock top under the curve ([`stock_top_under`]), whatever
+/// the heights state, so the first pass is one step below the highest
+/// material and the operator states no top. Where the stock grid holds no
+/// answer under any sample, the op top Z.
+fn ladder_top_z(
+    op_type: OperationType,
+    ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
+    planned: &Toolpath,
+) -> f64 {
+    use crate::compute::catalog::RestUse;
+    if op_type.capabilities().rest_use != RestUse::LadderTop {
+        return ctx.heights.top_z;
+    }
+    prepared
+        .territory()
+        .unguarded_stock()
+        .and_then(|stock| {
+            stock_top_under(
+                planned,
+                stock,
+                crate::tool::MillingCutter::radius(ctx.tool_def),
+            )
+        })
+        .unwrap_or(ctx.heights.top_z)
+}
+
+/// P35: the highest material top in the footprint of the tool over every
+/// fed move of `planned`: `standing_material::column_top` with the tool
+/// radius as the reach, so each cell whose centre lies within `R + cell`
+/// of a sample counts (the safe side: no material in the tool disc stands
+/// above the result). `None`: no fed sample has material or a grid answer
+/// in its footprint.
+fn stock_top_under(
+    planned: &Toolpath,
+    stock: &crate::dexel_stock::TriDexelStock,
+    tool_radius: f64,
+) -> Option<f64> {
+    use super::standing_material::{ColumnTop, column_top};
+    planned
+        .moves
+        .iter()
+        .filter(|m| m.move_type != crate::toolpath::MoveType::Rapid)
+        .filter_map(|m| {
+            let xy = crate::geo::P2::new(m.target.x, m.target.y);
+            match column_top(stock, xy, tool_radius) {
+                ColumnTop::Top(z) => Some(z),
+                ColumnTop::NoEvidence | ColumnTop::Empty => None,
+            }
+        })
+        .fold(None, |top: Option<f64>, z| {
+            Some(top.map_or(z, |t| t.max(z)))
+        })
 }
 
 #[cfg(test)]
