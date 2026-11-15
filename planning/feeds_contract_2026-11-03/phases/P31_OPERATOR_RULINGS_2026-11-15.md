@@ -483,3 +483,71 @@ before it, one after it on the final tree, 705 passed in 82 s). Not diagnosed.
   called on the release GUI (above). The command, the GUI event and the adopt have tests.
 - `generate_all` has no `feed_modulation` field; `set_feed_modulation` before the call sets the
   switch for the plan.
+
+## D. M4-A, the full fix, after a run that the operator sees: STOPPED before the run
+
+The operator, 2026-11-15: "Full fix after a run".
+
+**No code of D is in the tree, and no patch `D.patch` exists.** The brief sets a guard for the run:
+at least 20 GB of available memory before a modulated simulation of a wanaka file. The machine had
+10 GB to 12 GB available during this whole step (`free -g`: 53 GB total, 41 GB to 43 GB used, swap
+8 GB of 8 GB used; browser processes hold about 18 GB). So the run did not start. The baseline must
+run before a D edit, so no D edit was made.
+
+### D: what is ready
+
+- **The file.** The notes call `planning/rivmap_block_job/nz_wanaka_21_6mm_rough_work.toml` "the 6
+  mm working file" (`NEXT_SESSION.md`, "Carried items"). It is a third file, beside
+  `nz_wanaka_21.toml` and the operator file. Commit `7c28a48c5` did not change it, so its clamp
+  boxes of setup "3 Front" can hold the old frame error (not checked). The operator file is the
+  file with the 18 mm roughs (idx 1 and idx 14), where the spindle power can bind.
+- **The probe** (`p31/D/zz_p31_probe_m4.rs.txt` in the agent scratchpad; a core test, not in the
+  tree). It loads a project file, walks the generation plan of core (each `Simulate` step and the
+  closing simulation through `run_simulation_memoized`, modulation on), and writes one CSV row for
+  each move: op, move, kind, intent, feed, the binding cap of the move
+  (`SimulationCutTrace::modulated_feeds`), X, Y, Z. A log beside the CSV holds the cycle time, the
+  feed stage and the count of moves for each binding of each op. `M4_UPTO=<idx>` limits the walk to
+  one toolpath and its ancestors.
+- **The baseline binary**, built `--release` on the C tree (HEAD plus the patches A to C):
+  `p31/D/m4_probe_baseline_C_tree`. The baseline needs no build.
+- **Proof of the probe:** two runs on `planning/fixtures/rivmap100/rivmap100.toml` (31 s and 34 s)
+  give byte-equal CSV files (218 616 moves). No move of rivmap100 binds on `PowerMax` (the bindings
+  are `MachineMaxFeed`, `KinematicReach` and `PlungeRate`).
+- **The compare script** `p31/D/m4_diff.py <before.csv> <after.csv> <m4_diff.md>`: for each op the
+  count of moves whose feed changed, the largest fall and the largest rise (mm/min and percent),
+  the moves bound by `PowerMax` before and after, the cycle time before and after, and the ten
+  largest changes with their positions. It stops on a move count or a position that differs, and
+  it marks a rise as a STOP. Self-test on the two rivmap100 runs: 0 changes.
+
+### D: the commands, for a machine with 20 GB available
+
+The baseline, on the operator file (one run at a time; check `free -g` first):
+
+```text
+M4_FILE=planning/rivmap_block_job/nz_wanaka_21_operator.toml M4_OUT=<dir>/m4_feeds_before.csv \
+  timeout 2700 systemd-run --user --scope -q -p MemoryMax=24G -p MemorySwapMax=0 \
+  <scratchpad>/p31/D/m4_probe_baseline_C_tree --nocapture
+```
+
+If the whole project does not fit, add `M4_UPTO=14` (idx 14 "Front bulk rough 18 mm" and its
+ancestors, which hold idx 1) and say so. Then build M4-A (`P29-11_DESIGN.md` section 3.5), copy
+the probe to `crates/rs_cam_core/tests/`, build it with `scripts/cargo_lane.sh test --release -p
+rs_cam_core --test zz_p31_probe_m4 --no-run -j 2`, run it with `M4_OUT=<dir>/m4_feeds_after.csv`,
+and run `m4_diff.py`.
+
+### D: what M4-A changes, from the code (reasoned, not built)
+
+- `Engagement::from_sample` has six callers: the power gate (`tool_load/power.rs`), the chip lift
+  and the peak chip (`tool_load/display.rs`, two sites), the cut of a sample
+  (`limits/sample.rs`), the modulator's power engagement (`dressup/feed_modulation.rs`,
+  `SampleEngagement::of_sample`) and the placement of a simulation sample on the envelope
+  (`compute/simulate.rs`, K7). The design note names the first five. With M4-A the K7 placement
+  reads the engaged depth too, so `project.sim_outside_envelope` can change on a move that descends
+  or climbs. The predictions of D must hold this.
+- `axial_doc_mm` has more readers than the per-move mean of the modulator: the chip row key depth
+  (`tool_load/groups.rs`, `tool_load/mod.rs`), the narration, the triage, MCP `get_cut_trace` and
+  the CLI smoke instrument. The design note says "one reader"; that is true for the gates and the
+  modulator caps only.
+- The sites of `SampleDepth`: `limits/cut.rs`, `limits/sample.rs`, `limits/row.rs` (the caveat and
+  six match arms), `limits/mod.rs`, `limits/exemptions.rs` (the row `M4`) and three tests. The
+  pins go from 37 / 26 / 37 to 36 / 25 / 36. The wire loses the caveat `sample_depth`.
