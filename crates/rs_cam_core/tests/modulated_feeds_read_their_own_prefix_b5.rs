@@ -268,3 +268,140 @@ fn an_upstream_change_supersedes_the_downstream_modulation_b5() {
         )
     );
 }
+
+/// Claim 3 (P33 part C, seen on the operator file on 2026-11-15): a run
+/// that simulates a toolpath and gives it the SAME feeds confirms those
+/// feeds. The toolpath then reads current, with the run that confirmed it,
+/// also when the stock record of the older run is no longer current. The
+/// path in the slot does not move.
+///
+/// The state: `Pocket` and `Finish` hold a result and `Again` (between
+/// them in carve order) holds none; run 1 modulates `Finish`. `Again` then
+/// gains a result, so the record of run 1 is not current (a new toolpath
+/// carves before `Finish`). `Again` is the pocket a second time and removes
+/// nothing, so run 2 gives `Finish` the feeds of run 1.
+///
+/// RED before the fix: the same-feeds arm kept the tag of run 1 with its
+/// old record, so `Finish` read "modulated from simulation run 1; the
+/// current simulation is run 2".
+#[test]
+fn a_run_that_confirms_the_feeds_makes_them_current_p33c() {
+    let mut session = single_op_session(
+        stock_under(HALF, STOCK_Z),
+        endmill_tool_config(TOOL_D),
+        polygon_model(vec![square_polygon(HALF)], "square"),
+        "Pocket",
+        pocket_to(3.0),
+    );
+    let tool_id = session.tools()[0].id;
+    let model_id = session.models()[0].id;
+    for (name, depth) in [("Again", 3.0), ("Finish", 5.0)] {
+        let config = toolpath_config(name, pocket_to(depth), tool_id, model_id);
+        let _ = session
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(config),
+            }))
+            .expect("the setup accepts a toolpath");
+    }
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
+    let _ = session
+        .apply(Command::SetMachineKinematics(SetMachineKinematicsArgs {
+            kinematics: Box::new(MachineKinematics::shapeoko_xxl_stock()),
+        }))
+        .expect("a kinematics block");
+    let cancel = AtomicBool::new(false);
+    let (pocket, again, finish) = (
+        index_of(&session, "Pocket"),
+        index_of(&session, "Again"),
+        index_of(&session, "Finish"),
+    );
+    for index in [pocket, finish] {
+        let _ = session
+            .generate_toolpath(index, &cancel)
+            .expect("a fresh pocket generates");
+    }
+    simulate(&mut session, Vec::new());
+    let first = session.simulation_run().expect("run 1 is stored");
+    assert_eq!(
+        session.feed_stage(finish),
+        Some(FeedStage::ModulatedCurrent {
+            simulation_run: first
+        }),
+        "precondition: run 1 modulates 'Finish'"
+    );
+    let path_of_run_1 = std::sync::Arc::clone(
+        session
+            .result_at(finish)
+            .expect("'Finish' holds a result")
+            .annotated(),
+    );
+
+    let _ = session
+        .generate_toolpath(again, &cancel)
+        .expect("the second pocket generates");
+    assert!(
+        session
+            .feed_stage(finish)
+            .is_some_and(|stage| stage.is_superseded()),
+        "non-vacuity: a new toolpath carves before 'Finish', so the record of run 1 is \
+         not current: {:?}",
+        session.feed_stage(finish)
+    );
+
+    let words_before = session
+        .emitted_feeds(finish)
+        .expect("'Finish' holds a result")
+        .stage_words();
+    assert!(
+        words_before.contains("not current"),
+        "non-vacuity: the record of the emitted feeds reads the stale tag: {words_before}"
+    );
+
+    simulate(&mut session, Vec::new());
+    let second = session.simulation_run().expect("run 2 is stored");
+    assert!(second > first);
+    // The record of the emitted feeds ("Feeds that run", the export header
+    // and the export caution read it) names run 2 and no stale clause. Its
+    // memo holds the move figures only, keyed by the path; the stage is
+    // read from the tag on each call.
+    assert!(
+        session.feeds_cautions(std::iter::once(finish)).is_empty(),
+        "the export caution: {:?}",
+        session.feeds_cautions(std::iter::once(finish))
+    );
+    let record = session
+        .emitted_feeds(finish)
+        .expect("'Finish' holds a result");
+    assert!(
+        record.stage_words().contains(&format!("run {second}"))
+            && !record.stage_words().contains("not current"),
+        "the record reads: {}",
+        record.stage_words()
+    );
+    assert!(
+        !record
+            .stage_statement()
+            .contains("the current simulation is run"),
+        "the header reads: {}",
+        record.stage_statement()
+    );
+    let after = session.result_at(finish).expect("'Finish' holds a result");
+    assert!(
+        std::sync::Arc::ptr_eq(&path_of_run_1, after.annotated()),
+        "non-vacuity: run 2 gives 'Finish' the feeds of run 1, so the slot keeps its path"
+    );
+    assert_eq!(
+        session.feed_stage(finish),
+        Some(FeedStage::ModulatedCurrent {
+            simulation_run: second
+        }),
+        "run 2 simulated 'Finish' and confirmed its feeds"
+    );
+}

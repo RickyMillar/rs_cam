@@ -873,7 +873,16 @@ impl ProjectSession {
             // generation plan simulates a prefix per rest operation; a later
             // run that gives an earlier toolpath the same feeds is not a new
             // modulation of it.
+            //
+            // P33 part C: the old tag stands only while its stock record is
+            // current. When the record is not current (a toolpath that held
+            // no result in that run now carves before this one), this run
+            // simulated the toolpath on the stock as it stands and gave the
+            // same feeds: it CONFIRMED them. The tag then takes this run
+            // and its record. The path in the slot does not move, so the
+            // toolpath is not in the rewritten set.
             if let crate::session::ResultProvenance::Modulated {
+                source: slot_source,
                 strategy,
                 feed_scale,
                 mode: slot_mode,
@@ -886,6 +895,18 @@ impl ProjectSession {
                 && *held == outcome.held
                 && same_feeds(&slot_arc.toolpath, &modulated_toolpath)
             {
+                if self.source_is_current(toolpath_id, slot_source).is_err() {
+                    let confirmed = sources.remove(&toolpath_id).unwrap_or_default();
+                    if let Some(crate::session::ResultProvenance::Modulated {
+                        simulation_run: slot_run,
+                        source: slot_source,
+                        ..
+                    }) = self.results.get_mut(&idx).map(|slot| &mut slot.provenance)
+                    {
+                        *slot_run = simulation_run;
+                        *slot_source = confirmed;
+                    }
+                }
                 continue;
             }
             // P32: a result that the modulator visited takes the modulated

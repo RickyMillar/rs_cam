@@ -162,3 +162,89 @@ The brief asks that the stated cut is the full depth when the op has no ladder. 
 On the operator job today: the river pass states no depth before a simulation (section 3). With
 `depth_per_pass` set, the stated depth is the depth per pass, and the force budget row reads it
 (tested on the fixture of section 5; NOT run on the operator file).
+
+## 8. Part B: Generate All and a rest op that waits on a simulation
+
+Lead result on the release GUI of `7ed22f657`: a clean load of the operator file and one MCP
+`generate_all` gave generated 7, already current 11, enabled 18, `awaiting_prior_stock` empty, 3
+simulations, 21 steps. Idx 2 was generated. The defect did not reproduce on HEAD.
+
+The question that stays: does a state exist in which the plan leaves a rest op out with no
+`awaiting_prior_stock` row and no error? Read from the code, with no run: none found. The read
+covers the exits of the GUI driver below and the rule that drops a rest result; it is not a proof by
+a test.
+
+- The order is one plan for every surface (`session/generation_plan.rs:144`, `plan`). The CLI
+  driver is `rs_cam_cli/src/project.rs:471`; the GUI and MCP driver is
+  `rs_cam_viz/src/controller/events/compute.rs:1622` (`plan_steps`) and `:1892` (`submit_plan_step`).
+- Each exit of a Generate step of the GUI driver has a place in the reply
+  (`controller/generate_all.rs`, `GenerateAllSummary`):
+  - a not-ready or disabled row: `not_ready` (`compute.rs:1911-1933`);
+  - a row that holds a core result: `already_current` (`compute.rs:1935-1943`). A rest op cannot
+    hold a result on a stock record that is not current at that point: every command ends with
+    `drop_out_of_date_rest_results` (`session/command.rs:3394-3398`, inside `with_effects`), so an
+    upstream adopt, an edit or a dropped simulation drops such a result before the step reads it;
+  - a rest op with no current snapshot: `blocked`, the `awaiting_prior_stock` row
+    (`compute.rs:323-337`, `2213-2228`);
+  - a failure: `failed` and `errors`; a result: `generated`;
+  - a cancel, an edit, a failed or over-budget simulation: the plan stops and `loop_error` holds
+    the reason (`compute.rs:1827-1831`, `1109-1117`, `2283-2306`). The steps after it do not run.
+- A prefix simulation that the plan skips (an earlier row of the setup did not generate,
+  `compute.rs:1949-1962`) leaves the rest op with no snapshot; its own Generate step then gives the
+  `awaiting_prior_stock` row.
+- The fake backend of the plan tests returns no cut trace, so those tests run no feed modulation.
+  The test `the_gui_plan_publishes_the_expected_rest_numbers` (`controller/tests/
+  rest_cascade_parity_g_restres.rs`) runs the real lane functions in line and is green.
+
+One accounting gap, not a silent rest op: the drain sets the view row to done also when the core
+refuses the adopt of a result (a stale revision; `compute.rs:596-619`), and the plan counts
+`generated` from the view row (`compute.rs:2207`). The core then holds no result for that row, the
+next prefix simulation gives the rest op after it no snapshot, and that rest op is in
+`awaiting_prior_stock`. An edit during a plan step also cancels the plan (`loop_error`). No fix is
+built; the lead decides.
+
+No code is delivered for part B.
+
+## 9. Part C: a run that confirms the feeds makes them current
+
+Seen by the lead on the operator file: after `generate_all` (3 prefix simulations) and one full
+simulation in cap only, the export said "Feeds caution: 3 toolpath(s) emit feeds modulated from an
+earlier simulation" ('Lake pocket 2 mm, 1 lake' run 1, 'Day strip slit V60' run 1, 'Outline profile
+with tabs' run 2; current run 4).
+
+Cause (verified with a red test): the B5 arm of `ProjectSession::modulate_simulation_trace`
+(`session/compute/simulation.rs`, the `same_feeds` arm; line 887 at `7ed22f657`). When a run gives a
+modulated slot the feeds it already holds, the arm keeps the old tag: the run number and the stock
+record of the older run. That record lists the toolpaths that the older run carved before this one.
+A prefix run of the plan carves no result of a rest op that is not generated yet. When that rest op
+then holds a result, the old record is not current (`source_is_current` rule 3: a new toolpath
+carves before the consumer), and `feed_stage_of` reads the feeds as superseded. But the full run
+simulated the toolpath on the stock as it stands and gave the same feeds.
+
+Prediction before the fix (the red test `a_run_that_confirms_the_feeds_makes_them_current_p33c`):
+`Pocket`, `Again` (the same pocket a second time, no result yet) and `Finish`; run 1 modulates
+`Finish`; `Again` gains a result; run 2 gives `Finish` the same feeds. Predicted red:
+`ModulatedSuperseded { simulation_run: 1, current_run: Some(2) }`. Measured: that value.
+
+Fix: in the same-feeds arm, the old tag stands only while its record is current. With a record that
+is not current the tag takes this run and the record of this run. The path in the slot does not
+move, so the toolpath is not in the rewritten set and not in `Effects::modulated`. After the fix the
+test reads `ModulatedCurrent { simulation_run: 2 }` and the slot holds the same `Arc`.
+
+The intent of `modulated_feeds_read_their_own_prefix_b5`, and how it holds:
+
+- Claim 1: after `generate_all` no modulated toolpath reads superseded, and a toolpath that a run
+  before the latest one modulated keeps that run in its tag (the latest run number does not decide).
+  It holds: a tag with a current record is not touched, so the run number of an earlier run stays
+  (the non-vacuity assertion `run < latest` is green).
+- Claim 2: an upstream change makes the downstream modulation superseded. It holds: the run of that
+  claim skips `Finish`, so the modulator does not visit it and its tag does not move.
+- Claim 3 is new: a run that visits a toolpath and gives the same feeds makes them current.
+
+The second text of the lead's report ("Feeds that run: capped, run 1, not current") and the export
+caution read the same tag: `ProjectSession::emitted_feeds` reads `feed_stage_of` on each call (its
+memo holds the move figures only, keyed by the path), and `feeds_cautions` reads `feed_stage`. The
+test asserts both: before run 2 the record says "not current"; after run 2 it names run 2, and
+`feeds_cautions` is empty.
+
+Not verified: the operator file itself. The three toolpaths of the lead's run were not run again.
