@@ -450,3 +450,62 @@ a flat tool), and a Bottom setup.
 
 Not run for D and E: FM1 and `perf_golden_sim_metrics` (no code of a Fresh op with no key moved;
 the op golden holds that), `strategy_advisor_smoke`.
+
+## 12. Part F: a lateral offset on Project Curve (operator ruling 2026-11-16, "2 mm tool slot")
+
+Need: two laps of the 2 mm tool, 0.6 mm left and 0.6 mm right of the curves that the V-bit traces
+(open river paths and closed lake rings), so that the V-bit does not cut deeper than its cone.
+Project Curve has `side` (closed rings only, by the tool radius) and no free lateral offset.
+Base commit `03090f83c`. Written before the code.
+
+### 12.1 The name and its source
+
+- Found in the code: no op has a lateral offset of a path. Trace has `compensation` (`left`,
+  `right`), a side by the tool radius. `BoundaryConfig::offset` moves a boundary.
+- Found in `research/`: no source names a free lateral offset of a projected curve.
+  `fusion360_cam_reference.docx` uses "lateral" for the XY distance between passes ("Stepover:
+  Lateral distance between passes"). `fusion360_ui_reference.docx` lists "Toolpath Offset – Adjust
+  toolpath position" as a modification, with no parameter name.
+- The name is `lateral_offset` (the word of the ruling and of the Fusion stepover text). No
+  industry source in the repo gives a better name.
+- The range is -10.0 to 10.0 mm, the range of `stock_to_leave_radial` (P35 A).
+
+### 12.2 The rules
+
+1. New key `lateral_offset` on Project Curve, optional. No key (or 0): the path of today, byte for
+   byte. No file gains the key on a save.
+2. An open path: a positive value puts the tool centre to the LEFT of the drawn direction (the
+   first point to the last), a negative value to the right. This is the sign of
+   `polygon::offset_open_path_reported` and of Trace `left` (G41). On a Bottom setup the drawing is
+   mirrored, and the sign follows the drawn direction in the drawing frame (as Trace,
+   `drawing_mirrored`).
+3. A closed ring: a positive value moves the ring OUT of the area that the ring closes, the rule
+   of P35 A side `on`. Each ring is its own loop. The ring keeps its drawn winding.
+4. The value adds to `side`: the ring is moved by the value first, and `side` then moves it by the
+   tool radius as before.
+5. The offset is in XY, before the projection. The tip Z of each sample is the projection at the
+   offset position, so the cutter projection drops the real cutter there.
+6. One offset routine: `polygon::offset_open_path_reported` for an open path and
+   `polygon::offset_polygon_reported` for a ring (through the ring helper of `ops/profile.rs`).
+   No second routine.
+7. A path or a ring that the offset splits is cut piece by piece, and one warning names its start
+   point and the piece count: a note in the per-loop note list (`TabPlacementFinding`, the channel
+   of P35 D), which the diagnostics give as `geom.profile_loop_split` (Caution). A path or a ring
+   with no piece is not cut, and the same warning says so. The op refuses only when nothing is
+   left of every curve (the empty-result refusal that exists).
+8. The P33 ladder, the P35 B ladder top and the air-cut filter read the planned path, so they see
+   the offset path with no change.
+
+### 12.3 Predictions
+
+| # | Prediction |
+|---|---|
+| F1 | No key: the op golden does not move (the 46 known rows). |
+| F2 | Red first: before the code the parameter door refuses `lateral_offset`. After it, an open path drawn along +X at Y 0 with +0.6 has each fed point at Y +0.6, and with -0.6 at Y -0.6. The piece starts and ends on the end normals (the same X span). |
+| F3 | A closed square with +0.6: each fed point is 0.6 mm outside the square, for a ring drawn counter-clockwise and for one drawn clockwise. Side `inside` with a 6 mm tool and +0.6: each point is 2.4 mm inside. |
+| F4 | A path with a 90 degree corner: each fed point is 0.6 mm from the path (within the 0.010 mm arc tolerance of the offset) on the two sides; the outer side has an arc join. |
+| F5 | A step surface (low ground Z 9, high ground Z 12), a 6 mm flat tool, a path on the low ground 4 mm from the step: with no value and with the point projection at +2.0 the tip follows the low ground; with the cutter projection at +2.0 the tool disc reaches the high ground and the tip is 3 mm higher. |
+| F6 | A dumbbell ring with -1.4 is cut as two rings with one warning; a hairpin whose legs are nearer than the value is not one piece and has one warning. The op does not refuse. |
+| F7 | With `depth_per_pass`, remaining stock and +0.6 on the stepped-stock fixture: each fed point is at Y +0.6, the levels are the levels of part B (18 to 8), and no sample cuts more than one step. |
+| F8 | `set_param_refuses_absent_field_n5` does not move (as in part A). The MCP wire pin does not move. |
+| F9 | Wanaka (two laps of the 2 mm tool, +0.6 and -0.6): the count of `tool.flute_overreach` moves of "V rivers and lakes" falls from 189; no prediction of the new count. The 2 mm tool (8 mm flute) cuts at most `depth_per_pass` 1.0 mm plus the cell per sample. |
