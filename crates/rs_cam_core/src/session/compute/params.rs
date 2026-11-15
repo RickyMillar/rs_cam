@@ -236,8 +236,12 @@ impl ProjectSession {
             // P10 (ruling D8): `null` clears a tool-derived stepover or depth
             // per pass (the published default with no tool); generation
             // then stops until a tool or the operator sets it.
+            // P33: the optional depth per pass of a Project Curve is no
+            // tool-derived field; the serde arm clears it.
             "stepover" | "depth_per_pass"
-                if value.is_null() && tc.operation.param_names().contains(&param) =>
+                if value.is_null()
+                    && tc.operation.param_names().contains(&param)
+                    && (param == "stepover" || tc.operation.has_depth_per_pass()) =>
             {
                 let slot = crate::compute::geometry_default::stamp_slot(&tc.operation, param);
                 match crate::compute::geometry_default::slot_mut(&mut tc.operation, param) {
@@ -289,7 +293,10 @@ impl ProjectSession {
                     crate::feeds::ValueProvenance::manual(),
                 );
             }
-            "depth_per_pass" => {
+            // P33: an op whose depth per pass is an optional key with no
+            // feeds role (Project Curve) answers `false` here, and the
+            // serde arm below writes or clears its key.
+            "depth_per_pass" if tc.operation.has_depth_per_pass() => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;

@@ -35,7 +35,9 @@ use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
 use super::height_field::HeightQuery;
-use super::shared::{generated_with_cut_run_spans, op_link_ceiling, with_depth_run_annotation};
+use super::shared::{
+    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
+};
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
 /// The Z frame of a curve op.
@@ -86,6 +88,14 @@ pub(crate) trait CurveOp {
     ) -> (Toolpath, Option<RelinkTotals>) {
         (planned, None)
     }
+
+    /// P33: the passes of the op over the planned curves, the first pass
+    /// first. `planned` is every curve at the full depth, and `top_z` is
+    /// the op top Z. The last pass is the full depth. The default is one
+    /// pass, `planned` itself.
+    fn passes(&self, planned: Toolpath, _top_z: f64, _frame: CurveFrame) -> Vec<Toolpath> {
+        vec![planned]
+    }
 }
 
 /// THE runner of a curve op. See the module doc for what it owns.
@@ -123,12 +133,46 @@ pub(crate) fn run_curve<O: CurveOp>(
         ceiling: op_link_ceiling(op_type, ctx, prepared.territory()),
         kinematics: ctx.link_kinematics.as_ref(),
     };
-    let (linked, totals) = op.link(planned, query, frame, &link);
+    // P33: the op's passes, each linked alone, so no link joins two passes
+    // and no link stage puts a deep pass before a shallow pass. An op with
+    // one pass makes the one `link` call of before.
+    let mut linked = Toolpath::new();
+    let mut totals: Option<RelinkTotals> = None;
+    let mut later_pass_starts: Vec<usize> = Vec::new();
+    for (pass_index, pass) in op
+        .passes(planned, ctx.heights.top_z, frame)
+        .into_iter()
+        .enumerate()
+    {
+        if pass_index > 0 {
+            later_pass_starts.push(linked.moves.len());
+        }
+        let (pass_linked, pass_totals) = op.link(pass, query, frame, &link);
+        linked.moves.extend(pass_linked.moves);
+        totals = match (totals, pass_totals) {
+            (Some(mut sum), Some(more)) => {
+                sum.absorb(&more);
+                Some(sum)
+            }
+            (sum, more) => sum.or(more),
+        };
+    }
     ctx.record(&totals);
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(linked, O::SPAN_LABEL),
-        ctx.semantic_ctx,
-    ))
+    let generated = if later_pass_starts.is_empty() {
+        generated_with_cut_run_spans(linked, O::SPAN_LABEL)
+    } else {
+        // The rapid-order dressup may not move a chain to another pass: a
+        // barrier before each later pass (`SpanKind::RapidOrderBarrier`).
+        let mut spans = crate::compute::spans::spans_from_cutting_runs(&linked, O::SPAN_LABEL);
+        spans.extend(later_pass_starts.into_iter().map(|start| {
+            crate::trace::toolpath_spans::Span::boundary(
+                start,
+                crate::trace::toolpath_spans::SpanKind::RapidOrderBarrier,
+            )
+        }));
+        generated_with_spans(linked, spans)
+    };
+    Ok(with_depth_run_annotation(generated, ctx.semantic_ctx))
 }
 
 #[cfg(test)]

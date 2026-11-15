@@ -923,3 +923,280 @@ fn standalone_from_below_refuses_to_chain() {
         "…and must be move-for-move what the unchained pass emits"
     );
 }
+
+// ── 8. P33: the depth ladder ─────────────────────────────────────────────
+
+/// The config of the ladder tests, read through serde. An op table takes an
+/// unknown key, so the red test compiled before the key existed.
+fn ladder_config(depth: f64, depth_per_pass: Option<f64>) -> ProjectCurveConfig {
+    let mut value = serde_json::json!({
+        "depth": depth,
+        "point_spacing": POINT_SPACING_MM,
+        "feed_rate": 800.0,
+        "plunge_rate": 400.0,
+    });
+    if let Some(step) = depth_per_pass {
+        value["depth_per_pass"] = step.into();
+    }
+    serde_json::from_value(value).expect("the ladder config loads")
+}
+
+/// The cut Z of each fed chain, in the emitted order: the Z of the first
+/// fed move after each rapid run.
+fn chain_cut_zs(moves: &[Move]) -> Vec<f64> {
+    moves
+        .windows(2)
+        .filter(|w| {
+            matches!(w[0].move_type, MoveType::Rapid) && !matches!(w[1].move_type, MoveType::Rapid)
+        })
+        .map(|w| w[1].target.z)
+        .collect()
+}
+
+/// P33 (operator ruling 2026-11-15): a depth per pass gives the passes
+/// inside ONE toolpath. The plate top is Z 0 = the op top Z. Depth 3.0 at
+/// 1.0 per pass: the one ladder (`ops::depth::z_ladder`, the 2.5D arm)
+/// gives the levels -1, -2, -3. Each pass covers every curve (pass-major),
+/// the last pass is the path of an op with no key, and no pass cuts more
+/// than one step.
+///
+/// RED before the code: the key did not exist, so the op cut one pass at
+/// -3.0 (8 chains, not 24).
+#[test]
+fn a_depth_per_pass_cuts_the_curve_in_passes_p33() {
+    let laddered = generate_with(ladder_config(3.0, Some(1.0)), SAFE_Z_MM, None, None);
+    let one_pass = generate_with(ladder_config(3.0, None), SAFE_Z_MM, None, None);
+
+    let zs = chain_cut_zs(&laddered.toolpath.moves);
+    let want: Vec<f64> = [-1.0, -2.0, -3.0]
+        .into_iter()
+        .flat_map(|z| std::iter::repeat_n(z, CHAIN_COUNT))
+        .collect();
+    assert_eq!(
+        zs.len(),
+        want.len(),
+        "3 passes over {CHAIN_COUNT} chains: {zs:?}"
+    );
+    for (got, want) in zs.iter().zip(&want) {
+        assert!(
+            (got - want).abs() < 1e-9,
+            "pass depths {zs:?}, want {want:?}"
+        );
+    }
+    // The last pass is the path of the op with no key, move for move.
+    let tail = laddered.toolpath.moves.len() - one_pass.toolpath.moves.len();
+    let last_pass = Toolpath {
+        moves: laddered.toolpath.moves[tail..].to_vec(),
+    };
+    assert!(
+        identical(&last_pass, &one_pass.toolpath),
+        "the last pass is the full depth, the path of today"
+    );
+    // No rapid goes below the retract plane, and every pass enters as the
+    // first pass does: a rapid at the retract plane, then one plunge.
+    for m in &laddered.toolpath.moves {
+        if matches!(m.move_type, MoveType::Rapid) {
+            assert!(
+                (m.target.z - SAFE_Z_MM).abs() < 1e-9,
+                "a rapid at Z {} is not at the retract plane",
+                m.target.z
+            );
+        }
+    }
+    let plunges = laddered
+        .toolpath
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryPlunge)
+        .count();
+    assert_eq!(
+        plunges,
+        3 * CHAIN_COUNT,
+        "one straight plunge per chain and pass"
+    );
+}
+
+/// A solid block under the plate top (Z 0), cell 0.25 mm: the stock that
+/// the ladder cuts into.
+fn block_stock() -> TriDexelStock {
+    TriDexelStock::from_bounds(
+        &BoundingBox3 {
+            min: P3::new(PLATE_X0, PLATE_Y0, -12.0),
+            max: P3::new(PLATE_X1, PLATE_Y1, 0.0),
+        },
+        0.25,
+    )
+}
+
+/// The registry dressups of a Project Curve on `stock`, as the session
+/// applies them after generation.
+fn dressed(generated: AnnotatedToolpath, stock: &TriDexelStock) -> AnnotatedToolpath {
+    let dressups = DressupConfig::for_op(OperationType::ProjectCurve);
+    let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
+    apply_dressups(
+        generated,
+        crate::compute::execute::DressupContext {
+            material: &crate::material::Material::default(),
+            ramp_feed_rate_mm_min: None,
+            cfg: &dressups,
+            nominal_feed_rate: 800.0,
+            plunge_rate_mm_min: 400.0,
+            tool_diameter: TOOL_DIAMETER_MM,
+            safe_z: SAFE_Z_MM,
+            stock_top: 0.0,
+            prior_stock: Some(stock),
+            link_kinematics: None,
+            op_cutting_ceiling: None,
+            feed_opt_stock: None,
+            cutter: Some(&tool_def as &dyn MillingCutter),
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
+            entry: OperationType::ProjectCurve.registry_entry().entry,
+            debug_ctx: None,
+            semantic_ctx: None,
+            entry_containment: None,
+        },
+        &mut ReconcileSet::empty(),
+    )
+}
+
+/// The lowest Z of each run of fed moves between two rapids, in order.
+fn run_floor_zs(moves: &[Move]) -> Vec<f64> {
+    let mut floors: Vec<f64> = Vec::new();
+    let mut open = false;
+    for m in moves {
+        if matches!(m.move_type, MoveType::Rapid) {
+            open = false;
+            continue;
+        }
+        if open {
+            if let Some(floor) = floors.last_mut() {
+                *floor = floor.min(m.target.z);
+            }
+        } else {
+            floors.push(m.target.z);
+            open = true;
+        }
+    }
+    floors
+}
+
+/// P33: the ladder holds after the dressup stage of the session (the
+/// registry dressups of the op, the rapid-order dressup with them, on
+/// solid stock). The passes stay in order: the rapid-order dressup moves
+/// no chain to another pass (a barrier before each later pass). No rapid
+/// ends inside the stock.
+#[test]
+fn the_ladder_keeps_its_order_and_its_rapids_after_the_dressups_p33() {
+    let stock = block_stock();
+    let generated = generate_with(ladder_config(3.0, Some(1.0)), SAFE_Z_MM, Some(&stock), None);
+    assert_eq!(
+        generated.rapid_order_barriers().len(),
+        2,
+        "one barrier before pass 2 and one before pass 3"
+    );
+    assert!(
+        DressupConfig::for_op(OperationType::ProjectCurve).optimize_rapid_order,
+        "non-vacuity: the registry dressups hold the rapid-order dressup"
+    );
+    let after = dressed(generated, &stock);
+
+    let floors = run_floor_zs(&after.toolpath.moves);
+    assert_eq!(floors.len(), 3 * CHAIN_COUNT, "floors {floors:?}");
+    for (i, floor) in floors.iter().enumerate() {
+        let want = -1.0 - (i / CHAIN_COUNT) as f64;
+        assert!(
+            (floor - want).abs() < 1e-9,
+            "run {i} cuts at {floor}, want {want}: a chain left its pass ({floors:?})"
+        );
+    }
+    for m in &after.toolpath.moves {
+        if matches!(m.move_type, MoveType::Rapid) {
+            assert!(
+                m.target.z >= -1e-9,
+                "a rapid ends at Z {} inside the stock (top Z 0)",
+                m.target.z
+            );
+        }
+    }
+}
+
+/// P33: with a chain distance, each pass is linked alone. The link stage
+/// re-orders the fragments of ONE pass; no link joins two passes, and the
+/// passes stay in order.
+#[test]
+fn the_link_stage_runs_on_each_pass_alone_p33() {
+    let mut cfg = ladder_config(3.0, Some(1.0));
+    cfg.chain_distance_mm = CANDIDATE_CHAIN_MM;
+    let (laddered, findings) = generate_with_findings(cfg, SAFE_Z_MM, None, None);
+    let mut one = ladder_config(3.0, None);
+    one.chain_distance_mm = CANDIDATE_CHAIN_MM;
+    let (one_pass, one_findings) = generate_with_findings(one, SAFE_Z_MM, None, None);
+
+    let links_one = link_moves(&one_pass.toolpath.moves).len();
+    assert!(links_one > 0, "non-vacuity: the one pass has links");
+    assert_eq!(
+        link_moves(&laddered.toolpath.moves).len(),
+        3 * links_one,
+        "each of the 3 passes has the links of the one pass"
+    );
+    let surface = |f: &GenerationFindings| f.relink.map(|totals| totals.surface_links);
+    assert_eq!(
+        surface(&findings),
+        surface(&one_findings).map(|n| 3 * n),
+        "the recorded totals are the sum of the passes"
+    );
+    // The cut positions go down pass by pass: every fed position at the
+    // cut depth of a pass comes before every one of the next pass.
+    let cut_zs: Vec<f64> = fed_positions(&laddered.toolpath.moves)
+        .iter()
+        .map(|p| p.z)
+        .filter(|z| {
+            [-1.0, -2.0, -3.0]
+                .iter()
+                .any(|level| (z - level).abs() < 1e-9)
+        })
+        .collect();
+    assert!(
+        cut_zs.windows(2).all(|w| w[1] <= w[0] + 1e-9),
+        "a deeper pass comes before a shallower pass"
+    );
+    assert!(cut_zs.iter().any(|z| (z + 1.0).abs() < 1e-9));
+}
+
+/// P33: the stated cut and the feeds role of the key.
+#[test]
+fn the_stated_cut_is_one_pass_and_no_feeds_door_starts_a_ladder_p33() {
+    use crate::compute::catalog::Axial;
+
+    let mut keyed = OperationConfig::ProjectCurve(ladder_config(3.0, Some(1.0)));
+    assert!(
+        matches!(keyed.cut_spec().axial, Axial::PerPass(Some(_))),
+        "with the key the stated depth is the depth of one pass"
+    );
+    assert_eq!(keyed.cut_spec().axial.stated_mm(), Some(1.0));
+    assert!(!keyed.cut_spec().axial.depth_after_simulation());
+    assert_eq!(keyed.depth_per_pass(), Some(1.0));
+    assert!(
+        keyed.set_depth_per_pass(0.5),
+        "a stated key takes a feeds write"
+    );
+    assert_eq!(keyed.depth_per_pass(), Some(0.5));
+
+    let mut bare = OperationConfig::ProjectCurve(ladder_config(3.0, None));
+    assert!(
+        matches!(bare.cut_spec().axial, Axial::SurfaceOffset(Some(_))),
+        "with no key the cut keeps the surface offset"
+    );
+    assert!(bare.cut_spec().axial.depth_after_simulation());
+    assert!(
+        !bare.set_depth_per_pass(2.0),
+        "no feeds door switches the ladder on"
+    );
+    assert_eq!(bare.depth_per_pass(), None);
+    assert!(!bare.has_depth_per_pass());
+    // The key is not written to a file that does not state it.
+    let text = serde_json::to_string(&ladder_config(3.0, None)).unwrap();
+    assert!(!text.contains("depth_per_pass"), "{text}");
+}

@@ -91,8 +91,9 @@ const EXPECTED_STEPOVER_REJECTS: usize = 13;
 /// Operations that publish no `depth_per_pass`. C1 deleted the Waterline
 /// alias of `z_step` and D2 the RampFinish alias of `max_stepdown`, so
 /// both joined this set (16). P6.6 added Bore: its helix pitch is its
-/// step (17).
-const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 17;
+/// step (17). P33: Project Curve publishes an optional `depth_per_pass`
+/// (16).
+const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 16;
 
 // ── the two populations, from the registry ───────────────────────
 
@@ -515,8 +516,10 @@ fn every_numeric_named_arm_calls_the_shared_range_helper() {
     let arms = [
         ("\"feed_rate\" =>", "\"plunge_rate\" =>"),
         ("\"plunge_rate\" =>", "\"stepover\" =>"),
-        ("\"stepover\" =>", "\"depth_per_pass\" =>"),
-        ("\"depth_per_pass\" =>", "\"spindle_rpm\" =>"),
+        // P33: the arm has a guard (an op with no feeds role of the name
+        // takes the serde arm), so its marker ends at `if`.
+        ("\"stepover\" =>", "\"depth_per_pass\" if tc"),
+        ("\"depth_per_pass\" if tc", "\"spindle_rpm\" =>"),
         ("\"spindle_rpm\" =>", "\"debug_enabled\" =>"),
         // The generic arm runs from `debug_enabled` to the invalidation
         // comment that closes the match.
@@ -535,4 +538,42 @@ fn every_numeric_named_arm_calls_the_shared_range_helper() {
             "the {start} arm must call `{HELPER}` so one helper serves every route"
         );
     }
+}
+
+/// P33: the parameter door states and clears the optional depth per pass
+/// of a Project Curve. The feeds role does not take the first write (no
+/// feeds door starts a ladder), so the serde arm writes the key, and
+/// `null` clears it.
+#[test]
+fn the_door_states_and_clears_a_project_curve_depth_per_pass_p33() {
+    let mut session = single_op(
+        "Curve",
+        OperationConfig::new_default(OperationType::ProjectCurve),
+    );
+    assert_eq!(
+        session.toolpath_configs()[0].operation.depth_per_pass(),
+        None
+    );
+    for (value, want) in [(json!(2.0), Some(2.0)), (json!(null), None)] {
+        let _ = session
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "depth_per_pass".to_owned(),
+                value,
+            }))
+            .expect("the door takes the key");
+        assert_eq!(
+            session.toolpath_configs()[0].operation.depth_per_pass(),
+            want
+        );
+    }
+    let refused = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+        index: 0,
+        param: "depth_per_pass".to_owned(),
+        value: json!(0.0),
+    }));
+    assert!(
+        refused.is_err(),
+        "a depth per pass of 0 is outside the domain"
+    );
 }

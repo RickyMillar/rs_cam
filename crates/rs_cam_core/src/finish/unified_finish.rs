@@ -1251,6 +1251,36 @@ impl RelinkTotals {
             + self.ceiling_above_safe_z
     }
 
+    /// P33: add the totals of another link stage of the same op (one stage
+    /// per pass of a Project Curve ladder). Every field is named, so a new
+    /// counter does not compile until it is added here.
+    pub(crate) fn absorb(&mut self, other: &Self) {
+        let Self {
+            fragments,
+            surface_links,
+            at_depth_links,
+            clearance_hops,
+            rotated_loops,
+            retract_links,
+            too_far,
+            off_surface,
+            slower_than_retract,
+            outside_boundary,
+            ceiling_above_safe_z,
+        } = *other;
+        self.fragments += fragments;
+        self.surface_links += surface_links;
+        self.at_depth_links += at_depth_links;
+        self.clearance_hops += clearance_hops;
+        self.rotated_loops += rotated_loops;
+        self.retract_links += retract_links;
+        self.too_far += too_far;
+        self.off_surface += off_surface;
+        self.slower_than_retract += slower_than_retract;
+        self.outside_boundary += outside_boundary;
+        self.ceiling_above_safe_z += ceiling_above_safe_z;
+    }
+
     /// Fold one region's report into the running totals. One site, so a new
     /// counter on [`crate::finish::surface_link::RelinkReport`] is added here rather
     /// than in however many hand-written `+=` blocks exist.

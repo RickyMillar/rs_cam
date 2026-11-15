@@ -140,6 +140,20 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
         None,
         fields,
     );
+    // P33: an optional key. Empty cuts the full depth in one pass.
+    dv_opt(
+        ui,
+        p(
+            OperationType::ProjectCurve,
+            "depth_per_pass",
+            "Depth per pass",
+        ),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        Some("one pass"),
+        fields,
+    );
     advanced(ui, "proj_adv", |ui| {
         dv(
             ui,

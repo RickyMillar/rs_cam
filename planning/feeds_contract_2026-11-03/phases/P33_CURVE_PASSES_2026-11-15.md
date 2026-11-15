@@ -77,3 +77,88 @@ Departures from the history convention:
 | P-A6 | The MCP wire snapshot moves by the one parameter `depth_per_pass` of `project_curve`. |
 | P-A7 | FM1 does not move (no FM1 cell holds the key). |
 | P-A8 | The red test: before the code a config with the key cuts 8 chains at Z -3 (one pass). |
+
+## 5. What is built (part A)
+
+- `ProjectCurveConfig::depth_per_pass: Option<f64>` (range 0.1 to 20.0 mm, the range of the Trace
+  depth per pass; not written when empty). The GUI row "Depth per pass" is under "Depth"; empty
+  shows "one pass".
+- `ops/project_curve.rs`: `PassLadder`, `ladder_passes` (rules 2 to 4 and 6). It reads the fed
+  chains of the full-depth path and calls `z_ladder`.
+- `compute/execute/curve.rs`: `CurveOp::passes` (default: one pass). `run_curve` links each pass
+  alone, adds the link totals (`RelinkTotals::absorb`) and puts a `RapidOrderBarrier` span before
+  each later pass. With one pass the runner makes the one `link` call and the spans of before.
+- `compute/catalog.rs`: the cut spec of a Project Curve with the key is `Axial::PerPass`.
+- The feeds role (`impl_operation_params!`, an `extra` block): the getter gives the key; the feeds
+  setter writes only a stated key; `has_depth_per_pass` stays `false`.
+- `session/compute/params.rs`: the named `depth_per_pass` arm and its `null` arm take only an op
+  with the feeds role. A Project Curve takes the serde arm, which writes the key, checks the range
+  and clears it with `null`.
+
+Which entry each later pass uses: the same as the first pass (rule 6). `emit_path_segment_with_intent`
+gives each chain of each pass a rapid at the retract plane, one straight plunge at the op plunge
+rate and a rapid retract. After the registry dressups on solid stock no rapid ends below the stock
+top, and no chain leaves its pass.
+
+Through the session door (`a_project_curve_ladder_holds_through_the_session_p33`): the key set by
+`SetToolpathParam`, the registry dressups, a boundary that cuts the curve at x = +/- 5 mm and the
+entry step. At each XY of the stored result no deeper cut comes before a shallower cut, the last cut
+is the cut of the op with no key, and no rapid ends below the stock top. The session clips after the
+dressups (`session/compute.rs:758-759`), so the rapid-order dressup reads the barriers of the runner.
+
+The stated rows of a keyed op (the same file, claim 2): a tip 1 mm above the model surface with no
+key gives no force budget number of the body cut and no flute guard number ("depth not modelled");
+with `depth_per_pass = 2.0` the rows read "body · depth 11 % of force cap" and "stated point · depth
+10.0 % of flute guard cap" on the fixture.
+
+The serde arm of the setter stamps no manual provenance for the key (the named arm stamps
+`FeedsField::DepthPerPass`). No Suggest door reads a stamp for a key with no feeds role.
+
+Not changed: `commanded_depth_mm` and the engagement guard (`BuriedCurveFinding`). The guard reads
+the full-depth path against the stock before the op, as before.
+
+A limit of rule 4: where a chain of an earlier pass starts or stops, the cut is up to one step plus
+the Z change of the surface over one sample step.
+
+## 6. Results against the predictions (part A)
+
+| # | Result |
+|---|---|
+| P-A1 | Held. `every_op_keeps_its_toolpath_g_opgolden`: 46 changes, the 46 rows of `opgolden_known_46_rows.txt` (sorted diff empty); the seven `project_curve/*` arms read "ok". |
+| P-A2 | Held. `a_depth_per_pass_cuts_the_curve_in_passes_p33`. |
+| P-A3 | Held. `the_ladder_steps_from_the_op_top_to_the_full_depth_p33`: passes at Z 8, 6, 4. |
+| P-A4 | Held. `no_pass_cuts_more_than_one_step_p33`: 4 passes on the valley. |
+| P-A5 | Held. `the_stated_cut_is_one_pass_and_no_feeds_door_starts_a_ladder_p33`. |
+| P-A6 | WRONG. The MCP wire snapshot (`mcp_wire_surface_pin`, 17 tests) did not move. It holds the tools and their arguments, and no operation parameter. `get_operation_schema` serves the new parameter from the registry. |
+| P-A7 | Held. FM1 2 passed, no CSV moved. |
+| P-A8 | Held. Before the code: `left: 8, right: 24`, cut Z `[-3.0; 8]`. |
+
+Not predicted, found by the sentries:
+
+- `set_param_refuses_absent_field_n5`: the population that refuses `depth_per_pass` goes from 17 to
+  16 ops (Project Curve publishes the name). The pin and the arm marker of the source scan moved.
+- `every_op_conforms_w4` check 6b: `depth_per_pass = null` was refused by the tool-derived `null`
+  arm; that arm now takes only an op with the feeds role.
+- The registry dressups of a Project Curve hold the rapid-order dressup, and the cut-run spans hold
+  no barrier. Without a barrier the dressup can move a chain to another pass. So the runner adds one
+  barrier before each later pass (`the_ladder_keeps_its_order_and_its_rapids_after_the_dressups_p33`).
+
+## 7. The stated cut with no ladder: not built (a departure from the brief)
+
+The brief asks that the stated cut is the full depth when the op has no ladder. That is not built.
+
+- The config holds no full depth. `depth` is an offset from the model surface, and the material top
+  is not in the config.
+- `top_z - lowest tip Z` is the full depth only where the op top Z is the local material top. The
+  operator job states the top (`top_z` manual 16.5); `planning/fixtures/rivmap100` "Project Curve"
+  has an automatic top (the stock top) over a relief that an earlier op cut, so the value would be
+  a false Exceeds there.
+- A rule that would hold: with a STATED op top Z and a stored result, the body depth is at least
+  `top_z - lowest tip Z of the result` (`BodyDepth::AtLeast`, a row that can prove Exceeds and never
+  Within). It needs a new plan fact through `SuggestSlots`, `SuggestContext` and `PlanFacts`, and a
+  lowest-Z value held with the result (the result stats hold no Z today; a walk of the moves on each
+  read is too slow for the GUI). The lead decides.
+
+On the operator job today: the river pass states no depth before a simulation (section 3). With
+`depth_per_pass` set, the stated depth is the depth per pass, and the force budget row reads it
+(tested on the fixture of section 5; NOT run on the operator file).

@@ -1356,9 +1356,16 @@ impl OperationConfig {
             // D3: every side is a slot on the first pass. P16 (review D7):
             // `depth` is a signed offset from the model surface, not a depth
             // into the stock; the simulation gives that depth.
+            // P33: with a depth per pass the op cuts in passes from the op
+            // top Z, and no pass cuts more than that depth: the stated
+            // depth of the cut is the depth of one pass. With no key the
+            // one pass keeps the surface offset.
             OperationConfig::ProjectCurve(c) => CutSpec {
                 radial: Radial::Slot,
-                axial: Axial::SurfaceOffset(c.depth.map(mm)),
+                axial: match c.depth_per_pass {
+                    Some(step) => Axial::PerPass(Some(mm(step))),
+                    None => Axial::SurfaceOffset(c.depth.map(mm)),
+                },
                 total: TotalDepth::None(DEPTH_AFTER_SIMULATION),
                 first_pass: FirstPass::Slot,
             },
@@ -2131,6 +2138,13 @@ impl OperationConfig {
 
     pub fn depth_per_pass(&self) -> Option<f64> {
         self.as_params().depth_per_pass()
+    }
+
+    /// True when the feeds role of this op holds a depth-per-pass field
+    /// (set or not). P33: a Project Curve answers `false`; its depth per
+    /// pass is an optional key that the serde arm of the setter writes.
+    pub fn has_depth_per_pass(&self) -> bool {
+        self.as_params().has_depth_per_pass()
     }
 
     pub fn total_depth(&self) -> Option<f64> {

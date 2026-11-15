@@ -418,6 +418,131 @@ fn project_polygon_rings_with_cancel(
     Ok(())
 }
 
+/// P33 (operator ruling 2026-11-15: "For multiple passes that should be
+/// built into the toolpath, not multiple tool paths"): the depth ladder of
+/// a Project Curve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PassLadder {
+    /// The Z of the material top: the op top Z of the heights.
+    pub top_z: f64,
+    /// The largest depth (mm) of one pass.
+    pub depth_per_pass: f64,
+}
+
+/// The fed chains of a planned path: the targets of each run of fed moves
+/// between two rapids. The kernel emits one such run for each chain
+/// (`Toolpath::emit_path_segment_with_intent`), and the plunge target is
+/// the first point of the chain.
+fn fed_chains(planned: &Toolpath) -> Vec<Vec<P3>> {
+    let mut chains: Vec<Vec<P3>> = Vec::new();
+    let mut open = false;
+    for m in &planned.moves {
+        match m.move_type {
+            crate::toolpath::MoveType::Rapid => open = false,
+            crate::toolpath::MoveType::Linear { .. }
+            | crate::toolpath::MoveType::ArcCW { .. }
+            | crate::toolpath::MoveType::ArcCCW { .. } => {
+                if !open {
+                    chains.push(Vec::new());
+                    open = true;
+                }
+                if let Some(chain) = chains.last_mut() {
+                    chain.push(m.target);
+                }
+            }
+        }
+    }
+    chains
+}
+
+/// P33: the passes of a Project Curve, the first pass first.
+///
+/// `planned` is the path at the full depth: every curve of the op, as
+/// [`project_curve_toolpath_with_cancel`] gives it. The convention is the
+/// one of the river channel passes of `planning/rivmap_block_job/
+/// derive_wanaka21.py`: each pass is the SAME projected curve moved up
+/// from the full depth by a whole number of steps, a pass covers every
+/// curve, and the deepest pass is the last.
+///
+/// - The levels are the crate's one ladder ([`crate::ops::depth::z_ladder`],
+///   the 2.5D arm `EvenRedistributed`) from `ladder.top_z` down to the
+///   lowest tip Z of `planned`: `n = ceil(total / depth_per_pass)` equal
+///   steps, the top itself no level.
+/// - Pass `i` is each chain moved up by `level_i - lowest tip Z`.
+/// - A sample of an earlier pass at or above `ladder.top_z` is left out,
+///   and the chain splits there as it does at a gap. So an earlier pass
+///   feeds only below the op top, and each pass cuts at most one step
+///   below the op top or below the pass before it (plus the Z change of
+///   the surface over one sample step, where a chain starts).
+/// - The last pass is `planned` itself: the full depth, every sample.
+/// - Each chain of each pass enters as a chain of today: a rapid at
+///   `params.safe_z`, a straight plunge at `params.plunge_rate`, the cut,
+///   a rapid retract. No rapid goes below `params.safe_z`.
+///
+/// The ladder reads the emitted Z, where the tool always comes from +Z, so
+/// it holds in each frame of [`tip_depth_into_material_mm`]. With no level
+/// above the lowest tip (the path is at or above the top, or one step
+/// reaches it) the result is the one pass `planned`.
+#[must_use]
+pub fn ladder_passes(
+    planned: Toolpath,
+    ladder: PassLadder,
+    params: &ProjectCurveParams,
+) -> Vec<Toolpath> {
+    let chains = fed_chains(&planned);
+    let lowest = chains
+        .iter()
+        .flatten()
+        .map(|p| p.z)
+        .fold(f64::INFINITY, f64::min);
+    if !lowest.is_finite() {
+        return vec![planned];
+    }
+    let levels = crate::ops::depth::z_ladder(
+        ladder.top_z,
+        lowest,
+        ladder.depth_per_pass,
+        crate::ops::depth::LadderMode::EvenRedistributed,
+    );
+    let Some((_full_depth, earlier)) = levels.split_last() else {
+        return vec![planned];
+    };
+    let mut passes: Vec<Toolpath> = Vec::with_capacity(levels.len());
+    for level in earlier {
+        let lift = level - lowest;
+        let mut pass = Toolpath::new();
+        let mut run: Vec<P3> = Vec::new();
+        let flush = |run: &mut Vec<P3>, pass: &mut Toolpath| {
+            if !run.is_empty() {
+                pass.emit_path_segment_with_intent(
+                    run,
+                    params.safe_z,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    crate::toolpath::MoveIntent::FinishingCut,
+                );
+                run.clear();
+            }
+        };
+        for chain in &chains {
+            for p in chain {
+                let z = p.z + lift;
+                if z < ladder.top_z {
+                    run.push(P3::new(p.x, p.y, z));
+                } else {
+                    flush(&mut run, &mut pass);
+                }
+            }
+            flush(&mut run, &mut pass);
+        }
+        if !pass.moves.is_empty() {
+            passes.push(pass);
+        }
+    }
+    passes.push(planned);
+    passes
+}
+
 /// The tip Z of one point in the projection frame, or `None` where no
 /// surface is directly under the point.
 fn surface_tip_z(
@@ -815,6 +940,144 @@ mod tests {
             for (a, b) in point.iter().zip(&cutter) {
                 assert!((a - b).norm() < 1e-9, "{direction:?}: {a} != {b}");
             }
+        }
+    }
+
+    // ── P33: the depth ladder ───────────────────────────────────────
+
+    /// P33, prediction P-A3: a tip ABOVE the model surface (a negative
+    /// depth, the river channel of the operator job). The flat surface is
+    /// at Z 0, the depth is -4.0 (the tip at Z 4), the op top is Z 10 and
+    /// the depth per pass is 2.5. The total is 6, so the one ladder gives
+    /// `ceil(6 / 2.5) = 3` equal steps of 2.0: the passes cut at Z 8, 6, 4.
+    #[test]
+    fn the_ladder_steps_from_the_op_top_to_the_full_depth_p33() {
+        let mesh = crate::mesh::make_test_flat(100.0);
+        let index = SpatialIndex::build_auto(&mesh);
+        let tool = crate::tool::FlatEndmill::new(6.0, 25.0);
+        let curve = Polygon2::open_path(vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0)]);
+        let params = valley_params(ProjectProjection::Point, ProjectDirection::FromAbove, -4.0);
+        let planned = project(&curve, &mesh, &index, &tool, &params);
+        let full_depth = fed_points(&planned);
+        assert!(full_depth.iter().all(|p| (p.z - 4.0).abs() < 1e-9));
+
+        let passes = ladder_passes(
+            planned.clone(),
+            PassLadder {
+                top_z: 10.0,
+                depth_per_pass: 2.5,
+            },
+            &params,
+        );
+        let zs: Vec<f64> = passes
+            .iter()
+            .map(|pass| {
+                let pts = fed_points(pass);
+                assert_eq!(pts.len(), full_depth.len(), "each pass is the whole curve");
+                assert!(pts.iter().all(|p| (p.z - pts[0].z).abs() < 1e-9));
+                pts[0].z
+            })
+            .collect();
+        assert_eq!(zs.len(), 3, "passes at {zs:?}");
+        for (got, want) in zs.iter().zip([8.0, 6.0, 4.0]) {
+            assert!((got - want).abs() < 1e-9, "passes at {zs:?}");
+        }
+        assert_eq!(passes[2].moves.len(), planned.moves.len());
+
+        // One step reaches the full depth: one pass, the planned path.
+        let one = ladder_passes(
+            planned.clone(),
+            PassLadder {
+                top_z: 10.0,
+                depth_per_pass: 6.0,
+            },
+            &params,
+        );
+        assert_eq!(one.len(), 1);
+        // The path is at or above the op top: an empty ladder, one pass.
+        let above = ladder_passes(
+            planned.clone(),
+            PassLadder {
+                top_z: 4.0,
+                depth_per_pass: 1.0,
+            },
+            &params,
+        );
+        assert_eq!(above.len(), 1);
+        assert_eq!(above[0].moves.len(), planned.moves.len());
+    }
+
+    /// P33, prediction P-A4: on a surface that is not flat, an earlier
+    /// pass feeds only below the op top, and no pass cuts more than one
+    /// step: each fed point of a pass is within one step of the op top, or
+    /// the pass before it cut the same XY one step higher.
+    #[test]
+    fn no_pass_cuts_more_than_one_step_p33() {
+        let mesh = valley_mesh();
+        let index = SpatialIndex::build_auto(&mesh);
+        let tool = crate::tool::FlatEndmill::new(6.0, 25.0);
+        let params = valley_params(ProjectProjection::Point, ProjectDirection::FromAbove, 0.4);
+        let planned = project(&valley_curve(), &mesh, &index, &tool, &params);
+        let full_depth = fed_points(&planned);
+        let lowest = full_depth.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
+        // The lowest tip is the curve end at x = -3.3: the surface less 0.4.
+        assert!((lowest - (original_surface_z(-3.3) - 0.4)).abs() < 1e-6);
+
+        let top_z = CREASE_Z;
+        let depth_per_pass = 2.0;
+        // (5 + 1.116) / 2.0 -> 4 passes.
+        let count = ((top_z - lowest) / depth_per_pass).ceil();
+        let step = (top_z - lowest) / count;
+        let passes = ladder_passes(
+            planned.clone(),
+            PassLadder {
+                top_z,
+                depth_per_pass,
+            },
+            &params,
+        );
+        assert_eq!(passes.len(), 4, "count {count}");
+        let same_xy = |a: &P3, b: &P3| (a.x - b.x).hypot(a.y - b.y) < 1e-12;
+        for (i, pass) in passes.iter().enumerate() {
+            let pts = fed_points(pass);
+            assert!(!pts.is_empty(), "pass {i} cuts");
+            if i + 1 < passes.len() {
+                assert!(
+                    pts.len() < full_depth.len(),
+                    "pass {i} leaves out the samples above the op top"
+                );
+                assert!(
+                    pts.iter().all(|p| p.z < top_z),
+                    "pass {i} feeds above the top"
+                );
+            }
+            for p in &pts {
+                let from_top = top_z - p.z <= step + 1e-9;
+                let below_the_pass_before = i > 0
+                    && fed_points(&passes[i - 1])
+                        .iter()
+                        .any(|q| same_xy(p, q) && (q.z - p.z - step).abs() < 1e-9);
+                assert!(
+                    from_top || below_the_pass_before,
+                    "pass {i} cuts more than one step at ({}, {}, {})",
+                    p.x,
+                    p.y,
+                    p.z
+                );
+            }
+            // Each chain enters as a chain of today.
+            for m in &pass.moves {
+                if matches!(m.move_type, crate::toolpath::MoveType::Rapid) {
+                    assert!((m.target.z - params.safe_z).abs() < 1e-9);
+                }
+            }
+        }
+        // The last pass is the planned path, move for move.
+        let last = &passes[3];
+        assert_eq!(last.moves.len(), planned.moves.len());
+        for (a, b) in last.moves.iter().zip(&planned.moves) {
+            assert_eq!(a.target, b.target);
+            assert_eq!(a.move_type, b.move_type);
         }
     }
 

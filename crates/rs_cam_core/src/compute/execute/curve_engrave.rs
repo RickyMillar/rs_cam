@@ -569,6 +569,22 @@ impl CurveOp for ProjectCurveOp<'_> {
         )
     }
 
+    /// P33: the depth ladder (`depth_per_pass`). With no key the op has
+    /// one pass, the planned path.
+    fn passes(&self, planned: Toolpath, top_z: f64, frame: CurveFrame) -> Vec<Toolpath> {
+        match self.cfg.depth_per_pass {
+            Some(depth_per_pass) => crate::ops::project_curve::ladder_passes(
+                planned,
+                crate::ops::project_curve::PassLadder {
+                    top_z,
+                    depth_per_pass,
+                },
+                &self.kernel_params(frame),
+            ),
+            None => vec![planned],
+        }
+    }
+
     /// The chain link stage (`chain_distance_mm`). Its `RelinkParams`
     /// choices are this op's policy.
     fn link(

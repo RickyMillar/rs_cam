@@ -33,6 +33,10 @@ const HELP_DEPTH: &str = "Total cut depth from stock surface.";
 const HELP_DEPTH_PER_PASS: &str =
     "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large.";
 
+const HELP_PROJECT_CURVE_DEPTH_PER_PASS: &str = "Largest depth of one pass. Empty cuts the full depth in one pass. With a value the \
+     toolpath cuts the curve in equal passes from the op top Z (Heights) down to the full depth; \
+     each pass is the projected curve at a smaller depth, and the last pass is the full depth.";
+
 const RAMP_FEED_RATE_HELP: &str = "Feed (mm/min) of a helix or ramp entry through material. Empty uses the plunge rate. A \
      straight feed through air and a straight plunge keep their own feeds.";
 
@@ -3594,6 +3598,15 @@ pub struct ProjectCurveConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH, range = -20.0..=20.0)]
     pub depth: Option<f64>,
+    /// P33 (operator ruling 2026-11-15: "For multiple passes that should be
+    /// built into the toolpath"): the largest depth (mm) of one pass.
+    /// `None`, the default, cuts the full depth in one pass, the path of an
+    /// op with no key. With a value the op cuts the curve in passes from
+    /// the op top Z down (`ops::project_curve::ladder_passes`). The range
+    /// is the range of the Trace depth per pass.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = HELP_PROJECT_CURVE_DEPTH_PER_PASS, range = 0.1..=20.0)]
+    pub depth_per_pass: Option<f64>,
     #[param(
         help = "Distance between sample points along curves. Smaller = smoother. Minimum 0.01 mm (operator ruling 2026-10-15).",
         range = 0.01..=5.0,
@@ -3691,6 +3704,7 @@ impl Default for ProjectCurveConfig {
     fn default() -> Self {
         Self {
             depth: None,
+            depth_per_pass: None,
             point_spacing: 0.5,
             feed_rate: None,
             plunge_rate: None,
@@ -4182,6 +4196,27 @@ impl_operation_params!(ProjectCurveConfig {
     stepover: none,
     depth_per_pass: none,
     total_depth: none,
+    extra {
+        /// P33: the depth per pass is an OPTIONAL key. An op with no key
+        /// cuts one pass, and no feeds door may switch the ladder on: the
+        /// Suggest funnel writes the calculator depth to a scratch copy of
+        /// every op that takes the write. So the feeds setter writes only
+        /// when the op already states a value, and `has_depth_per_pass`
+        /// keeps the trait answer (`false`). The operator states the key
+        /// through the parameter door (`set_toolpath_param`, the serde
+        /// arm) or the project file.
+        fn depth_per_pass(&self) -> Option<f64> {
+            self.depth_per_pass
+        }
+        fn set_depth_per_pass(&mut self, value: f64) -> bool {
+            if self.depth_per_pass.is_some() {
+                self.depth_per_pass = Some(value);
+                true
+            } else {
+                false
+            }
+        }
+    }
     depth_semantics: ExplicitOptional(depth)
 });
 
