@@ -102,3 +102,38 @@ Least wood under a band that reaches 2.0 mm outside the edge, against `relief_sh
 - The drill rapid at the corner hole (item 3 above), and item 4 above.
 - Each tool size in the file is "estimated". The shank of the 2 mm tool (3.175 mm assumed) and
   the flute of the 6 mm tool decide the shank and the pin drill findings.
+
+## Update 2026-11-16, second: the V-bit and the lake outlines
+
+The operator, 2026-11-16: the V-bit moves with wood above the flute are "not ideal still".
+
+**Cause (measured).** "V rivers and lakes" traces the layers `VGROOVE_V20_RIVER` and
+`VGROOVE_V20_LAKE` of `vgroove_v20.dxf`. "River channel 6 mm" cuts the river layer only. On a lake
+outline with no channel the V-bit goes from the cavity floor (Z 16.5) to its tip near Z 6.9:
+9.6 mm deep with a cone of 8.15 mm. Instrument: `job/vbit_stock.py` in the lead scratchpad (a
+height map of the back side from the exported G-code, 0.25 mm cells, the wood above each V move
+in the shank footprint). It gives 399 moves where the simulation gives 315, with the same worst
+place (X281.5 Y122.0 in the G-code frame, 14.36 mm over the tip).
+
+**Change.** A new toolpath "Lake outline channel 6 mm" after the river channel: the river settings
+(4 mm above `relief_sheet_s1.stl`, cutter projection, `depth_per_pass = 2.1`, remaining stock) on
+the layer `VGROOVE_V20_LAKE`.
+
+**Result** (release GUI of `7df21620f`, cap only): V-bit moves with wood above the flute 315 to
+189; the worst is 9.40 mm over the tip (1.25 mm more than the cone) at X293.1 Y324.3. Shank
+contacts of the 2 mm tool stay 0. Simulated total time 18228 s. "Lake relief band 6 mm, 1 lake to
+Z 11.4" now cuts air only (the channel removes that wood first); it can be deleted.
+
+**Why 189 remain (measured at three places).** The shore next to those lake outlines is steep:
+within 3 mm of the outline the front surface rises from the lake level (Z 9.2 in the back frame)
+to Z 12.1 to 12.3. The 6 mm channel keeps 4 mm of wood under the whole cutter, so its floor there
+is at Z 16.1 to 16.3 and it removes almost no wood. The V-bit is then 8.2 to 9.4 mm deep. The
+height map gives 238 moves, in the same areas.
+
+**Options, not built:**
+1. Two laps of the 2 mm tool along those outlines (Profile, side `on`, radial stock to leave
+   +0.6 and -0.6, floor Z 14.9): a slot 3.2 mm wide for the 3.175 mm shank. It needs a wood
+   thickness check for each lake.
+2. A V-bit with a longer cone (a 20 degree bit on a 6 mm shank has a cone of about 16 mm). No
+   toolpath change.
+3. A shallower V-bit depth on the lake outlines (a design change of the map).

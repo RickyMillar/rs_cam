@@ -2157,6 +2157,251 @@ value_out = 3165.0
 basis = 13
 
 [[setups.toolpaths]]
+id = 28
+name = "Lake outline channel 6 mm"
+enabled = true
+tool_id = 0
+model_id = 8
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = -4.0
+depth_per_pass = 2.1
+point_spacing = 0.25
+feed_rate = 3165.0
+plunge_rate = 1347.0
+surface_model_id = 4
+direction = "from_above"
+side = "center"
+projection = "cutter"
+spindle_rpm = 10610
+chain_distance_mm = 0.0
+
+[[setups.toolpaths.operation.params.selection.rules]]
+source = "toolpath_model"
+
+[setups.toolpaths.operation.params.selection.rules.filter]
+layers = ["VGROOVE_V20_LAKE"]
+kinds = "served"
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "onsrud-hardwood-60-200-1_4-finish"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "tool_fact"
+fact = "tool.diameter"
+fact_kind = "stated"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "depth known after the simulation; the chip-thinning diameter reads the tool diameter"
+from = [0]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "operator"
+law = "stated"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "rule"
+name = "material.base_cutting_speed_m_min.solid_wood"
+value = 200.0
+source = "unsourced"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "SFM at engaged diameter"
+from = [
+    3,
+    2,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "claim"
+
+[setups.toolpaths.feeds_provenance.steps.nodes.claim]
+kind = "size_g1"
+row = "onsrud-hardwood-60-200-1_4-finish"
+rule = "g1_size"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "tool_fact"
+fact = "tool.flute_count"
+fact_kind = "estimated"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "chip x RPM x Z"
+from = [
+    5,
+    4,
+    6,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "finish pass: no chip thinning (Garr finish row)"
+from = [
+    7,
+    2,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "claim"
+
+[setups.toolpaths.feeds_provenance.steps.nodes.claim]
+kind = "drill_g6"
+row = "amana-flat-hardwood-pocket-6000-2f-spektra"
+rule = "g6_axial_plunge"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "Q8 G6 axial chip x rpm x Z"
+from = [
+    9,
+    8,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "two-term power model"
+from = [
+    8,
+    1,
+    2,
+    4,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "round to 1 rpm"
+from = [4]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "round down to 1 mm/min (T-9)"
+from = [8]
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step3_engagement"
+quantity = "depth"
+value_out = 6.0
+basis = 1
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step3_engagement"
+quantity = "width"
+value_out = 6.0
+basis = 2
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step1_rpm"
+quantity = "rpm"
+value_out = 10610.32953945969
+basis = 4
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step2_chip_load"
+quantity = "chip"
+value_out = 0.14919260416145616
+basis = 5
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step5_feed"
+quantity = "feed"
+value_out = 3165.96539000643
+basis = 8
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step8_plunge"
+quantity = "plunge"
+value_out = 1347.0
+basis = 10
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "result_power"
+quantity = "power"
+value_out = 0.0
+basis = 11
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "apply_round"
+quantity = "rpm"
+value_in = 10610.32953945969
+factor = 0.9999689416376311
+value_out = 10610.0
+basis = 12
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "apply_round_down"
+quantity = "feed"
+value_in = 3165.96539000643
+factor = 0.9996950724700032
+value_out = 3165.0
+basis = 13
+
+[[setups.toolpaths]]
 id = 25
 name = "Lake relief band 6 mm, 11 lakes to Z 13.5"
 enabled = true
