@@ -20,7 +20,7 @@ module is reached through `compute::execute::execute_operation_annotated` (`pub(
 - An explicit-depth operation diagnoses a cut below the stock bottom. Another
   depth semantic abstains; it does not pass.
 - Drill removal uses the supplied `StockCutDirection`, never the order of a hole's Z
-  pair. The R-plane is per hole (`DrillHole::retract_z`, D8); emitter and metrics read it.
+  pair. The R-plane is per hole (`DrillHole::retract_z`, D8); emitter and metrics read it. P36 A1: it is the clearance above the material that STANDS over the hole (`compute/execute/drilling.rs` `drill_hole_columns`: the column top, not capped by the Top Z; with no stock evidence `dressup::fresh_stock_top_z`), never above a Top Z pinned under the wood; sentry `a_drill_rapid_stays_over_the_standing_stock_p36`.
 - The drill metrics live in `drill_metrics.rs` and reach the report as
   `drill_summaries`; the gates that read them live in `tool_load/`.
 - Each generator picks its `LadderMode` at the call site; the registry field `ladder_includes_top` states it per op, so change both together. `depth.rs` holds the crate's ONE Z-ladder, `z_ladder` (`floor_ladder`, P3.2, is its 2.5D top-to-floor form), with two named arms

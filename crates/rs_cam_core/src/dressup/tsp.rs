@@ -16,6 +16,12 @@ use crate::trace::transform_provenance::Transformed;
 /// absorb accumulated `f64` noise — it is not a clearance margin.
 const CEILING_EPS: f64 = 1e-9;
 
+/// Two targets at most this far apart in XY are one XY (P36 A2). A canned
+/// cycle writes each move of a hole with the same two `f64` values, so
+/// this only has to absorb `f64` noise; it is not a tolerance on a hole
+/// position.
+const SAME_XY_MM: f64 = 1e-9;
+
 /// One atomic unit of the reorder: a run of moves the pass may relocate as
 /// a whole, but must never take apart.
 ///
@@ -113,16 +119,36 @@ fn flush_segment(
 /// research doc calls it `rebuild_clearance_z`; it is named for what it
 /// does, because a single rebuild height cannot express a per-peck
 /// re-entry clearance and would leave the cycle 2.6x over-fed.)
+///
+/// P36 A2: with `Some(c)`, a rapid that stays at the XY of the move before
+/// it does not frame a segment, at any height, when the run it would end
+/// already holds a fed move: a retract in place after a cut is the cycle's
+/// own motion, and the reorder exists to cut XY travel. (With no fed move
+/// in the run it frames as before, so a run of rapids with no cut is still
+/// dropped.) The height test alone failed when the R-plane of a drill was ON the
+/// ceiling (the retract plane of the op equal to the hole top + 5 mm, as
+/// on the wanaka job: both 30.5): each retract
+/// then framed a segment, each peck of a hole was its own segment at one
+/// XY, and the reorder put the pecks of a hole in any order. The wanaka
+/// job went down to the last peck first at 11 holes, a rapid through
+/// 3.5 mm of wood.
 fn split_into_segments(toolpath: &Toolpath, internal_link_ceiling_z: Option<f64>) -> Vec<Segment> {
     let mut segments = Vec::new();
     let mut current_moves: Vec<Move> = Vec::new();
     let mut current_start_idx: Option<usize> = None;
+    let mut previous: Option<P3> = None;
 
     for (idx, m) in toolpath.moves.iter().enumerate() {
+        let stays_in_place = previous.is_some_and(|p| xy_distance(&p, &m.target) <= SAME_XY_MM);
+        previous = Some(m.target);
+        let retract_of_the_cycle = stays_in_place
+            && current_moves
+                .iter()
+                .any(|c| !matches!(c.move_type, MoveType::Rapid));
         let frames_segment = matches!(m.move_type, MoveType::Rapid)
             && match internal_link_ceiling_z {
                 None => true,
-                Some(ceiling) => m.target.z >= ceiling - CEILING_EPS,
+                Some(ceiling) => m.target.z >= ceiling - CEILING_EPS && !retract_of_the_cycle,
             };
         if frames_segment {
             flush_segment(&mut segments, &mut current_moves, &mut current_start_idx);
@@ -1132,6 +1158,43 @@ mod tests {
         assert!((segments[0].end.x - 5.0).abs() < 1e-10);
         assert!((segments[1].start.x - 20.0).abs() < 1e-10);
         assert!((segments[1].end.x - 25.0).abs() < 1e-10);
+    }
+
+    /// P36 A2: a peck cycle whose R-plane is ON the ceiling (the retract
+    /// plane of the op is the R-plane) is one segment per hole. Before
+    /// the rule each retract to the R-plane framed a segment, so each peck
+    /// was its own segment and the reorder could put the pecks of one hole
+    /// in any order.
+    #[test]
+    fn a_peck_cycle_on_the_ceiling_is_one_segment_per_hole_p36() {
+        let safe_z = 17.0;
+        let mut tp = Toolpath::new();
+        for x in [0.0, 30.0] {
+            tp.rapid_to(P3::new(x, 0.0, safe_z));
+            // The rapid down to the R-plane, which is the safe Z.
+            tp.rapid_to(P3::new(x, 0.0, safe_z));
+            tp.feed_to(P3::new(x, 0.0, 9.0), 300.0);
+            tp.rapid_to(P3::new(x, 0.0, safe_z));
+            tp.rapid_to(P3::new(x, 0.0, 9.5));
+            tp.feed_to(P3::new(x, 0.0, 3.0), 300.0);
+            tp.rapid_to(P3::new(x, 0.0, safe_z));
+        }
+        let segments = split_into_segments(&tp, Some(safe_z));
+        assert_eq!(segments.len(), 2, "one segment per hole");
+        for (segment, x) in segments.iter().zip([0.0, 30.0]) {
+            let fed: Vec<f64> = segment
+                .moves
+                .iter()
+                .filter(|m| !matches!(m.move_type, MoveType::Rapid))
+                .map(|m| m.target.z)
+                .collect();
+            assert_eq!(fed, vec![9.0, 3.0], "both pecks of the hole at X {x}");
+            assert!(segment.moves.iter().all(|m| m.target.x == x));
+        }
+        // The rapid between the holes still frames (it travels in XY), and
+        // so does the rapid in place before the first feed of a hole.
+        assert_eq!(segments[0].src_range, 2..7);
+        assert_eq!(segments[1].src_range, 9..14);
     }
 
     /// C1: with an internal-link ceiling, a rapid BELOW it does not split.

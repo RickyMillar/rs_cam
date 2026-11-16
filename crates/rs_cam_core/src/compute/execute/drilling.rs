@@ -95,7 +95,10 @@ pub fn build_drill_op_for_config(
             let holes = drill_hole_columns(
                 cfg,
                 &selected_holes(&fitted, &spans),
-                heights.top_z,
+                DrillTops {
+                    top_z: heights.top_z,
+                    stock_top_z: stock_bbox.max.z,
+                },
                 column_stock(op, initial_stock),
                 tool_def.radius(),
             );
@@ -328,23 +331,36 @@ fn unique_holes(holes: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
 /// own hole floor).
 ///
 /// On fresh stock (`initial_stock == None`) every hole runs from `top_z`
-/// to its floor, with the R-plane `effective_safe_z(cfg.retract_z, top_z)`.
+/// to its floor.
 ///
 /// On the remaining stock the top of each hole is the highest material in
 /// the reach of the tool over the hole (`standing_material::column_top`
 /// with the tool radius), capped at `top_z`. A hole in a cleared pocket
-/// then starts at the pocket floor, not in the air above it. The R-plane
-/// keeps the clearance it has above `top_z` on fresh stock, so the first
-/// peck starts that clearance above the floor.
+/// then starts at the pocket floor, not in the air above it.
+///
+/// P36 A1 (the R-plane rule): the R-plane of a hole is the clearance above
+/// the material that STANDS over the hole, not above the cut start. The
+/// two differ when the Top Z is pinned below the wood: the wanaka Drill
+/// (Top Z 16.5, stock to 25.5 over one hole) sent a rapid to Z 21.5.
+///
+/// - With stock evidence the standing top is the column top, not capped.
+/// - With no evidence (fresh stock, or a hole that the grid cannot see) it
+///   is [`crate::dressup::fresh_stock_top_z`] (G-PECKSPLIT, ruling R1): a
+///   pinned top below the stock top does not lower a rapid plane.
+/// - A standing top at or below `top_z` keeps the clearance a fresh hole
+///   has above `top_z`, so the first peck of a hole in a cleared pocket
+///   starts that clearance above the floor (D8). A standing top above
+///   `top_z` is a fresh column of that height:
+///   `effective_safe_z(cfg.retract_z, standing top)`. The two agree at
+///   `top_z`.
 ///
 /// A hole whose column holds no material down to its bottom has nothing
-/// to cut and is dropped. A hole that the grid cannot see keeps the box
-/// top (no evidence, so no change). The stock is read only when the W2.1
+/// to cut and is dropped. The stock is read only when the W2.1
 /// guard (`StockReference::resolve`) finds it in the frame of the holes.
 fn drill_hole_columns(
     cfg: &crate::compute::operation_configs::DrillConfig,
     holes_in: &[([f64; 2], HoleSpan)],
-    top_z: f64,
+    tops: DrillTops,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     tool_radius: f64,
 ) -> Vec<crate::ops::drill_op::DrillHole> {
@@ -354,7 +370,17 @@ fn drill_hole_columns(
     if holes_in.is_empty() {
         return Vec::new();
     }
+    let top_z = tops.top_z;
     let clearance = crate::compute::config::effective_safe_z(cfg.retract_z, top_z) - top_z;
+    // The standing top where the stock gives no answer.
+    let fresh_top = crate::dressup::fresh_stock_top_z(tops.stock_top_z, top_z);
+    let r_plane_over = |standing_top: f64| {
+        if standing_top > top_z {
+            crate::compute::config::effective_safe_z(cfg.retract_z, standing_top)
+        } else {
+            standing_top + clearance
+        }
+    };
     let deepest = holes_in
         .iter()
         .map(|(_, span)| span.floor_z)
@@ -380,12 +406,14 @@ fn drill_hole_columns(
         .iter()
         .filter_map(|&(xy, span)| {
             let bottom_z = span.floor_z;
-            let hole_top = match stock
+            // The cut start, and the top of the material that stands over
+            // the hole (the R-plane reads the second).
+            let (hole_top, standing_top) = match stock
                 .map(|s| column_top(s, crate::geo::P2::new(xy[0], xy[1]), tool_radius))
             {
-                None | Some(ColumnTop::NoEvidence) => top_z,
-                Some(ColumnTop::Top(t)) => t.min(top_z),
-                Some(ColumnTop::Empty) => bottom_z,
+                None | Some(ColumnTop::NoEvidence) => (top_z, fresh_top),
+                Some(ColumnTop::Top(t)) => (t.min(top_z), t),
+                Some(ColumnTop::Empty) => (bottom_z, bottom_z),
             };
             if hole_top <= bottom_z {
                 dropped += 1;
@@ -395,7 +423,7 @@ fn drill_hole_columns(
                 xy,
                 top_z: hole_top,
                 bottom_z,
-                retract_z: hole_top + clearance,
+                retract_z: r_plane_over(standing_top),
             })
         })
         .collect();
@@ -407,6 +435,16 @@ fn drill_hole_columns(
         );
     }
     holes
+}
+
+/// The two tops a Drill reads (P36 A1): where the cut starts, and where the
+/// stock box ends. Named fields, so a caller cannot swap them.
+#[derive(Debug, Clone, Copy)]
+struct DrillTops {
+    /// The resolved Top Z of the op (F19): the cut start.
+    top_z: f64,
+    /// The top of the stock box in the emission frame.
+    stock_top_z: f64,
 }
 
 /// The stock that sets the hole tops of `op` (C2). The row's `rest_use`
@@ -447,7 +485,10 @@ pub(crate) fn generate_drill(
     let holes = drill_hole_columns(
         cfg,
         &holes_in,
-        ctx.heights.top_z,
+        DrillTops {
+            top_z: ctx.heights.top_z,
+            stock_top_z: ctx.stock_bbox.max.z,
+        },
         column_stock(op, prepared.territory().unguarded_stock()),
         ctx.tool_def.radius(),
     );
