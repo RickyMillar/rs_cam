@@ -1,0 +1,858 @@
+diff --git a/crates/rs_cam_cli/src/project.rs b/crates/rs_cam_cli/src/project.rs
+index 7b85126ff..c19523c87 100644
+--- a/crates/rs_cam_cli/src/project.rs
++++ b/crates/rs_cam_cli/src/project.rs
+@@ -659,6 +659,12 @@ struct ProjectSummary {
+     /// NOT mean the project carries no such parameter — the rule library is
+     /// closed at four, and `compute::validate`'s header says why.
+     default_findings: Vec<rs_cam_core::compute::validate::StaleDefault>,
++    /// P38 (G-ROUGHCOV): the coverage reading of each enabled 3D Rough of
++    /// the run, measured or abstained (`SimulationTriage::coverage`, the
++    /// list MCP gives). A reading with no island is a measured zero; an
++    /// abstention gives its reason. EMPTY: the run has no 3D Rough, or it
++    /// kept no cut trace.
++    rough_coverage: Vec<rs_cam_core::stock::standing_islands::RoughCoverageReading>,
+     /// W5 item (f): operations that never generated because an upstream
+     /// simulated stock was missing. An EMPTY list means none were blocked.
+     awaiting_prior_stock: Vec<BlockedEntry>,
+@@ -1287,11 +1293,15 @@ pub fn run_project_command(
+     // reader sees the classes — safety, then actions, then a bounded
+     // advisory list that says how much it withheld — rather than a single
+     // string plus an unbounded pile of runs.
++    let triage = session.triage_with_holder_collisions(holder_counts);
+     print_triage_report(
+-        &session.triage_with_holder_collisions(holder_counts),
++        &triage,
+         diag.cut_metrics_not_measured
+             .map(rs_cam_core::session::CutMetricsNotMeasured::as_str),
+     );
++    // P38: the coverage reading of each 3D Rough, measured or abstained, as
++    // MCP gives it (`SimulationTriage::coverage`).
++    let rough_coverage = triage.coverage;
+     let stock_change_rows = session.stock_change_rows();
+     print_stock_changes(&stock_change_rows);
+ 
+@@ -1385,6 +1395,7 @@ pub fn run_project_command(
+         collision_checks_failed: collision_check_failed.len(),
+         rapid_collision_count: diag.rapid_collision_count,
+         default_findings,
++        rough_coverage,
+         awaiting_prior_stock: blocked,
+         simulation_resolution: resolution_used,
+         per_toolpath,
+@@ -1767,6 +1778,18 @@ fn print_triage_report(
+         eprintln!();
+     }
+ 
++    if !triage.coverage.is_empty() {
++        eprintln!("Rough coverage:");
++        for reading in &triage.coverage {
++            eprintln!(
++                "  toolpath {}: {}",
++                reading.toolpath_id.raw(),
++                reading.narration_sentence()
++            );
++        }
++        eprintln!();
++    }
++
+     if !triage.advisories.items.is_empty() {
+         eprintln!("Advisories:");
+         for f in &triage.advisories.items {
+diff --git a/crates/rs_cam_core/src/compute/toolpath_stats.rs b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+index 6095a5114..b8fcc999a 100644
+--- a/crates/rs_cam_core/src/compute/toolpath_stats.rs
++++ b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+@@ -374,7 +374,8 @@ pub struct ToolpathStats {
+     /// P37: the stock a 3D Rough held as material and did not plan
+     /// ([`RoughLeftStockFinding`]). `None` = the planner dropped nothing,
+     /// or the op is not a 3D Rough. Standing pieces raise
+-    /// `geom.rough_left_stock` (Caution, report-only).
++    /// `geom.rough_left_stock` (Caution; the export gate `Gate::RoughLeftStock`
++    /// writes it in the G-code header).
+     pub rough_left_stock: Option<RoughLeftStockFinding>,
+     /// UX-7b (SAFETY): what the model gouge guard measured on the emitted
+     /// moves. `None` = not measured (the row is exempt, the toolpath model
+diff --git a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+index 6150d4c9a..61d17161e 100644
+--- a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
++++ b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+@@ -225,7 +225,12 @@ fn rough_left_stock(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
+         source: Source::StaticValidation,
+         face: crate::diagnostics::presentation::face(ids::GEOM_ROUGH_LEFT_STOCK),
+         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_ROUGH_LEFT_STOCK),
+-        message: format!("{finding} [Recorded at generation. Report-only: no gate consumes this.]"),
++        // The export gate `Gate::RoughLeftStock` writes this finding in the
++        // G-code header (`ProjectSession::export_warnings`).
++        message: format!(
++            "{finding} [Recorded at generation. The export writes this warning in the G-code \
++             header; it does not refuse.]"
++        ),
+         evidence: None,
+         fix: None,
+         supersedes: vec![],
+diff --git a/crates/rs_cam_core/src/session/compute/simulation.rs b/crates/rs_cam_core/src/session/compute/simulation.rs
+index e6a70d514..5ef9f2c34 100644
+--- a/crates/rs_cam_core/src/session/compute/simulation.rs
++++ b/crates/rs_cam_core/src/session/compute/simulation.rs
+@@ -534,6 +534,12 @@ impl ProjectSession {
+         let not_measurable = RoughCoverageOutcome::NotMeasurable;
+         let outcome = match (&tc.operation, checkpoint) {
+             (crate::compute::catalog::OperationConfig::Adaptive3d(cfg), Some(checkpoint)) => {
++                // P38: the abstention stays until a sentry proves the frame
++                // match. By reading, the checkpoint stock and the generation
++                // inputs are both in the frame of the op's setup
++                // (`SimCheckpointMesh::mesh_stock`,
++                // `resolve_generation_inputs`), so the reading needs no
++                // transform (P38 section 6.5).
+                 if checkpoint.mesh_frame.is_some() {
+                     not_measurable(RoughCoverageAbstention::SetupNotIdentity)
+                 } else {
+diff --git a/crates/rs_cam_core/src/session/compute/toolpath_diagnostics.rs b/crates/rs_cam_core/src/session/compute/toolpath_diagnostics.rs
+index fa73a91b9..336357603 100644
+--- a/crates/rs_cam_core/src/session/compute/toolpath_diagnostics.rs
++++ b/crates/rs_cam_core/src/session/compute/toolpath_diagnostics.rs
+@@ -317,6 +317,19 @@ impl ProjectSession {
+         // no other source makes them, so none is listed twice. The triage
+         // advisories (air-cut hotspots) are not appended.
+         let triage = self.simulation_triage(evidence);
++        // P38 (D-8): a measured coverage reading of this rough, with or
++        // without islands, supersedes the planner's statement of the stock
++        // it left (`geom.rough_left_stock`): the simulation read the stock.
++        // An island finding names the id in its `supersedes`; a measured
++        // zero has no diagnostic, so the reading itself is the rule here.
++        // Only a run that simulated the toolpath as it is now supersedes
++        // (`sim_trace_is_fresh_for`, the rule of each measured answer).
++        let fresh = evidence
++            .cut_trace
++            .is_some_and(|trace| self.sim_trace_is_fresh_for(trace, index));
++        if fresh && triage.coverage_is_measured(id) {
++            out.retain(|d| d.id.as_str() != crate::diagnostics::ids::GEOM_ROUGH_LEFT_STOCK);
++        }
+         out.extend(triage.own_toolpath_findings(id).cloned());
+         // W1: the appended findings get the fit too, so no anchor on this
+         // list names a field the op does not draw.
+diff --git a/crates/rs_cam_core/src/stock/CLAUDE.md b/crates/rs_cam_core/src/stock/CLAUDE.md
+index d680a7439..0eb329d4d 100644
+--- a/crates/rs_cam_core/src/stock/CLAUDE.md
++++ b/crates/rs_cam_core/src/stock/CLAUDE.md
+@@ -29,7 +29,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
+   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
+ - `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
+   realised step + one cell (`commanded_step_mm`), never its median bite.
+-- `rough_leaves_islands` (G-ROUGHCOV A3): target = the plan's floor per centre (`adaptive3d::intended_floor_grid`, never a copy) eroded by the tool disc; no centre in reach = not compared; bar = stock to leave + one cell (the leave is in the target once); `touches_wall` = a neighbour wall at least as tall as the island (op-independent, A4); free islands list first; `cell > stock to leave` abstains.
++- `rough_leaves_islands` (G-ROUGHCOV A3): target = the plan's floor per centre (`adaptive3d::intended_floor_grid`, never a copy) eroded by the tool disc; no centre in reach = not compared; bar = stock to leave + one cell (the leave is in the target once); `touches_wall` = a neighbour wall at least as tall as the island (op-independent, A4); free islands list first; P38: it runs at every stock to leave (0 too); a setup that is not identity still abstains (no sentry proves the frame match); a measured reading supersedes `geom.rough_left_stock` on `diagnose_toolpath_with_evidence` (`SimulationTriage::coverage_is_measured`).
+ 
+ ## Sentries (`cargo test -p rs_cam_core -q <args>`)
+ 
+diff --git a/crates/rs_cam_core/src/stock/sim_triage.rs b/crates/rs_cam_core/src/stock/sim_triage.rs
+index c9e66075b..5e34ff5e1 100644
+--- a/crates/rs_cam_core/src/stock/sim_triage.rs
++++ b/crates/rs_cam_core/src/stock/sim_triage.rs
+@@ -324,6 +324,20 @@ impl SimulationTriage {
+             })
+     }
+ 
++    /// P38 (D-8): true when this run measured the coverage of the 3D Rough
++    /// `toolpath_id` (with or without islands). A measured reading
++    /// supersedes `geom.rough_left_stock` of the same toolpath.
++    #[must_use]
++    pub fn coverage_is_measured(&self, toolpath_id: ToolpathId) -> bool {
++        self.coverage.iter().any(|r| {
++            r.toolpath_id == toolpath_id
++                && matches!(
++                    r.outcome,
++                    crate::stock::standing_islands::RoughCoverageOutcome::Measured(_)
++                )
++        })
++    }
++
+     /// Highest severity anywhere in the actionable lists.
+     ///
+     /// **Test door.** The `#[cfg(test)]` module of this file is the only
+@@ -1153,8 +1167,9 @@ pub(crate) fn rough_coverage_finding(
+     let mut message = format!(
+         "{}the rough leaves {count} island(s) standing more than {:.2} mm above its target \
+          (the floor its plan can reach with its tool, {:.2} mm stock to leave in it), \
+-         {at_wall} of them against a wall: {:.1} mm2 in all at cell {:.3} mm. Free islands \
+-         first, then the ones at a wall, tallest first in each group:",
++         {at_wall} of them against a wall: {:.1} mm2 in all at cell {:.3} mm. Positions are \
++         in the setup frame. Free islands first, then the ones at a wall, tallest first in \
++         each group:",
+         name.map_or_else(String::new, |n| format!("\"{n}\": ")),
+         coverage.bar_mm,
+         coverage.stock_to_leave_mm,
+@@ -1221,7 +1236,9 @@ pub(crate) fn rough_coverage_finding(
+                 unit: "mm".to_owned(),
+             }),
+             fix: None,
+-            supersedes: vec![],
++            // P38 (D-8): the measured answer of this rough supersedes the
++            // planner's statement of the stock it left.
++            supersedes: vec![DiagnosticId::from(ids::GEOM_ROUGH_LEFT_STOCK)],
+             group: None,
+             suppressed_diagnostics: vec![],
+         },
+diff --git a/crates/rs_cam_core/src/stock/standing_islands.rs b/crates/rs_cam_core/src/stock/standing_islands.rs
+index e0a04d6de..9c06387cf 100644
+--- a/crates/rs_cam_core/src/stock/standing_islands.rs
++++ b/crates/rs_cam_core/src/stock/standing_islands.rs
+@@ -380,13 +380,6 @@ pub struct RoughTarget<'a> {
+ #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+ #[serde(rename_all = "snake_case", tag = "kind")]
+ pub enum RoughCoverageAbstention {
+-    /// The simulation cell is coarser than the stock to leave, so the bar
+-    /// (`stock_to_leave + one cell`) is mostly cell noise: the reading cannot
+-    /// tell an island of the spec height from quantisation.
+-    CellCoarserThanStockToLeave {
+-        cell_mm: f64,
+-        stock_to_leave_mm: f64,
+-    },
+     /// The op's setup is not the identity setup. Its checkpoint stock is in
+     /// the setup-local frame; this pass reads the identity frame only.
+     SetupNotIdentity,
+@@ -499,13 +492,6 @@ impl RoughCoverageAbstention {
+     #[must_use]
+     pub fn describe(&self) -> String {
+         match self {
+-            Self::CellCoarserThanStockToLeave {
+-                cell_mm,
+-                stock_to_leave_mm,
+-            } => format!(
+-                "the {cell_mm:.3} mm simulation cell is coarser than the \
+-                 {stock_to_leave_mm:.3} mm stock to leave; simulate at a cell at or under it"
+-            ),
+             Self::SetupNotIdentity => {
+                 "the op's setup is not an identity setup (face up Top, no rotation), which \
+                  this reading needs"
+@@ -596,12 +582,30 @@ impl RoughCoverageAbstention {
+ /// (`stock/sim_triage.rs`, `commanded_tolerance_mm`): a dexel column top is
+ /// quantised to its cell. There is no other threshold.
+ ///
+-/// # Measurability
++/// # A cell coarser than the stock to leave (P38)
+ ///
+-/// `NotMeasurable` when the cell is coarser than the stock to leave
+-/// (`cell > stock_to_leave`). The bar is then more cell than spec, and an
+-/// island of the spec height cannot be told from quantisation (stock
+-/// `CLAUDE.md`: a `NotMeasurable` metric abstains).
++/// The reading runs at every stock to leave, 0 included, with the same bar.
++/// Before P38 it abstained when `cell > stock_to_leave`, so a rough with a
++/// stock to leave of 0 was never measured. The resolution supports the bar:
++///
++/// * A column top is exact in Z. The cell is the XY resolution: on a face
++///   at slope `θ` a column reads its top within `cell × tan θ`, at most one
++///   cell up to 45 degrees. That is the one cell of the bar.
++/// * The target is never below the true reach (the limits above), so a
++///   standing height is never read too large by the target.
++///
++/// So an island above `stock_to_leave + one cell` stands above the spec at
++/// every stock to leave. What a coarse cell loses is the band under the
++/// bar: an island that stands between the stock to leave and one cell above
++/// it is not reported. [`RoughCoverage::bar_mm`] and
++/// [`RoughCoverage::cell_mm`] state both, and the narration gives them.
++///
++/// # The frame
++///
++/// The stock and the target are in the frame of the op's setup, so every
++/// position is in the setup frame. The session still abstains for a setup
++/// that is not identity (`SetupNotIdentity`): no sentry proves the frame
++/// match there yet (P38 section 6.5).
+ #[must_use]
+ pub fn measure_rough_coverage(
+     stock: &TriDexelStock,
+@@ -609,15 +613,13 @@ pub fn measure_rough_coverage(
+ ) -> RoughCoverageOutcome {
+     let grid = &stock.z_grid;
+     let cell = grid.cell_size;
+-    let stl = target.stock_to_leave_mm;
+-    if !(cell.is_finite() && cell > 0.0 && stl.is_finite() && cell <= stl) {
+-        return RoughCoverageOutcome::NotMeasurable(
+-            RoughCoverageAbstention::CellCoarserThanStockToLeave {
+-                cell_mm: cell,
+-                stock_to_leave_mm: stl,
+-            },
+-        );
+-    }
++    // A stock to leave is never negative (the op's own domain); a value
++    // that is not a number reads as 0.
++    let stl = if target.stock_to_leave_mm.is_finite() {
++        target.stock_to_leave_mm.max(0.0)
++    } else {
++        0.0
++    };
+     let tolerance = crate::stock::sim_triage::commanded_tolerance_mm(Some(cell));
+     let bar = stl + tolerance;
+     let floor = crate::adaptive3d::intended_floor_grid(
+@@ -1037,30 +1039,29 @@ mod tests {
+         assert!(abstained.narration_sentence().contains("not measured"));
+     }
+ 
+-    /// New pin: a cell coarser than the stock to leave abstains.
++    /// P38 (D-2): a cell coarser than the stock to leave is measured, with
++    /// the bar at the stock to leave plus one cell. Before P38 it abstained.
+     #[test]
+-    fn a_cell_coarser_than_the_stock_to_leave_abstains() {
++    fn a_cell_coarser_than_the_stock_to_leave_is_measured_p38() {
+         let model = flat_model(10.0, 2.0);
+         let index = SpatialIndex::build_auto(&model);
+-        let stock = stock_with_block(10.0, 0.5, 2.0, [4.0, 4.0, 6.0, 6.0]);
+         let cutter = FlatEndmill::new(6.0, 20.0);
+-        let target = RoughTarget {
+-            mesh: &model,
+-            index: &index,
+-            cutter: &cutter,
+-            stock_to_leave_mm: 0.2,
+-            pinned_floor_z: None,
+-            centre: None,
+-        };
+-        assert_eq!(
+-            measure_rough_coverage(&stock, &target),
+-            RoughCoverageOutcome::NotMeasurable(
+-                RoughCoverageAbstention::CellCoarserThanStockToLeave {
+-                    cell_mm: 0.5,
+-                    stock_to_leave_mm: 0.2,
+-                }
+-            )
+-        );
++        for stl in [0.2, 0.0] {
++            let target = RoughTarget {
++                mesh: &model,
++                index: &index,
++                cutter: &cutter,
++                stock_to_leave_mm: stl,
++                pinned_floor_z: None,
++                centre: None,
++            };
++            let stock = stock_with_block(10.0, 0.5, 2.0, [4.0, 4.0, 6.0, 6.0]);
++            let RoughCoverageOutcome::Measured(c) = measure_rough_coverage(&stock, &target) else {
++                panic!("the reading must run at a stock to leave of {stl}");
++            };
++            assert!((c.bar_mm - (stl + 0.5)).abs() < 1e-12, "{c:?}");
++            assert!((c.cell_mm - 0.5).abs() < 1e-12, "{c:?}");
++        }
+     }
+ 
+     /// The reachable floor by brute force: the minimum over every centre
+diff --git a/crates/rs_cam_core/tests/a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs b/crates/rs_cam_core/tests/a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs
+index cb701b51d..139595cd2 100644
+--- a/crates/rs_cam_core/tests/a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs
++++ b/crates/rs_cam_core/tests/a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs
+@@ -3,7 +3,7 @@
+ //! Claim: a 3D Rough that leaves an island of material more than its stock
+ //! to leave plus one cell above its own target is reported, with the
+ //! island's area, height and width; an island below that bar is not; and a
+-//! cell coarser than the stock to leave abstains.
++//! cell coarser than the stock to leave is measured with the same bar (P38).
+ //!
+ //! The target is the rough's own reachable floor (A3,
+ //! `stock::standing_islands::measure_rough_coverage`): the planner's
+@@ -52,8 +52,7 @@ use rs_cam_core::stock::sim_measurability::MeasurabilityReport;
+ use rs_cam_core::stock::sim_triage::{SimulationTriage, TriageClass, TriageInputs};
+ use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
+ use rs_cam_core::stock::standing_islands::{
+-    RoughCoverage, RoughCoverageAbstention, RoughCoverageOutcome, RoughCoverageReading,
+-    RoughTarget, measure_rough_coverage,
++    RoughCoverage, RoughCoverageOutcome, RoughCoverageReading, RoughTarget, measure_rough_coverage,
+ };
+ use rs_cam_core::tool::FlatEndmill;
+ 
+@@ -263,33 +262,71 @@ fn an_island_below_the_bar_is_not_reported() {
+     assert_eq!(t.coverage.len(), 1, "a measured zero is still published");
+ }
+ 
+-/// (c) A cell coarser than the stock to leave abstains, and the triage
+-/// raises nothing for it.
++/// (c) P38 (D-2): a cell coarser than the stock to leave is measured, at a
++/// stock to leave of 0 too. The bar is the stock to leave plus one cell. A
++/// block that stands above it is an island, and its finding names
++/// `geom.rough_left_stock` as superseded (D-8). A stock at its target is a
++/// measured zero. Before P38 each of these abstained
++/// (`cell_coarser_than_stock_to_leave`).
+ #[test]
+-fn a_cell_coarser_than_the_stock_to_leave_is_not_measurable() {
++fn a_cell_coarser_than_the_stock_to_leave_is_measured_p38() {
+     let model = mesh_of(&[flat(0.0, 0.0, SIZE_MM, SIZE_MM, MODEL_Z_MM)]);
+     let index = SpatialIndex::build_auto(&model);
+     let coarse = 0.5;
+-    let stl = 0.25;
+-    let s = stock(
+-        coarse,
+-        |_, _| MODEL_Z_MM + stl,
+-        [10.0, 10.0, 12.0, 15.0],
+-        None,
+-    );
+-    let outcome = measure_rough_coverage(&s, &rough_target(&model, &index, &cutter(), stl, None));
+-    assert_eq!(
+-        outcome,
+-        RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::CellCoarserThanStockToLeave {
+-            cell_mm: coarse,
+-            stock_to_leave_mm: stl,
+-        })
+-    );
+-    let t = triage(&RoughCoverageReading {
+-        toolpath_id: ToolpathId::from_raw(1),
+-        outcome,
+-    });
+-    assert!(!has_finding(&t));
++    for stl in [0.25, 0.0] {
++        let tool = cutter();
++        let target = rough_target(&model, &index, &tool, stl, None);
++        // A block of 2 x 5 mm at the stock top.
++        let with_block = stock(
++            coarse,
++            |_, _| MODEL_Z_MM + stl,
++            [10.0, 10.0, 12.0, 15.0],
++            None,
++        );
++        let outcome = measure_rough_coverage(&with_block, &target);
++        let RoughCoverageOutcome::Measured(c) = &outcome else {
++            panic!("stock to leave {stl}: the reading must run, got {outcome:?}");
++        };
++        assert!((c.bar_mm - (stl + coarse)).abs() < 1e-12, "{c:?}");
++        assert_eq!(c.islands.len(), 1, "{c:?}");
++        let island = c.islands.first().expect("one island");
++        assert!(
++            (island.max_standing_mm - (STOCK_TOP_MM - MODEL_Z_MM - stl)).abs() < 1e-6,
++            "{island:?}"
++        );
++        let t = triage(&RoughCoverageReading {
++            toolpath_id: ToolpathId::from_raw(1),
++            outcome,
++        });
++        assert!(has_finding(&t));
++        let finding = t
++            .findings()
++            .find(|f| f.diagnostic.id.as_str() == ids::PROJECT_ROUGH_LEAVES_ISLANDS)
++            .expect("the island finding");
++        assert!(
++            finding
++                .diagnostic
++                .supersedes
++                .iter()
++                .any(|id| id.as_str() == ids::GEOM_ROUGH_LEFT_STOCK),
++            "the measured answer supersedes the planner statement"
++        );
++        assert!(t.coverage_is_measured(ToolpathId::from_raw(1)));
++
++        // The stock at its target: a measured zero, no finding.
++        let clean = stock(coarse, |_, _| MODEL_Z_MM + stl, NO_BLOCK, None);
++        let outcome = measure_rough_coverage(&clean, &target);
++        let RoughCoverageOutcome::Measured(c) = &outcome else {
++            panic!("stock to leave {stl}: the reading must run, got {outcome:?}");
++        };
++        assert!(c.islands.is_empty(), "{c:?}");
++        let t = triage(&RoughCoverageReading {
++            toolpath_id: ToolpathId::from_raw(1),
++            outcome,
++        });
++        assert!(!has_finding(&t));
++        assert!(t.coverage_is_measured(ToolpathId::from_raw(1)));
++    }
+ }
+ 
+ /// (d) Where the model has no surface (a through hole, the band outside
+diff --git a/planning/feeds_contract_2026-11-03/phases/P38_REST_ROUGH_DROPS_2026-11-17.md b/planning/feeds_contract_2026-11-03/phases/P38_REST_ROUGH_DROPS_2026-11-17.md
+index 973140e7b..50dd554b7 100644
+--- a/planning/feeds_contract_2026-11-03/phases/P38_REST_ROUGH_DROPS_2026-11-17.md
++++ b/planning/feeds_contract_2026-11-03/phases/P38_REST_ROUGH_DROPS_2026-11-17.md
+@@ -284,3 +284,319 @@ for "a cell at or under 0.000 mm".
+   measured, not predicted; if they are most of the islands, a width rule is needed.
+ - Q-6: the reading of id 1 (18 mm tool, floor 11.0) is of the order of the estimate of P37
+   section 5.3 (6 885 mm2 in 12 islands at a bar of one cell).
++
++### 6.4 Results (release CLI of the W1 + W2 tree, the proposal and its copy with no pocket op)
++
++| Prediction | Result |
++|---|---|
++| Q-1 same G-code | true: `cmp` of the W1 and the W2 G-code of the proposal gives nothing. The rivmap copy is still the HEAD file. |
++| Q-2 measured | true: ids 1 and 2 read `measured`, cell 0.2, bar 0.200 mm. Before: `not_measurable`, `cell_coarser_than_stock_to_leave`. |
++| Q-3 the wall strips | true: the largest island of id 2 is 8 254.5 mm2, 20.70 mm tall, box X 24.3 to 333.3, Y 30.7 to 418.3: it holds the strips at the four cavity walls, the mech pockets and the step shelf as one connected island. "No centre in reach = not compared" does not hide them: the centres are every cell inside the containment, not the cells of a plan region. The reading is the same with and without the pocket op (it reads the stock after id 2). |
++| Q-4 the class | true: both roughs are in "Safety" (Critical): id 2 has islands to 25.00 mm, id 1 to 14.50 mm, above one pass plus one cell. The export writes the file; the header has the same 24 warning lines (no gate reads `project.rough_leaves_islands`). |
++| Q-5 one-cell islands | id 2: 17 of its 39 islands are one cell wide, all at a wall, 0.9 mm2 in all. Id 1: 0 of 7. So the wall quantisation is 0.006 % of the area and 44 % of the island count of id 2. No width rule was added (D-11). |
++| Q-6 id 1 | 14 069.4 mm2 in 7 islands, all at a wall, the tallest 14.50 mm. The P37 estimate was 6 885 mm2 in 12. The reading also holds two bands outside the part, X -18.5 to -0.1 (1 412.4 mm2 each, 14.50 mm), which the estimate did not compare. |
++
++Id 2 in full: 15 088.0 mm2 in 39 islands, 37 at a wall, 2 free (the tallest free one 9.23 mm
++high, 7.72 mm wide at (92.3, 181.1)). It lists the slot as its own island: 413.8 mm2, 21.00 mm,
++8.60 mm wide, box X 224.5 to 272.9, Y 45.7 to 54.3. It lists four bands of 905.7 mm2, 25.00 mm
++tall, outside the part (X -18.5 to -1.5 and X 359.5 to 376.5): the reading compares the stock
++that a centre inside the containment can reach, and the stock there is not cut by a rough.
++
++Not verified in W2:
++
++- D-8 on a surface: the CLI prints no per-toolpath diagnostics list. The rule is one `retain` on
++  `diagnose_toolpath_with_evidence` with the freshness test. No test holds it. The island finding
++  carries `supersedes` (the sentry `..._g_roughcov` holds that), but the reducer
++  (`apply_supersession`) runs before the triage findings join, so on this door the entry does
++  nothing by itself.
++- D-8 is partial. These surfaces still show both findings: the GUI inspector (it builds its own
++  inputs, `ui/properties/operations/validate.rs`), `diagnose_toolpath_with_held_trace` (the MCP
++  walk of viz), and the export header (`Gate::RoughLeftStock`; `export_warnings` takes no
++  evidence, and `project.rough_leaves_islands` has no gate). The pattern that closes it is the
++  flute-reach one: an input on `ToolpathDiagnoseInputs` and a measured-clean row.
++- The setup that is not identity: section 6.5.
++
++### 6.5 `setup_not_identity`: it can be lifted, and it is NOT lifted in this patch
++
++- What blocks it: one branch (`rough_coverage_at`: `checkpoint.mesh_frame.is_some()`), a scope
++  decision of G-ROUGHCOV ("this pass reads the identity frame only"). No transform is missing:
++  `mesh_stock` is the setup-local stock (`compute/simulate.rs`), `resolve_generation_inputs`
++  gives the mesh, the heights and the boundary in the same frame, and a rest op of such a setup
++  reads the same stock with no transform.
++- One run with the branch removed (the W2 build before this decision; setup "3 Front" alone,
++  416 s): id 20 "Front bulk rough 18 mm" reads measured, bar 0.700 (stock to leave 0.5), 29 882.7
++  mm2 in 689 islands, the tallest 12.00 mm; id 21 "Front 3D rough" 27 541.5 mm2 in 1 535 islands.
++  The largest island of each has the box X 41.2 to 353.8, Y 31.2 to 343.8: the footprint of the
++  relief in the flipped setup. 530 of the 689 islands of id 20 and 1 110 of the 1 535 of id 21 are
++  one cell wide (46.8 and 100.6 mm2): a terrain at a cell of 0.2 mm.
++- That run does not prove the frame match. An island lies inside the target footprint in any
++  frame, and 28 % of the compared area above the bar after a bulk rough is not explained.
++- So the abstention is back in the code (the variant `SetupNotIdentity` stays). To lift it: a
++  sentry with a model that is not symmetric in a flipped setup (a step on one side), a stock cut
++  to its target, and a reading of zero; then the branch goes. A separate, small job (D-10).
++
++## 7. W3: "Contour each level" on id 2 (diagnosis only; arm A of P37)
++
++Measured on the G-code of arm A of P37 (`p37/out_armA.nc`) with `p38/w3.py` (the moves that
++lower a node more than 0.3 mm below the target) and the gap map. Nothing is built.
++
++### 7.1 The cut below the target is an instrument limit, not a gouge
++
++- Arm A has 165.5 mm2 below the target after id 2; the proposal has 21.4 mm2.
++- 390 moves of arm A make the area. Each one has its tool centre one tool radius from a wall
++  line, and the node that it lowers is ON the wall line: tool Y 112.5 and node Y 109.5 (the
++  cavity wall, target 20.5); tool Y 35.5 and node Y 32.5 (target 25.5); tool Y 415.5 and node
++  Y 418.5; tool X 327.3 and node X 329.9 to 330.3. The target raster gives the wall top to a
++  node on the line (the limit that P37 section 5.2 names for arms B and C).
++- With the target lowered to the lowest node within one node (0.2 mm): the proposal has 2.2
++  mm2 and arm A 4.3 mm2. Within two nodes: 0.8 and 1.0 mm2.
++- So 161 of the 165.5 mm2 are nodes one node or less from a wall line. The 2.1 mm2 that arm A
++  adds past one node is at the lake rims (the deepest 3.95 mm, on nodes two nodes from the
++  line). The replay cannot tell a gouge of 0.4 mm at a vertical wall from its own raster. The
++  product has a reading for this (`safety.cuts_into_model`); it was not run on arm A.
++
++### 7.2 The band: the contour clears two walls of four
++
++Cavity wall band above the reach surface after id 2 (before any later op):
++
++| Wall | Proposal mm2 | Arm A mm2 | Stock top that stays in arm A |
++|---|---|---|---|
++| X 24.5 | 798.6 | 753.9 | 25.5 (never cut) |
++| X 333.5 | 1 022.7 | 993.2 | 25.5 from X 331.9, the 17.2 cusps from X 330.3 |
++| Y 109.5 | 784.4 | 67.8 | 13.5 |
++| Y 418.5 | 784.4 | 25.2 | 16.5 |
++
++- The level contours cut the walls Y 109.5 and Y 418.5 to size at levels 19.5 and 16.55 (the
++  cross sections read 16.55 up to the wall line).
++- No contour ran on the walls X 24.5 and X 333.5: the stock top there is the uncut 25.5.
++- The cause of the difference is not found. The candidates, each in `waterline_cleanup` on the
++  By Area path (C4b):
++  1. `keeps_to_region`: a contour point is cut only when no cell in reach holds material of
++     ANOTHER By Area job above the level. The wall X 333.5 has the job "region 2" (X 314.8 to
++     330.4, the cusps of the 18 mm rough, 17.2 above level 16.55) along its full length. The
++     wall X 24.5 has six small jobs (regions 4, 21, 24, 26, 30, 31).
++  2. The contour is one closed ring of the model section, and the slope filter and the
++     left-piece skip accept or reject a whole ring; they cannot give two walls of four.
++- Next probe (cheap, one run): count the points that `keep` rejects per contour and per job at
++  levels 19.5 and 16.55, with the job that owns the blocking cell.
++- The cost (+3 327 s) is in the same place: the wall cleanup runs for each of the 38 jobs at
++  each of its levels, on each ring of the model section at that Z, and the jobs are small.
++
++### 7.3 Why the wall contour of the 18 mm rough runs only at 15.5 and 11.0
++
++- Global ordering runs `waterline_cleanup` after each level, at the level Z. The levels of id 1
++  are 15.5 and 11.0 (10 mm per pass from the stock top 25.5).
++- The contour is the section of the tool-centre surface AT the level Z
++  (`waterline_contours_with_cancel(.., z_level, ..)`). The cavity floor is at 16.5 and its wall
++  runs from 16.5 to 25.5. Both are above 15.5, so the plane Z 15.5 does not cross the wall.
++- The level itself drapes: it cuts the cavity floor at 16.5. The contour does not drape: it
++  stays at the plane.
++- The smallest correct fix: where a level drapes on a flat shelf above its plane, the wall
++  contour of that level also runs on the section just above the shelf (the shelf Z plus the
++  chord tolerance), inside the stock that stands there. `flat_shelf_levels` already finds the
++  shelves. The one-pass rule (section 4) then holds each such contour to one pass: at the
++  cavity wall the strip stands 9 mm above the shelf, more than one pass of 6.5 mm is not cut,
++  so the contour needs the levels of the strip too. That is the design of section 8.
++
++## 8. W4 (D-1): the rest rough reads the stock under the tool disc (design only)
++
++### 8.1 The design
++
++1. One read. `one_pass::stock_over_cutter(stock, tool, centre at its level floor)` gives the
++   most that a column under the disc stands above the cutter. The material test of the level
++   grid (`cell_has_material`) becomes: more than the material margin (0.01 mm). The one-pass
++   rule is the same read with the bar at one Depth/Pass plus the clearance. So "material" and
++   "too tall" cannot disagree.
++2. The level anchor of a rest rough reads the same tops (`PriorStockTops`, which C4 already
++   reads in the reach of the centres), so the first level is one pass under the tallest stock
++   that the tool can meet.
++3. A strip at a wall then makes a region: a band as wide as the strip, one tool radius from the
++   wall. The geodesic field does not fit in it (research C38 section 16: edge work). So the
++   design needs a planner for a narrow region: one contour along the band at each level, the
++   C4 pass (`level_contour_pass`: Z from the tops in reach, the standing runs, the
++   feed-or-retract merge, the load cap) run on the wall-side line of the region and not only
++   on the containment ring.
++4. A drop site (the small-region bound, the forecast, the group filter) keeps its rule for a
++   crumb only: a region where no lower level comes (each cell has its level floor on the model).
++   A region with a lower level under it is planned (D-3).
++5. The one-pass rule stays as the guard: what the plan of points 3 and 4 does not cut is kept
++   off and stated.
++
++### 8.2 The blast radius
++
++- Every 3D Rough on remaining stock: its regions grow by up to one tool radius around each
++  standing edge, so its motion changes. Sentries that hold such motion: the D44, D48, D50, D55,
++  C4 and C4b sentries of `adaptive3d/CLAUDE.md`, `adaptive3d_by_area_*`,
++  `a_rest_op_slower_than_fresh_is_told_r3`.
++- A 3D Rough on fresh stock changes only where a level left a sliver that a lower level can
++  reach (the region grows around it). The op golden rows of 3D Rough and the Adaptive3d cells
++  of the FM1 simulation subset can move.
++- No dry measurement was made: the count of cells that change class needs planner code and one
++  release build (16 minutes on this machine). The one-pass record of section 5 is a measured
++  lower bound of what the design must cut on this job.
++
++### 8.3 Against the acceptance of the lead
++
++- Wall band at most 62 mm2 with no pocket op: the band is 3 027 mm2 at Z 25.5, 9 mm above the
++  floor: two passes of 6 mm. The contour of point 3 is 1 236 mm per pass (the outline of
++  `cavity_d9.00.dxf`, P37 arm B): 2 472 mm. At the feed of the op (5 279 mm/min, less the load
++  cap at a half slot) that is 30 to 100 s, and the entries. Arm B of P37 (a Profile, 3 passes)
++  measured +73 s for the same cut. So the 230 s bound holds if the contour runs once per level
++  per wall, not once per job (the cost of arm A).
++- The corners: one contour leaves the corner patch (P37: about 1.5 mm across), as arm B does.
++  The Pocket (arm C2) clears it. So the design gives arm B, not arm C2: the corner light hole
++  still starts in stock unless the narrow-region planner also cuts a second line. The Pocket
++  stays the answer for the corners.
++- 0 cut below the target: the contour runs on the tool-centre surface, as the wall cleanup does.
++
++## 9. The Wanaka job before and after, for the operator (setup "1 Back", the proposal file)
++
++"Before" is HEAD `c99a5ac37`. "After" is the W1 + W2 tree: a build that is NOT cleared to cut a
++part (section 10: W1 is not ready to land, and its ramp entries are not safe). The G-code of ids 0 and 1 is the same
++file; id 2 changes, and each later op that reads the remaining stock moves with it.
++
++| | Before | After |
++|---|---|---|
++| Deepest cut of "Back rest 6 mm" in its clearing passes (stated 6 mm per pass) | 20.7 mm | 6.0 mm |
++| Deepest cut of "Back rest 6 mm" in its ramp entries | 14.5 mm | 14.5 mm (NOT fixed) |
++| Deepest cut in its links, and in its wall cleanup | 6.0 mm, 3.0 mm | 6.0 mm, 3.0 mm |
++| Samples of "Back rest 6 mm" outside the safe envelope | 6 715 of 57 556 | 6 347 of 56 818 |
++| Time of "Back rest 6 mm" (feed at the stated feeds) | 603 s, 134 ramp entries | 661 s, 183 ramp entries |
++| Time of the setup (`total_runtime_s`) | 9 216 s | 9 297 s |
++| Wood left, cavity walls (with the rest pocket op) | 62.1 mm2 | 62.1 mm2 |
++| Wood left, cavity interior (rings at lakes, hollow, rivers) | 566.7 mm2, to 6.4 mm | 566.7 mm2 |
++| Wood left, step shelf | 690.3 mm2, 5.0 mm | 690.3 mm2 |
++| Wood left, the 8.6 mm slot | 412.6 mm2, 21.0 mm | 412.6 mm2, 21.0 mm |
++| Wood left, mech and slit pockets | 1 103.0 mm2, to 20.7 mm | 1 151.1 mm2, to 20.7 mm |
++| Cut below the target after the two roughs (replay, 0.2 mm nodes) | 21.4 mm2 | 28.2 mm2 (the top edge of a wall, within 0.2 mm of the wall line, by 64 new entry descents) |
++| Collisions, rapid collisions, failed checks (each op) | 0, 0, 0 | 0, 0, 0 |
++| Contact counts | "Pin drill, flip pins" flute top 5; "Day strip slit V60" flute top 7 | the same |
++| What the job says about the wood it leaves | two `geom.rough_left_stock` lines; the coverage reading says "not measurable" | the same two lines (id 2 now also names 955 moves that it did not make and 138.9 mm2); the coverage reading runs: id 1 leaves 14 069 mm2 in 7 islands, id 2 15 088 mm2 in 39 islands, both Critical |
++
++In plain words:
++
++- With the W1 build the 6 mm rest rough does not drive its clearing passes through wood 20 mm
++  tall: where a pass would meet such wood, the tool stays off it and the op says how much it
++  left. That build is not ready (section 10).
++- The ramp entries of that op are not safe yet: a ramp runs along +X from its entry and still
++  meets the tall strips, 14.5 mm deep. The op has 49 more such entries than before.
++- The 6 mm tool does not cut the 8.6 mm slot (a strip 2.6 mm wide for its centre, under the
++  small-area bound at each level), the tall strips at the mech pocket walls, or the strips at
++  the cavity walls. A 6 mm tool can reach all of them; the rough does not plan them. The cavity
++  walls need the rest pocket op. The slot and the mech pocket walls need an op of their own
++  (D-5 of P37).
++- A 6 mm tool cannot reach 2 259 mm2 (inside corners and floors narrower than 6 mm).
++
++## 10. Gates (the W1 + W2 tree, 2026-11-17): W1 is NOT ready to land
++
++Run on the final tree (after the last crate edit), unless a line says "first pass".
++
++- full clippy (`--workspace --all-targets`, the three core features, `-D warnings`): clean.
++  `rustfmt --check` on each changed file: clean; no other file changed.
++- core `--lib`: 2 844 passed, 2 failed, 13 ignored.
++  - known: `feeds::envelope::tests::the_envelope_meets_its_time_budget`;
++  - NEW, from W1: `adaptive3d::tests::planner_sim_dexel_parity_geodesic_adaptive`: "INTERIOR
++    divergence is 70.00x lopsided: interior planner_higher 70 (simulator removed more), interior
++    sim_higher 0".
++- adaptive3d sentries (`--no-fail-fast`, 29 binaries with `heavy-tests`): 24 green, 5 red, 59
++  tests passed, 7 failed, 2 ignored. All 7 are from W1:
++  - `adaptive3d_boundary_clear_parity`: `boundary_clear_parity_geodesic_adaptive` (69
++    in-containment cells `planner_higher`; the pin is 60);
++  - `adaptive3d_by_area_matches_global_stock`: `by_area_final_stock_equals_global`
++    (Contour Parallel: 9 cells differ, the worst by 1.5 mm);
++  - `adaptive3d_emission_byte_parity`: `contour_parallel_by_area`, `geodesic_adaptive`,
++    `geodesic_adaptive_boundary` ("the emitted motion moved");
++  - `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`: `geodesic_adaptive_clears_both_lobes`:
++    "a rapid passes through stock (the move between the lobes)", 1 rapid collision. SAFETY;
++  - `geodesic_adaptive_keeps_the_research_geometry_s7_4`: "island pocket, two levels".
++- other core sentries (14 binaries, 86 tests): green (`..._g_roughcov` with the new arm,
++  `findings_transport_join_h21`, `a_job_with_each_finding_exports_and_names_it_k6`,
++  `measurability_abstention_r8`, `chipload_abstention_cannot_supersede_g_chipgate`, the others
++  of the P37 list).
++- op golden: red with 55 changed cells: the 46 known rows cell for cell, and 9 cells of ONE row
++  from W1. Not blessed:
++
++  | `adaptive3d/ramp_geodesic` | before | after |
++  |---|---|---|
++  | `arc_count` | 13 | 12 |
++  | `cutting_length_mm` | 2283.957 | 2660.394 |
++  | `linear_count` | 1091 | 1147 |
++  | `move_count` | 1113 | 1168 |
++  | `rapid_length_mm` | 114.908 | 112.388 |
++  | `span_count` | 92 | 165 |
++  | `gcode_hash` | `2ae632031de60cab` | `2a01bcfb800da443` |
++  | `moves_hash` | `be39e8dff5872a09` | `3a88a13999fb1f88` |
++  | `spans_hash` | `3398534541b08672` | `88876c69ae0aca1e` |
++
++- FM1 (`feeds_matrix_instrument_fm1`, `heavy-tests`, first pass, before the last W2 edit, which
++  moves no tool): 2 passed. No cell moves.
++- `rs_cam_mcp`: 39 passed. `rs_cam_cli`: 17 binaries, 113 tests, green.
++- viz `--lib` (`--test-threads 2`, no GUI process): 705 passed, 2 ignored.
++  `mcp_wire_surface_pin`: 2 passed.
++
++What the reds say:
++
++- The rule fires on the test fixtures, not only on a rest rough. The record of the hemisphere
++  fixtures: 22 to 37 moves kept off, stock to 15 mm above the cutter, at the edge of the mesh
++  footprint (X or Y at 20.0 and past it): the band of stock beside the model that no centre
++  takes. At HEAD a lower level probably met it at full height (the fixtures were not simulated at HEAD).
++  So the emitted motion of many fixtures
++  moves, and the byte sentries and the golden row need a ruling, not a bless by an agent.
++- The parity reds (`planner_higher`: the shipped path removes more than the planner stamps)
++  grow with the entry count. The entry model gap of section 5.3 is the probable cause; it is not
++  measured.
++- One fixture has a rapid through stock. It is not explained. The Wanaka runs have 0 rapid
++  collisions, but this is a safety red.
++- A possible false positive of the read was not ruled out: a cell whose centre is exactly one
++  tool radius from the tool axis, on a wall line, counts (`d_sq > r_sq` is false there).
++
++Not verified:
++
++- The W1 tree alone was gated only by `--lib _p38 _p37` and the release build; every other gate
++  ran on the W1 + W2 tree.
++- D-8 on a surface (section 6.4). The finding texts on the GUI and through MCP.
++- The release CLI of the job runs (`cli_w2`) was built before the last edits: the abstention
++  for a setup that is not identity, two comments and one test. None moves a tool of setup
++  "1 Back".
++
++## 11. Decisions for the lead
++
++- D-0 (the patch order): W2 is the part that can land, and `P38_W2.patch` applies only after
++  `P38_W1.patch` (they share two source files and this note). A W2-only tree was not built or
++  compiled, and the island figures of section 6.4 were measured on the stock of the W1 build.
++
++- D-9 (entries, SAFETY, open): the acceptance "no sample deeper than one pass, entries
++  included" is not met. The ramp entries of id 2 still cut 14.5 mm deep, and the rule adds 49
++  entries. The cause is the entry emitter of the 3D Rough (two legs along +X, no stock in scope;
++  the planner models a vertical descent). A ruling is needed on the fix: give the emitter the
++  planner stock at the entry (the lap ladder or a plunge, as a rest-driven finish pass has), or
++  let the planner shape the entry and read it with the one-pass read.
++- D-12 (W1 is not ready to land): one lib test and 7 sentry tests are red from W1, and 9 cells
++  of the golden row `adaptive3d/ramp_geodesic` move (section 10). One red is a rapid through
++  stock. The rule fires on the fixtures at the band of stock beside the mesh footprint. The lead
++  must rule: (a) keep the rule at the door and fix the entries first (D-9), then read each red;
++  or (b) move the rule into the region grid (a centre whose disc meets tall stock is not a
++  region cell), so the 2D plan avoids the stock and makes no extra entry; or (c) hold W1 until
++  W4 gives the plan that cuts the stock.
++- D-3 (the small-region bound): not changed. With the one-pass rule a dropped region is no
++  longer cut too deep by a level below; it stays, and the level below stays off it. The slot
++  (413.8 mm2, 21 mm) is the case. The rule that cuts it is point 4 of section 8.1 (a drop is for
++  a crumb only: no level comes under it). It moves terrain goldens; it is part of W4.
++- D-1 (W4): section 8. The design gives the cavity walls (arm B of P37), not the corners. The
++  Pocket stays the answer for the corners.
++- D-2: done for the stock to leave (the reading runs at 0). D-10: the setup that is not identity
++  is not lifted (section 6.5); a small job with a sentry.
++- D-8: partial (section 6.4). A ruling is needed: build the measured-clean row and the diagnose
++  input (the flute-reach pattern), or accept the one door.
++- D-11 (the reading at a wall): 17 of the 39 islands of id 2 are one cell wide at a wall (0.9
++  mm2). No width rule was added. A rule "an island at a wall that is one cell wide is the wall
++  quantisation" would take them out of the count; `min_width_mm` reads an even strip one cell
++  narrow, so the rule would also hide a strip of two cells.
++- D-13 (the class): at a stock to leave of 0 both roughs of the Wanaka back are Critical in the
++  simulation triage (`project.rough_leaves_islands`: islands taller than one pass). That is the
++  rule of the finding; before P38 it could not fire on this job. The export does not refuse, and
++  the CLI verdict line and exit code are the same before and after.
++- D-7 (W3): section 7. The cut below the target of arm A is the raster of the instrument. The
++  contour clears two walls of four; the cause needs one probe run.
++- The operator file: section 2. It has the same gaps, the same deep cuts in ids 1 and 2, and
++  573 holder collisions in its two lake pocket ops.
+diff --git a/planning/feeds_contract_2026-11-03/phases/p38/cov.py b/planning/feeds_contract_2026-11-03/phases/p38/cov.py
+new file mode 100644
+index 000000000..273bdc24d
+--- /dev/null
++++ b/planning/feeds_contract_2026-11-03/phases/p38/cov.py
+@@ -0,0 +1,16 @@
++"""P38 W2: the coverage readings of one run (summary.json rough_coverage)."""
++import json, sys
++tag = sys.argv[1]
++s = json.load(open(f"out_{tag}/summary.json"))
++for r in s.get("rough_coverage", []):
++    o = r["outcome"]
++    if o["state"] != "measured":
++        print(r["toolpath_id"], "NOT MEASURED", o["reading"]); continue
++    c = o["reading"]; isl = c["islands"]
++    cell = c["cell_mm"]
++    one = [i for i in isl if i["min_width_mm"] <= cell * 1.001]
++    wall = [i for i in isl if i["touches_wall"]]
++    print(f"id {r['toolpath_id']}: measured; cell {cell} bar {c['bar_mm']:.3f}; compared {c['compared_area_mm2']:.0f} mm2; above {c['above_spec_area_mm2']:.1f} mm2 in {len(isl)} islands; {len(wall)} at a wall; one cell wide: {len(one)} islands, {sum(i['area_mm2'] for i in one):.1f} mm2 ({sum(1 for i in one if i['touches_wall'])} at a wall); tallest {max((i['max_standing_mm'] for i in isl), default=0):.2f}")
++    for i in sorted(isl, key=lambda i: -i["area_mm2"])[:int(sys.argv[2]) if len(sys.argv) > 2 else 8]:
++        b = i["bbox"]
++        print(f"     {i['area_mm2']:8.1f} mm2  {i['max_standing_mm']:5.2f} high  {i['min_width_mm']:5.2f} wide  box X {b[0]:.1f}..{b[2]:.1f} Y {b[1]:.1f}..{b[3]:.1f}  wall {i['touches_wall']}")
+diff --git a/planning/feeds_contract_2026-11-03/phases/p38/w3.py b/planning/feeds_contract_2026-11-03/phases/p38/w3.py
+new file mode 100644
+index 000000000..70700b696
+--- /dev/null
++++ b/planning/feeds_contract_2026-11-03/phases/p38/w3.py
+@@ -0,0 +1,35 @@
++"""P38 W3: the moves of one op that cut below the target (by more than BAR), on the replay.
++usage: w3.py <nc> <op prefix> <out.npz>"""
++import sys, math
++import numpy as np
++from gapmap import *
++T = target(); ok = np.isfinite(T)
++def run(nc, prefix, out):
++    top = np.full((NY, NX), STOCK_TOP); rows = []; n = 0; line_of = {}
++    for op, tool, p0, p1 in moves(nc):
++        if not op.startswith(prefix):
++            stamp(top, tool, p0, p1); continue
++        kind, R, half = TOOLS[tool]
++        x0, y0, z0 = p0; x1, y1, z1 = p1
++        ia = max(0, int(math.ceil((min(x0, x1) - R) / CELL))); ib = min(NX - 1, int(math.floor((max(x0, x1) + R) / CELL)))
++        ja = max(0, int(math.ceil((min(y0, y1) - R) / CELL))); jb = min(NY - 1, int(math.floor((max(y0, y1) + R) / CELL)))
++        before = top[ja:jb + 1, ia:ib + 1].copy()
++        stamp(top, tool, p0, p1)
++        after = top[ja:jb + 1, ia:ib + 1]; t = T[ja:jb + 1, ia:ib + 1]; o = ok[ja:jb + 1, ia:ib + 1]
++        new = o & (after < before - 1e-6) & (after - t < -BAR)
++        if new.any():
++            g = np.where(new, after - t, 0); j, i = np.unravel_index(np.argmin(g), g.shape)
++            rows.append((n, x0, y0, z0, x1, y1, z1, new.sum() * CELL * CELL, g[j, i], (ia + i) * CELL, (ja + j) * CELL, t[j, i]))
++        n += 1
++    r = np.array(rows); np.savez_compressed(out, rows=r); return r
++if __name__ == "__main__":
++    r = run(sys.argv[1], sys.argv[2], sys.argv[3])
++    print("moves that cut below the target by >", BAR, ":", len(r))
++    if len(r):
++        # cluster by index gaps
++        cl = [[r[0]]]
++        for row in r[1:]:
++            (cl[-1] if row[0] - cl[-1][-1][0] <= 20 else cl.append([row]) or cl[-1]).append(row) if row[0] - cl[-1][-1][0] <= 20 else None
++        for c in cl:
++            c = np.array(c); k = np.argmin(c[:, 8])
++            print(f"idx {int(c[0,0]):6d}-{int(c[-1,0]):6d} n {len(c):4d} setup X {c[:,1].min()-18.5:6.1f}..{c[:,1].max()-18.5:6.1f} Y {c[:,2].min()-8.5:6.1f}..{c[:,2].max()-8.5:6.1f} tool z {c[:,6].min():6.2f}..{c[:,3].max():6.2f} deepest {c[k,8]:6.2f} mm below at setup ({c[k,9]-18.5:.1f}, {c[k,10]-8.5:.1f}) target {c[k,11]:.2f}")
+diff --git a/planning/feeds_contract_2026-11-03/phases/p38/w3rep.py b/planning/feeds_contract_2026-11-03/phases/p38/w3rep.py
+new file mode 100644
+index 000000000..a150942a2
+--- /dev/null
++++ b/planning/feeds_contract_2026-11-03/phases/p38/w3rep.py
+@@ -0,0 +1,11 @@
++import sys, numpy as np
++r = np.load(sys.argv[1])["rows"]
++cl = [[r[0]]]
++for row in r[1:]:
++    if row[0] - cl[-1][-1][0] <= 20: cl[-1].append(row)
++    else: cl.append([row])
++tot = 0
++for c in cl:
++    c = np.array(c); k = np.argmin(c[:, 8]); tot += c[:, 7].sum()
++    print(f"idx {int(c[0,0]):6d}-{int(c[-1,0]):6d} n {len(c):4d} area {c[:,7].sum():6.1f} setup X {c[:,1].min()-18.5:6.1f}..{c[:,1].max()-18.5:6.1f} Y {c[:,2].min()-8.5:6.1f}..{c[:,2].max()-8.5:6.1f} tool z {c[:,6].min():6.2f}..{c[:,3].max():6.2f} deepest {c[k,8]:6.2f} at setup ({c[k,9]-18.5:.1f}, {c[k,10]-8.5:.1f}) target {c[k,11]:.2f}")
++print("total new area below", tot)

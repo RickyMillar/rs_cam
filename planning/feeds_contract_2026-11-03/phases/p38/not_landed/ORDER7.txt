@@ -1,0 +1,116 @@
+P38: apply order (base c99a5ac37). Each patch: `git apply --cached <patch>`.
+Checked on a scratch index on 2026-11-17: the three patches apply in this order and give the
+tree 1181c30c37860f2a07cdce2feea0c3556234cf79, which is the tree of the working files (each
+changed file under crates/, the note and phases/p38/).
+
+1. P38_p.patch   (md5 cde671ed3dbb0d3a567f7fa0305d0fc1)   the note, sections 1 to 4 and 6.1 to 6.3
+2. P38_W1.patch  (md5 4d47fed2e27525416035be6dac4717ee)   the one-pass rule; NOT READY TO LAND
+3. P38_W2.patch  (md5 eccdf789f8fec90c85d0f7a4d32615ae)   the coverage reading; the rest of the note
+
+W2 applies only after W1 (the two share `toolpath_stats.rs`, `from_generation.rs` and the
+note). W2 alone is the part that can land; to land it without W1 the lead must take the W2 hunks
+of those files by hand. W2 moves no tool (the G-code of the proposal is the W1 file).
+
+Gates (note section 10): clippy clean; core --lib 2 844 / 2 red (1 known, 1 from W1); adaptive3d
+sentries 24 of 29 binaries green, 7 tests red from W1 (one is a rapid through stock); 14 other
+core sentries green; op golden = the 46 known rows + 9 cells of `adaptive3d/ramp_geodesic` from
+W1 (not blessed); FM1 2 passed; rs_cam_mcp 39; rs_cam_cli 113; viz --lib 705; mcp_wire_surface_pin 2.
+
+---------------------------------------------------------------------------------------------
+1. P38_p.patch
+
+planning: P38: the rest rough of the wanaka back cuts 20.7 mm deep at 6 mm per pass: the cause, the rule and the predictions, before the fix was run
+
+"Back rest 6 mm" of setup "1 Back" states 6 mm per pass. 188 of its 13 635 cutting pieces cut
+deeper on the replay of the emitted G-code, to 20.7 mm: a lower level meets stock that no level
+above it cut.
+
+The class of that stock at the level above, by pieces and by feed:
+
+- a region dropped under the small-region bound: 114 pieces, 119 mm;
+- inside the reach of a planned region and not cut: 41 pieces, 362 mm;
+- in no region (the strip at a wall): 33 pieces, 59 mm.
+
+So a change to one drop site is a local patch. The rule is at the one door of each planned
+segment: no fed move meets stock that stands more than one Depth/Pass plus the stay-down
+clearance above the cutter. Predictions P-1 to P-11 are in section 4.
+
+The operator file `nz_wanaka_21_operator.toml` has the same gaps and the same deep cuts
+(section 2), and 573 holder collisions in its lake pocket ops.
+
+Section 6.1 to 6.3: the coverage reading at a stock to leave of 0 (the rule and predictions Q-1
+to Q-6). They were written after the W2 code and before its runs were read.
+
+The order was not kept: the code of the rule and its test were written before this note. No
+result of the fix was known when P-1 to P-11 were written. Section 6.2 names a section 6.5,
+which the W2 patch adds (one bullet of 6.2 was edited after the W2 runs).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+
+---------------------------------------------------------------------------------------------
+2. P38_W1.patch
+
+core, planning: P38 W1: no cut or link of a 3D Rough meets stock more than one Depth/Pass above the cutter (`one_pass`); the entries are NOT held
+
+`adaptive3d/one_pass.rs`: each planned segment passes `clip_to_one_pass` after the boundary
+clip and before its stamp (`push_segment_with_stamp`, `LevelSink::emit`). A cut goes out as the
+pieces between the points where a planner cell inside the tool disc stands more than Depth/Pass
+plus the stay-down clearance above the cutter. A link through such stock becomes an entry. The
+cells are recorded, and `geom.rough_left_stock` states the moves that were not made, the area
+and the tallest stock (`LeftStock::kept_off_*`, `LeftStock::stands`).
+
+Measured on the wanaka proposal, "Back rest 6 mm":
+
+- body depth 20.7 to 6.0 mm; link 6.0; wall cleanup 3.0;
+- ENTRY depth 14.5 mm, NOT changed: a ramp entry of a 3D Rough is two legs along +X with no
+  stock in scope, and the planner models a vertical descent. The rule adds 49 ramp entries
+  (134 to 183);
+- fed time 603 to 661 s; 0 collisions; the same 24 export warnings;
+- stock left: +48 mm2 in the mech pockets (1 103 to 1 151 mm2); the slot and the walls as before;
+- cut below the target after the roughs: 21.4 to 28.2 mm2, the top edge of a wall within one
+  node (0.2 mm) of the wall line, by 64 new entry descents;
+- the Geodesic Adaptive copy of rivmap100_live_0925: the same G-code, byte for byte.
+
+NOT READY TO LAND. Reds from this patch (not blessed, not fixed; note section 10):
+
+- `--lib adaptive3d::tests::planner_sim_dexel_parity_geodesic_adaptive`;
+- 7 tests of 5 adaptive3d sentries: `adaptive3d_boundary_clear_parity`,
+  `adaptive3d_by_area_matches_global_stock`, `adaptive3d_emission_byte_parity` (3),
+  `adaptive3d_plans_every_slice_piece_g_adapt3dpieces` (1 rapid through stock: SAFETY),
+  `geodesic_adaptive_keeps_the_research_geometry_s7_4`;
+- op golden: 9 cells of `adaptive3d/ramp_geodesic` (beside the 46 known rows).
+
+The rule fires on the test fixtures at the band of stock beside the mesh footprint.
+
+Tests: `--lib _p38` (3). The red state: with `OnePass::limit_mm` infinite the first test reads
+"a sample cuts 11.50 mm deep".
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+
+---------------------------------------------------------------------------------------------
+3. P38_W2.patch
+
+core, cli, planning: P38 W2: the rough coverage reading runs at a stock to leave of 0; a measured reading drops `geom.rough_left_stock` on the evidence door
+
+- `measure_rough_coverage` no longer abstains when the cell is coarser than the stock to leave.
+  The bar stays the stock to leave plus one cell. BREAK: the abstention
+  `cell_coarser_than_stock_to_leave` (`RoughCoverageAbstention::CellCoarserThanStockToLeave`)
+  is deleted from the wire.
+- `setup_not_identity` stays: by reading nothing blocks it, and no sentry proves the frame match
+  (note section 6.5).
+- `diagnose_toolpath_with_evidence`: a measured reading of a fresh run drops
+  `geom.rough_left_stock` of that toolpath (`SimulationTriage::coverage_is_measured`); the island
+  finding names the id in `supersedes`. The inspector, the held-trace walk and the export header
+  still show both (note section 6.4).
+- The text of `geom.rough_left_stock` no longer says "Report-only: no gate consumes this".
+- CLI: `Rough coverage:` lines and `summary.json` `rough_coverage` (the list MCP gives).
+
+Measured on the wanaka proposal: ids 1 and 2 read measured at a bar of 0.2 mm (before: not
+measurable). Id 2: 15 088 mm2 in 39 islands; the largest holds the strips at the four cavity
+walls; the slot is its own island (413.8 mm2, 21 mm). Both roughs are Critical in the triage
+(islands taller than one pass). The G-code is the W1 file, byte for byte.
+
+The note also holds W3 (the "Contour each level" diagnosis), W4 (the design of the disc
+material test), the operator table and the decisions.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
