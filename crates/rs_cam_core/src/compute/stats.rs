@@ -112,6 +112,8 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // G-RESTLEVELS: same rule. A skipped level leaves no move, so a
         // finished move list cannot say that the level existed.
         rest_levels: None,
+        // P37: same rule. A region the planner did not plan leaves no move.
+        rough_left_stock: None,
         // UX-7b: same rule. The guard needs the model mesh, which a move
         // list does not carry.
         model_gouge: None,
@@ -232,6 +234,7 @@ pub fn stats_with_findings(
         pencil_link: _,
         monotone_cells: _,
         rest_levels: _,
+        rough_left_stock: _,
         model_gouge: _,
         non_centre_cutting_plunge: _,
         buried_face: _,
@@ -268,6 +271,7 @@ pub fn stats_with_findings(
         pencil_link,
         monotone_cells,
         rest_levels,
+        rough_left_stock,
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,
@@ -305,6 +309,7 @@ pub fn stats_with_findings(
         pencil_link,
         monotone_cells,
         rest_levels,
+        rough_left_stock,
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,

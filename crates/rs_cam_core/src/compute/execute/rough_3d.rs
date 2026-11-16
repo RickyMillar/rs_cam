@@ -252,6 +252,7 @@ impl VolumetricOp for Adaptive3dRough<'_> {
             toolpath,
             annotations,
             produced,
+            left_stock,
         } = crate::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
             mesh,
             index,
@@ -264,6 +265,7 @@ impl VolumetricOp for Adaptive3dRough<'_> {
             toolpath,
             annotations,
             produced,
+            left_stock,
         })
     }
 

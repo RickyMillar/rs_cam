@@ -371,6 +371,11 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it. A fallback is a `Caution`.
     pub rest_levels: Option<RestLevelsFinding>,
+    /// P37: the stock a 3D Rough held as material and did not plan
+    /// ([`RoughLeftStockFinding`]). `None` = the planner dropped nothing,
+    /// or the op is not a 3D Rough. Standing pieces raise
+    /// `geom.rough_left_stock` (Caution, report-only).
+    pub rough_left_stock: Option<RoughLeftStockFinding>,
     /// UX-7b (SAFETY): what the model gouge guard measured on the emitted
     /// moves. `None` = not measured (the row is exempt, the toolpath model
     /// has no mesh, or the Profile compensates in the controller);
@@ -758,6 +763,81 @@ pub struct RestLevelsFinding {
     /// Why the clip cut the whole outline at every level, if it did. `None`
     /// = no fallback.
     pub fallback: Option<RestLevelsFallback>,
+}
+
+/// P37: the stock that a 3D Rough held as material and did not plan.
+///
+/// The level plan drops a region under its small-region bound, a region
+/// with a short F-038 forecast and a piece where the geodesic field does not
+/// fit. A lower level can still cut such a piece, so the planner reads each
+/// one on its own stock at the end of the plan
+/// ([`crate::adaptive3d::LeftStock`]). The finding is raised when a piece
+/// still holds material there.
+///
+/// It is not the whole stock that stays: stock that never made a region
+/// (a strip narrower than the tool radius at a wall) is not in it. Only the
+/// simulation reads that.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RoughLeftStockFinding {
+    pub left: crate::adaptive3d::LeftStock,
+    /// The rest analysis of this op is on, so it publishes its rest regions
+    /// (`Produced::rest_regions`). The session turns it on when an enabled
+    /// `DerivedRestRegions` boundary names the op; MCP can also set it. So
+    /// `true` says that a toolpath CAN read the regions, and `false` that
+    /// none does. The finding cannot know what any later toolpath cuts.
+    pub regions_published: bool,
+}
+
+impl std::fmt::Display for RoughLeftStockFinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let l = &self.left;
+        let [x, y, z] = l.tallest_at;
+        let dropped = l.small_regions + l.short_forecast + l.no_field;
+        write!(
+            f,
+            "This operation found stock in {dropped} areas, counted at each level, and planned \
+             no cut there: {} under the small-area bound, {} with a cut length under Min Region \
+             Cut Length, {} where the Geodesic Adaptive field does not fit. At the end of its \
+             plan {} of them still hold stock on {:.1} mm² (tool-centre area). The tallest \
+             stands {:.2} mm above the level floor at X{x:.2} Y{y:.2} in the setup frame (stock \
+             top Z {z:.3}).",
+            l.small_regions,
+            l.short_forecast,
+            l.no_field,
+            l.standing_pieces,
+            l.standing_area_mm2,
+            l.tallest_mm,
+        )?;
+        if l.dropped_cut_groups > 0 {
+            write!(
+                f,
+                " It also dropped {} cut {} shorter than Min Region Cut Length.",
+                l.dropped_cut_groups,
+                if l.dropped_cut_groups == 1 {
+                    "group"
+                } else {
+                    "groups"
+                }
+            )?;
+        }
+        if self.regions_published {
+            f.write_str(
+                " This operation publishes its rest regions, so a toolpath can read these \
+                 areas as its boundary. This finding does not know what a later toolpath \
+                 cuts.",
+            )?;
+        } else {
+            f.write_str(
+                " No toolpath reads these areas as its boundary. The stock stays unless a \
+                 later toolpath cuts it, for example a Pocket from remaining stock or a \
+                 Profile on the outline of the walls.",
+            )?;
+        }
+        f.write_str(
+            " Stock in a strip narrower than the tool radius at a wall is not counted here. \
+             Check the simulated stock.",
+        )
+    }
 }
 
 /// G-RESTLEVELS: why the rest-stock level clip fell back to the whole

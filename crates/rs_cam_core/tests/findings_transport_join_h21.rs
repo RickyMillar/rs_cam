@@ -41,8 +41,8 @@ use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
     ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
     InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding,
-    SelectionNoteFinding, TabNote, TabPlacementFinding, TipFloatFinding, ToolpathStats,
-    WaterlineLadderFinding, ZeroRemovalFinding,
+    RoughLeftStockFinding, SelectionNoteFinding, TabNote, TabPlacementFinding, TipFloatFinding,
+    ToolpathStats, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
@@ -305,6 +305,20 @@ fn every_finding_recorded() -> GenerationFindings {
                 total_before_cap: 65,
             }),
         }),
+        // P37. Every counter differs, so a swapped field reads wrong.
+        rough_left_stock: Some(RoughLeftStockFinding {
+            left: rs_cam_core::adaptive3d::LeftStock {
+                small_regions: 5,
+                short_forecast: 3,
+                no_field: 2,
+                dropped_cut_groups: 7,
+                standing_pieces: 4,
+                standing_area_mm2: 61.5,
+                tallest_mm: 9.0,
+                tallest_at: [12.0, 34.0, 25.5],
+            },
+            regions_published: false,
+        }),
         // UX-7b. A guard that FOUND a gouge, so a dropped channel reads as
         // `None` rather than coincidentally matching a clean one.
         model_gouge: Some(ModelGougeFinding {
@@ -382,6 +396,7 @@ fn every_recorded_finding_survives_the_single_join() {
         pencil_link,
         monotone_cells,
         rest_levels,
+        rough_left_stock,
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,
@@ -437,6 +452,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(pencil_link, findings.pencil_link);
     assert_eq!(monotone_cells, findings.monotone_cells);
     assert_eq!(rest_levels, findings.rest_levels);
+    assert_eq!(rough_left_stock, findings.rough_left_stock);
     assert_eq!(model_gouge, findings.model_gouge);
     assert_eq!(
         non_centre_cutting_plunge,
@@ -528,6 +544,10 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert_eq!(
         stats.rest_levels, None,
         "G-RESTLEVELS: a generation that read no machined stock tested no level"
+    );
+    assert_eq!(
+        stats.rough_left_stock, None,
+        "P37: a move list does not hold the regions a planner did not plan"
     );
     assert_eq!(
         stats.model_gouge, None,

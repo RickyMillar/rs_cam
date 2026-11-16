@@ -919,6 +919,9 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// one). D50: each with the top Z of the slab it leaves
     /// ([`super::rest_regions::slab_top_z`]), not its level Z.
     pub left_pieces: Vec<(f64, crate::polygon::Polygon2)>,
+    /// P37: the stock the plan held as material and did not plan, read on
+    /// the planner stock at the end of the plan (`left_stock::left_stock`).
+    pub left_stock: Option<super::LeftStock>,
     /// P22f-1: the opening decision of each region at each level
     /// (`ClearZLevelContext::region_openings`).
     pub region_openings: Vec<super::RegionOpening>,
@@ -1431,6 +1434,8 @@ fn adaptive_3d_segments_probed(
         keep_down_route: super::effective_keep_down_route(params),
         region_clip,
         left_pieces: std::cell::RefCell::new(Vec::new()),
+        unplanned: std::cell::RefCell::new(Vec::new()),
+        dropped_cut_groups: std::cell::Cell::new(0),
         region_openings: std::cell::RefCell::new(Vec::new()),
         level_probe: probe.then(|| std::cell::RefCell::new(LevelProbeBuffer::default())),
         // C4: the reach band, when the option is on and the rough meets
@@ -1674,9 +1679,17 @@ fn adaptive_3d_segments_probed(
         }
     }
 
+    let left_stock = super::left_stock::left_stock(
+        &ctx.unplanned.take(),
+        ctx.dropped_cut_groups.get(),
+        &material_stock,
+        &surface_hm,
+        params.depth.stock_to_leave,
+    );
     Ok(Adaptive3dSegmentsResult {
         segments,
         area_regions,
+        left_stock,
         // D50: a piece left at a level leaves the slab from that level up to
         // the level above it, so the result carries the slab top.
         left_pieces: ctx

@@ -295,6 +295,10 @@ pub struct GenerationFindings {
     /// did. `None` = the operation read no machined stock. See
     /// [`crate::compute::toolpath_stats::RestLevelsFinding`].
     pub rest_levels: Option<crate::compute::toolpath_stats::RestLevelsFinding>,
+    /// P37: the stock a 3D Rough held as material and did not plan. `None`
+    /// = the planner dropped nothing (or the op is not a 3D Rough). See
+    /// [`crate::compute::toolpath_stats::RoughLeftStockFinding`].
+    pub rough_left_stock: Option<crate::compute::toolpath_stats::RoughLeftStockFinding>,
     /// UX-7b (SAFETY): the model gouge guard on the emitted moves. `None` =
     /// not measured. Written after the session stages (the moves the
     /// machine runs), so through `&mut GenerationFindings`, as

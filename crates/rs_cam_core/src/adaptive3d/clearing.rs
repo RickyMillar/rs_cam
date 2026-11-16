@@ -425,6 +425,12 @@ pub(super) struct ClearZLevelContext<'a> {
     /// them), each with its Z level. The waterline cleanup of that level
     /// skips a contour inside one.
     pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
+    /// P37: every region or piece the plan held as material and did not
+    /// plan (`left_stock::LeftWhy`), each with its level. Evidence for
+    /// the finding `geom.rough_left_stock`; no planner stage reads it.
+    pub(super) unplanned: std::cell::RefCell<Vec<super::left_stock::Unplanned>>,
+    /// P37: the cut groups the F-038 group filter dropped.
+    pub(super) dropped_cut_groups: std::cell::Cell<usize>,
     /// P22f-1: the opening decision of each region at each level
     /// (`grown_outlines`), in plan order; `Produced::region_openings`.
     pub(super) region_openings: std::cell::RefCell<Vec<super::RegionOpening>>,
@@ -2464,7 +2470,7 @@ fn detect_and_order_regions(
     if single_loops.is_empty() {
         return None;
     }
-    let mut regions = crate::polygon::detect_containment(single_loops);
+    let regions = crate::polygon::detect_containment(single_loops);
     let mut region_areas_mm2: Vec<f64> = regions.iter().map(|r| r.area().abs()).collect();
     region_areas_mm2.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     region_areas_mm2.truncate(10);
@@ -2497,7 +2503,24 @@ fn detect_and_order_regions(
     let area_floor = tool_diameter.powi(2) * 0.25;
     let min_region_area_mm2 = (nominal_min_area * dpp_factor).max(area_floor);
     let region_count_before = regions.len();
-    regions.retain(|r| r.area().abs() >= min_region_area_mm2);
+    // P37: a dropped region is recorded with its level, so the op can state
+    // the stock it held and did not plan (`left_stock`). It is not a left
+    // piece: the rest regions and the wall-contour skip do not read it.
+    let (kept, small): (Vec<_>, Vec<_>) = regions
+        .into_iter()
+        .partition(|r| r.area().abs() >= min_region_area_mm2);
+    let mut regions = kept;
+    ctx.unplanned
+        .borrow_mut()
+        .extend(
+            small
+                .into_iter()
+                .map(|outline| super::left_stock::Unplanned {
+                    z_level,
+                    outline,
+                    why: super::LeftWhy::SmallRegion,
+                }),
+        );
     let dropped_micro = region_count_before - regions.len();
     if dropped_micro > 0 {
         debug!(
@@ -2821,12 +2844,25 @@ fn leave_piece(
     z_level: f64,
     region_idx: usize,
     piece: &crate::polygon::Polygon2,
-    why: &str,
+    why: super::LeftWhy,
 ) {
+    ctx.unplanned
+        .borrow_mut()
+        .push(super::left_stock::Unplanned {
+            z_level,
+            outline: piece.clone(),
+            why,
+        });
+    let why = match why {
+        super::LeftWhy::SmallRegion => "small region",
+        super::LeftWhy::ShortForecast => "F-038 forecast",
+        super::LeftWhy::NoField => "no field",
+    };
     tracing::info!(
         z = z_level,
         region = region_idx + 1,
         area_mm2 = %format!("{:.1}", piece.area().abs()),
+        bbox = %super::left_stock::box_text(piece),
         why,
         "C38 piece left to the rest pass"
     );
@@ -2861,7 +2897,13 @@ fn plan_one_outline(
     let Some(plan) =
         crate::adaptive::geodesic::slice_segments(polygon_for_adaptive, params_2d, cancel)?
     else {
-        leave_piece(ctx, z_level, region_idx, polygon_for_adaptive, "no field");
+        leave_piece(
+            ctx,
+            z_level,
+            region_idx,
+            polygon_for_adaptive,
+            super::LeftWhy::NoField,
+        );
         return Ok((Vec::new(), Vec::new()));
     };
     let (segs_2d_raw, turns) = (plan.segments, plan.turns);
@@ -2925,6 +2967,8 @@ fn plan_one_outline(
                 "F-038: dropped short cut groups inside 2D adaptive output"
             );
             *dropped_short_regions += dropped_groups;
+            ctx.dropped_cut_groups
+                .set(ctx.dropped_cut_groups.get() + dropped_groups);
         }
         kept
     } else {
@@ -3469,7 +3513,13 @@ fn clear_one_region(
             );
             // Research C38 §16: the arm leaves this region to the rest
             // contour pass, as a piece where the field does not apply.
-            leave_piece(ctx, z_level, region_idx, region_polygon, "F-038 forecast");
+            leave_piece(
+                ctx,
+                z_level,
+                region_idx,
+                region_polygon,
+                super::LeftWhy::ShortForecast,
+            );
             *dropped_short_regions += 1;
             if let Some(scope) = region_scope.as_ref() {
                 scope.set_counter("skipped_f038", 1.0);

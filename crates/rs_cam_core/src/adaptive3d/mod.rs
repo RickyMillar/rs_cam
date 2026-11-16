@@ -27,6 +27,7 @@ mod clearing;
 pub(crate) use clearing::effective_trochoid_cap_mult;
 mod intended_floor;
 mod keep_down;
+mod left_stock;
 mod level_contour;
 mod outer_band;
 mod path;
@@ -35,6 +36,7 @@ mod rest_region_filter;
 mod rest_regions;
 mod search;
 pub use intended_floor::{FloorGrid, intended_floor_grid};
+pub use left_stock::{LeftStock, LeftWhy};
 use path::adaptive_3d_segments;
 #[cfg(test)]
 use path::segments_to_toolpath;
@@ -880,6 +882,9 @@ pub struct Adaptive3dOutput {
     /// Global) and the rest regions (D44, D50). `planner_engagement` stays
     /// empty: ContourSpiral, its one 3D writer, left in removal step R4.
     pub produced: crate::trace::produced::Produced,
+    /// P37: the stock the plan held as material and did not plan
+    /// ([`LeftStock`]). `None`: the plan dropped nothing.
+    pub left_stock: Option<LeftStock>,
 }
 
 /// Run the planner and return every output. The compute adapter calls
@@ -894,6 +899,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
 ) -> Result<Adaptive3dOutput, Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
+    let left_stock = result.left_stock;
     // D44, D48: the regions the run left to a rest pass, one XY union over
     // the levels grown by one planner cell, in tool-centre space inside
     // this run's own containment polygons. The runner keeps them only on
@@ -937,6 +943,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             region_openings: result.region_openings,
             ..crate::trace::produced::Produced::default()
         },
+        left_stock,
     })
 }
 

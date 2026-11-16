@@ -598,6 +598,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Rest cut the whole outline",
     ),
     (
+        ids::GEOM_ROUGH_LEFT_STOCK,
+        OP,
+        "Stock found and no cut planned: check the stock",
+    ),
+    (
         ids::CONFIG_DERIVED_STEPOVER,
         NOTE,
         "Stepover sized for this tool",

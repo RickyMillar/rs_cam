@@ -8,7 +8,9 @@ Sections 1 to 4 were written before the code. Section 5 holds the results.
 
 ## 1. The instrument
 
-`gapmap.py` (scratch folder `p37/`) reads the emitted G-code of the release CLI
+`gapmap.py` (written in the scratch folder `p37/`; a copy is in `phases/p37/` with the two maps
+`gap_proposal.png`, `gap_proposal_cavity.png`, the arm report `arms_report.py` and
+`proposal_cavity.diff`) reads the emitted G-code of the release CLI
 (`project --setup "1 Back" --emit-gcode`), not the plan and not the simulated stock.
 
 - The stock is a height map on the nodes `(i x 0.2, j x 0.2)` of the stock box (395 x 460 mm,
@@ -196,8 +198,188 @@ this operation held and did not plan", not "all the stock that stays".
 
 ## 5. Results
 
-(after the code)
+Measured on 2026-11-16 and 2026-11-17 with the release CLI. The arms of section 5.2 ran on the
+build before the export gate; `proposal_cavity.toml` ran again on the last build and its G-code
+body is the same file.
+
+### 5.1 The code (patch A)
+
+- `adaptive3d/left_stock.rs` (new): the record (`Unplanned`, `LeftWhy`) and its read on the
+  planner stock at the end of the plan (`LeftStock`).
+- The rule R-1 was made narrower after the first design, before any measurement of it: a lower
+  level of the same op can still cut a dropped piece, so a count of drops is not a count of
+  stock that stays. The planner now reads each recorded outline on its own stock at the end of
+  the plan. The finding is raised only when a piece still holds material above its level floor,
+  and it states the standing pieces, their area in planner cells (each cell once), the tallest
+  stock above the level floor and its position. So P-2 and P-3 (the drop counts) stay as
+  written, and the finding adds the standing figures, which no prediction gives.
+- The channel: `VolumetricOutput::left_stock` to `ctx.record(RoughLeftStockFinding)` to
+  `GenerationFindings::rough_left_stock` to `ToolpathStats::rough_left_stock` to
+  `from_generation::rough_left_stock` (`geom.rough_left_stock`, Caution, `warn(Danger::Part)`,
+  face "Stock found and no cut planned: check the stock"). The reader fact is
+  `regions_published`: the rest analysis of the op is on. The session turns it on when an
+  enabled `DerivedRestRegions` boundary names the op, and MCP `set_rest_analysis_config` can
+  also set it. So the text of section 4 was made weaker: with the flag on it says "This
+  operation publishes its rest regions, so a toolpath can read these areas as its boundary";
+  with the flag off it says "No toolpath reads these areas as its boundary". The remedy that
+  the text names is the measured one (section 5.2): "a Pocket from remaining stock or a
+  Profile on the outline of the walls". The position is "in the setup frame".
+- P-4 was false as first built: the release CLI of the first build gave no line for the
+  finding. The G-code header and `summary.json` hold only the findings of an export gate
+  (`diagnostics::Gate`), and `geom.lifted_within_flute` and `geom.profile_loop_split` have
+  none. A finding that says "the part is not to size here" must be in the export, so the
+  export gate `Gate::RoughLeftStock` was added (`ProjectSession::export_warnings`). Lead ruling
+  2026-11-17 (D-4): the gate stays.
+
+| Prediction | Result |
+|---|---|
+| P-1 same G-code | true: without the two new header lines, the G-code of the proposal file is the same before and after (md5 `1334f86abaaa9f36849e3215aacf4e54` with the WARNING lines taken out of both; before the export gate the whole file had the same md5). The generation of op 2 takes 14.4 s before and 15.1 s after (one run each). |
+| P-2 op 2 counts | true: 125 small regions, 7 short forecasts, 23 no-field pieces, 265 dropped cut groups, "No toolpath reads these areas". Not predicted: 149 of the 155 still hold stock on 2 212.0 mm2 (tool-centre area); the tallest stands 21.00 mm above the level floor at X228.10 Y48.70, stock top Z 25.5. That is the slot of section 2 (G-code (246.6, 57.2)). |
+| P-3 op 1 counts | true: 8 small regions, 1 dropped cut group. All 8 still hold stock on 258.8 mm2; the tallest stands 4.23 mm above the level floor at X95.50 Y192.00, stock top Z 16.5. The predicted "top 15.5" is not a figure of the finding as built. |
+| P-4 header and `summary.json` | false on the first build, true with the gate: one line for op 1 and one for op 2 in the G-code header and in `gcode_export.warnings`. No op is refused. |
+| P-5 lib tests | true: `--lib p37` 4 passed. With the record of the small region taken out, `a_small_region_the_plan_drops_is_stated_p37` is red; the code was written before the first run of the test, so this injection is the red state. |
+| P-6 goldens, FM1 | section 5.4. FM1 not run: P-1 says that no move changes. |
+
+The export gate on the roughing benchmark (lead ruling: the gate stays):
+
+- `planning/fixtures/rivmap100/rivmap100_live_0925.toml` as it is (its 3D Rough is Contour
+  Parallel, which has none of the three drop sites): 2 header warning lines before, 2 after. The
+  gate adds 0 lines.
+- A scratch copy with `clearing_strategy = "geodesic_adaptive"` (no rivmap100 file uses the
+  arm): the gate adds 1 line, for the rough: 34 small regions, all 34 still hold stock on
+  131.0 mm2, the tallest 1.87 mm above the level floor (the stock to leave is 0.5), 33 dropped
+  cut groups. So a Geodesic Adaptive rough of a terrain gets one line when it drops small
+  peaks, also when a finish pass comes after it.
+
+### 5.2 The job arms (measured; the CLI of the first build, the instrument of section 1)
+
+"Fed time" is the fed length of the new or changed op over its emitted F words, with no
+acceleration. "Setup time" is `total_runtime_s` of the CLI for the whole setup; it also holds the
+effect on the later ops, which read the remaining stock.
+
+| Arm | Cavity wall band mm2 | Corner hole footprint before the Drill | Fed time of the change | Setup time s | Below target after the roughs and the new op mm2 |
+|---|---|---|---|---|---|
+| Proposal as it is | 3 026.9 | 25.50 | 0 | 9 210 | 21.4 |
+| A: Contour each level on op 2 | 1 655.9 | 25.50 | +3 327 s (op 2: 603 to 3 930 s, 40 to 251 m fed) | 15 108 | 165.5 |
+| B: Profile, 3.0 mm per pass | 62.1 | 25.50 | +73 s (3.8 m) | 9 099 | 28.2 |
+| B2: Profile, 2.25 mm per pass | 62.1 | 25.50 | +97 s (5.1 m) | 9 123 | 26.7 |
+| C: rest Pocket, 3.0 mm per pass | 62.1 | 16.50 | +193 s (8.5 m) | 9 155 | 28.2 |
+| C2: rest Pocket, 2.25 mm per pass | 62.1 | 16.50 | +230 s (10.2 m, and 8.1 m of rapids) | 9 216 | 26.7 |
+
+- The 62.1 mm2 that stays in the band is not the cavity wall: it is rings at lakes and at the
+  hollow near the walls (3.3 to 4.1 mm tall) and 0.9 mm2 of nodes on the wall line. The four
+  walls are to size in B, B2, C and C2.
+- The 5 to 7 mm2 more below the target in B and C is 168 nodes at G-code X 43.0, the wall line
+  itself (the target raster gives the wall top to a node on the line). It is an instrument
+  limit, not a cut into the wall.
+- P-A is false. Arm A leaves 1 656 mm2 of the band, adds 3 327 s of feed and cuts 144 mm2 more
+  below the target. Decision D-7.
+- P-B is true: the strips go and the corner patch stays (the corner hole keeps 25.50).
+- P-C is true: the corner hole footprint is at 16.50.
+- Every op of every arm: 0 collisions, 0 rapid collisions, 0 failed checks; the contact counts
+  are the two known ones ("Pin drill, flip pins" flute top 5, "Day strip slit V60" flute top 7).
+- Envelope warnings (`project.sim_outside_envelope`) of the new op: B and C at 3.0 mm per pass
+  cross the rigidity depth limit (3.00 against 2.70 mm). B2 has no warning. C2 has one: the
+  corner coverage width, 5.60 against 5.12 mm, 1 050 of 17 158 samples (the first cut into
+  each corner patch). The feed modulation (cap only) lowers the feed there (460 to
+  3 165 mm/min).
+- The feeds of the new op (3 165 mm/min, plunge 1 347, 10 610 rpm) are the values of "Lake relief
+  band 6 mm" (op 25), the slot cut of the same tool in the same job. They are not from Suggest.
+
+Recommended: arm C2, `p37/proposal_cavity.toml` (one new op, id 40, "Cavity rest pocket 6 mm",
+between op 2 and the pin drill). It is the one arm that brings the walls and the corners to
+size and lets the corner light hole start in a cut cavity. B2 is 133 s shorter in fed time and
+has no envelope warning, and it leaves the corner patch (about 1.5 mm across, 9 mm tall) at
+each corner; the Drill then cuts it at the corner hole only.
+
+The second check of the corner hole, on the simulated stock: the Drill of the proposal reads
+the remaining stock, and its R-plane is 5 mm above the highest simulated stock under the tool
+(P36 A1). In the G-code of the proposal as it is the R-planes are 38 x 21.50, 21.79, 22.19,
+22.60 and 30.50 (the corner hole: stock at 25.50, 4 pecks). In the G-code of
+`proposal_cavity.toml` all 42 are 21.50 (stock at 16.50, 3 pecks). In arm B2 the corner hole
+keeps 30.50.
+
+`proposal_cavity.toml` on the last build: the same G-code body as arm C2, the same table row,
+0 collisions and 0 rapid collisions on each op. The header keeps the two
+`geom.rough_left_stock` lines: ops 1 and 2 still drop what they dropped (the slot is one of
+the pieces).
+
+### 5.3 What the coverage reading would give (estimate by the replay, not the product)
+
+Each rough against its own reach surface, bar one cell (0.2 mm): op 1 (R 9, floor 11.0) 6 885 mm2
+in 12 islands, tallest 14.5 mm; op 2 (R 3) 8 798 mm2 in 20 islands, tallest 21.0 mm. With a bar
+of 1.0 mm: 6 534 mm2 in 12 and 8 368 mm2 in 25. The islands are few and large: on this job the
+reading is not cell noise at a stock to leave of 0.
+
+### 5.4 Gates
+
+Run on 2026-11-17 on the tree of patch A. Round 1 is the whole list. Round 2 ran after the last
+text edits (the reader sentence, the remedy, "setup frame", the singular of "cut group").
+
+- core `--lib`: 2 842 passed, 1 failed, 13 ignored, in both rounds. The red is
+  `feeds::envelope::tests::the_envelope_meets_its_time_budget`, the known timing red.
+- adaptive3d sentries, round 1: 16 binaries, all green (`adaptive3d_boundary_clear_parity`,
+  `adaptive3d_keep_down_link_f038b`, `adaptive3d_entry_stock_aware`,
+  `adaptive3d_entry_coalescing_f038`, `adaptive3d_plan_matches_merged_path_g_plansimgap`,
+  `adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`,
+  `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`,
+  `geodesic_adaptive_keeps_the_research_geometry_s7_4`,
+  `a_rough_publishes_the_regions_it_leaves_d44`, `a_derived_rest_rough_cuts_only_the_leftovers_d44`,
+  `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`,
+  `by_area_walls_cut_each_region_level_c4b`, `a_geodesic_slice_cuts_no_full_slot_sweep_p22f`,
+  `adaptive3d_by_area_cells_confine_jobs`).
+- other core sentries, green: `findings_transport_join_h21`, `a_job_with_each_finding_exports_and_names_it_k6`
+  (3 tests, `a_clean_job_writes_no_warning_line_k6` among them),
+  `the_volumetric_wrapper_keeps_its_produced_w6_5`, `every_op_states_its_capabilities_w2_4`,
+  `region_cap_honesty_f3`, `gate_population_vacuity_xvac`,
+  `a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov`,
+  `depth_beyond_stock_core_g_depthstockcore`; round 2 also
+  `every_consumer_reads_one_claimed_band_g1` and `narrate_regions_closed_c8`.
+- op golden (`every_op_keeps_its_toolpath_g_opgolden`): red with 46 changed cells. The 46 lines
+  are the file `opgolden_known_46_rows.txt`, cell for cell (`diff` gives nothing). No other cell
+  moves. Not blessed.
+- `rs_cam_mcp`: 39 passed. `rs_cam_cli`: 17 test binaries, all green (81 tests in the
+  largest).
+- viz `--lib` (`--test-threads 2`, no GUI process): 705 passed, 2 ignored. `mcp_wire_surface_pin`:
+  2 passed. `a_collision_is_the_same_warning_on_every_surface_q6`: 2 passed.
+- full clippy (`--workspace --all-targets`, the three core features, `-D warnings`): clean in
+  both rounds. `rustfmt --check` on the changed files: clean; no other file changed.
+- FM1: not run. No move changes (P-1, and the op golden moves no cell outside the known rows).
+
+Not verified:
+
+- No sentry holds the export gate `Gate::RoughLeftStock`. The evidence is the job run and the
+  rivmap100 copy. The adapter and the planner record have lib tests.
+- The finding was not seen on the GUI or through MCP. It is a row of the one diagnostics list
+  (`diagnostics_from_generation`), which both read.
+- The generation time of op 2 is one run before and one after.
 
 ## 6. Decisions for the lead
 
-(after the code)
+- D-1 (planner, needs a ruling): a 3D Rough on remaining stock does not see a strip narrower
+  than its radius at a wall (S1), and the wall contour runs only where a level cuts the wall.
+  On this job that is most of the 3 027 mm2 band. A fix in the planner (a centre cell is
+  material when stock stands anywhere under the tool disc, as `PriorStockTops` reads the
+  boundary band) moves the goldens and FM1 of every rest rough. Not done.
+- D-2 (the measured reading): `project.rough_leaves_islands` abstains at a stock to leave of 0.
+  It is the only reading that sees S1. Section 5.3 says the reading is clean here. Proposal: at
+  a stock to leave under one cell, measure with the bar at one cell and say so, in place of
+  the abstention. Not done.
+- D-3 (the small-region bound): on a rest rough it drops the slot (412.6 mm2 of stock 21 mm
+  tall, a centre region of about 110 mm2 under the 144 mm2 bound) at each level. For the
+  18 mm tool the bound is 1 296 mm2. The bound was made for terrain peaks on fresh stock. A
+  ruling is needed on a rest rough. Not changed; the new finding names it.
+- D-4 (the export gate), RULED 2026-11-17: the gate stays; a rough that leaves stock says so
+  in the G-code header. Measured on rivmap100: 0 lines more on the file as stored (Contour
+  Parallel), 1 line more on a Geodesic Adaptive copy (section 5.1). The body op of the template
+  "Geodesic body + edges" also gets the line at each export when it drops a piece, with the
+  "publishes its rest regions" sentence.
+- D-5 (the job): the other gaps of section 2 are not cut by any arm: the step shelf (690 mm2,
+  5 mm), the slot (413 mm2, 21 mm), the mech and slit pocket walls (1 103 mm2, 20.7 mm), the
+  interior rings (567 mm2).
+- D-6 (the job): "Back rest 6 mm" has a `project.sim_outside_envelope` line in the proposal as
+  it is: depth 20.70 mm against the limit 2.75 mm (move 11746).
+- D-7 (follow-up): "Contour each level" on a By Area rest rough of this job (arm A) costs
+  3 327 s, does not clear the wall and cuts below the target. Not looked into.
+- D-8: the finding is not superseded by a measured coverage reading of the same op. When D-2
+  lands, the supersession reducer must drop it for the measured answer.

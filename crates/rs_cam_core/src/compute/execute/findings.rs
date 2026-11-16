@@ -17,8 +17,8 @@ use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use crate::compute::toolpath_stats::{
     BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding, ClippedBandFinding,
     DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding,
-    SelectionNoteFinding, SlopeDerateDetail, TabPlacementFinding, TipFloatFinding,
-    WaterlineLadderFinding, ZeroRemovalFinding,
+    RoughLeftStockFinding, SelectionNoteFinding, SlopeDerateDetail, TabPlacementFinding,
+    TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 
 /// A report that writes itself into [`GenerationFindings`].
@@ -404,6 +404,14 @@ impl RecordFindings for TabPlacementFinding {
 impl RecordFindings for DerivedStepoverFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
         findings.derived_stepovers.push(*self);
+    }
+}
+
+/// P37: the stock a 3D Rough held and did not plan. One planner run per
+/// operation, so the report overwrites.
+impl RecordFindings for RoughLeftStockFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.rough_left_stock = Some(*self);
     }
 }
 

@@ -3194,3 +3194,69 @@ fn two_cut_pieces_share_the_fed_chain_p36() {
     assert_eq!((plain_a, plain_b), (first, second));
     assert_eq!(plain_lead, FedLead::default());
 }
+
+/// P37 fixture: a rest stock on a flat floor (Z 0) with a block of 20 x 24 mm
+/// and, when `island`, a column of 4 x 4 mm, both 6 mm tall. Cell 0.5 mm.
+fn left_stock_of(island: bool) -> Option<LeftStock> {
+    let mesh = crate::mesh::make_test_flat(60.0);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.5, 121usize);
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (-30.0 + col as f64 * cell, -30.0 + row as f64 * cell);
+            let block = (5.0..=25.0).contains(&x) && (-12.0..=12.0).contains(&y);
+            let column = island && (-17.0..=-13.0).contains(&x) && (-2.0..=2.0).contains(&y);
+            if block || column {
+                tops[row * n + col] = 6.0;
+            }
+        }
+    }
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.depth.stock_top_z = 6.0;
+    params.initial_stock = Some(make_stock_with_cells(
+        n, n, -30.0, -30.0, cell, -10.0, &tops,
+    ));
+    adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+        .expect("not cancelled")
+        .left_stock
+}
+
+/// P37 (prediction P-5): a region under the small-region bound is recorded,
+/// and the op states that it still holds stock at the end of the plan: its
+/// count, its area, its height and its position. The tool is 6.35 mm and
+/// the depth per pass 3 mm, so the bound is (2 x 6.35)^2 x 3 / 3.175 =
+/// 152.4 mm2; the column is 16 mm2 and the block 480 mm2.
+#[test]
+fn a_small_region_the_plan_drops_is_stated_p37() {
+    let left = left_stock_of(true).expect("the plan dropped a region");
+    assert!(left.small_regions >= 1, "{left:?}");
+    assert_eq!((left.short_forecast, left.no_field), (0, 0), "{left:?}");
+    assert_eq!(left.standing_pieces, left.small_regions, "{left:?}");
+    // The column: 9 x 9 cells of 0.25 mm2, less the cells on the outline.
+    assert!(
+        (12.0..=20.25).contains(&left.standing_area_mm2),
+        "the standing area is the column, not the block: {left:?}"
+    );
+    // 6 mm of stock above the floor of the lowest level (the stock to
+    // leave, 0.5).
+    assert!((left.tallest_mm - 5.5).abs() < 1e-6, "{left:?}");
+    let [x, y, z] = left.tallest_at;
+    assert!(
+        (-17.0..=-13.0).contains(&x) && (-2.0..=2.0).contains(&y),
+        "{left:?}"
+    );
+    assert!((z - 6.0).abs() < 1e-6, "{left:?}");
+}
+
+/// P37: with no dropped region the op states nothing that stands.
+#[test]
+fn a_plan_that_drops_nothing_states_no_standing_stock_p37() {
+    let left = left_stock_of(false);
+    assert!(
+        left.is_none_or(|l| l.standing_pieces == 0 && l.small_regions == 0),
+        "{left:?}"
+    );
+}

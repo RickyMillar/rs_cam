@@ -100,11 +100,15 @@ pub enum Gate {
     /// emitted op at the rubbing floor, above a load cap
     /// (`session::EmittedFeeds::held_warning`).
     FeedHeldAtFloor,
+    /// P37: a 3D Rough held stock, planned no cut there, and the stock
+    /// stands at the end of its plan
+    /// (`ToolpathStats::rough_left_stock`, `standing_pieces > 0`).
+    RoughLeftStock,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::HeightRefuses,
         Self::GougeWarns,
         Self::CentreCutPlunge,
@@ -121,6 +125,7 @@ impl Gate {
         Self::StatedCutOverLimit,
         Self::FeedAboveStated,
         Self::FeedHeldAtFloor,
+        Self::RoughLeftStock,
     ];
 }
 

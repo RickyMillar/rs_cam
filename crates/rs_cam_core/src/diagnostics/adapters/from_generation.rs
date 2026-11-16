@@ -53,6 +53,7 @@ pub fn diagnostics_from_generation(
     out.extend(inert_claims_dial(toolpath_id, stats));
     out.extend(region_cap_truncated(toolpath_id, stats));
     out.extend(rest_levels_fallback(toolpath_id, stats));
+    out.extend(rough_left_stock(toolpath_id, stats));
     out.extend(cuts_into_model(toolpath_id, stats));
     out.extend(non_centre_cutting_plunge(toolpath_id, stats));
     out.extend(buried_face(toolpath_id, stats));
@@ -197,6 +198,38 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
             move_index: f.move_index,
             position: Some(f.at),
         }),
+        fix: None,
+        supersedes: vec![],
+        group: None,
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// P37: a 3D Rough held stock as material, planned no cut there, and the
+/// stock still stands at the end of its plan. `Caution`: the toolpath is
+/// safe, and the part is not to size there unless a later toolpath cuts it.
+/// Silent when the planner dropped nothing, and when every dropped piece is
+/// cut by a lower level of the same op.
+fn rough_left_stock(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(finding) = stats
+        .rough_left_stock
+        .filter(|f| f.left.standing_pieces > 0)
+    else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_ROUGH_LEFT_STOCK),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Read on the planner stock at the end of the plan.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_ROUGH_LEFT_STOCK),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_ROUGH_LEFT_STOCK),
+        message: format!("{finding} [Recorded at generation. Report-only: no gate consumes this.]"),
+        evidence: None,
         fix: None,
         supersedes: vec![],
         group: None,
@@ -1224,6 +1257,73 @@ mod tests {
             truncated_core_mm2: Some(truncated_core_mm2),
             ..ToolpathStats::default()
         }
+    }
+
+    fn left_stats(standing_pieces: usize, regions_published: bool) -> ToolpathStats {
+        ToolpathStats {
+            rough_left_stock: Some(crate::compute::toolpath_stats::RoughLeftStockFinding {
+                left: crate::adaptive3d::LeftStock {
+                    small_regions: 5,
+                    short_forecast: 3,
+                    no_field: 2,
+                    dropped_cut_groups: 7,
+                    standing_pieces,
+                    standing_area_mm2: 61.5,
+                    tallest_mm: 9.0,
+                    tallest_at: [12.0, 34.0, 25.5],
+                },
+                regions_published,
+            }),
+            ..ToolpathStats::default()
+        }
+    }
+
+    /// P37: a 3D Rough whose dropped pieces still hold stock gets ONE
+    /// finding, with the counts, the area, the height, the position and the
+    /// reader fact. The text is true with and without a reader.
+    #[test]
+    fn standing_left_stock_is_one_caution_p37() {
+        let out = diagnostics_from_generation(ToolpathId::from_raw(2), &left_stats(4, false));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id.as_str(), ids::GEOM_ROUGH_LEFT_STOCK);
+        assert_eq!(out[0].severity, Severity::Caution);
+        let m = &out[0].message;
+        for needle in [
+            "10 areas",
+            "5 under the small-area bound",
+            "3 with a cut length under Min Region Cut Length",
+            "2 where the Geodesic Adaptive field does not fit",
+            "4 of them still hold stock on 61.5 mm²",
+            "9.00 mm above the level floor at X12.00 Y34.00 in the setup frame (stock top Z 25.500)",
+            "dropped 7 cut groups",
+            "No toolpath reads these areas",
+            "a Pocket from remaining stock or a Profile on the outline of the walls",
+            "Check the simulated stock",
+        ] {
+            assert!(m.contains(needle), "{needle:?} is not in {m:?}");
+        }
+        let with_reader =
+            diagnostics_from_generation(ToolpathId::from_raw(2), &left_stats(4, true));
+        assert_eq!(
+            with_reader.len(),
+            1,
+            "published regions do not hide the finding"
+        );
+        assert!(
+            with_reader[0]
+                .message
+                .contains("a toolpath can read these areas as its boundary"),
+            "{:?}",
+            with_reader[0].message
+        );
+    }
+
+    /// P37: every dropped piece is cut by a lower level: no finding.
+    #[test]
+    fn left_stock_that_a_lower_level_cut_is_silent_p37() {
+        assert!(
+            diagnostics_from_generation(ToolpathId::from_raw(2), &left_stats(0, false)).is_empty()
+        );
     }
 
     #[test]

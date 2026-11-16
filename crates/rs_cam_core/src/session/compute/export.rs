@@ -307,6 +307,21 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::RoughLeftStock => {
+                    for &idx in emitted {
+                        if let Some(left) = self
+                            .result_at(idx)
+                            .and_then(|r| r.stats.rough_left_stock)
+                            .filter(|f| f.left.standing_pieces > 0)
+                        {
+                            push(
+                                ids::GEOM_ROUGH_LEFT_STOCK,
+                                name_at(idx),
+                                format!("Toolpath '{}': {left}", name_at(idx)),
+                            );
+                        }
+                    }
+                }
                 Gate::BuriedFace => {
                     for &idx in emitted {
                         if let Some(buried) = self.result_at(idx).and_then(|r| r.stats.buried_face)

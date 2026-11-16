@@ -110,6 +110,9 @@ pub(crate) struct VolumetricOutput<A> {
     pub annotations: Vec<A>,
     /// The side channel: `planner_engagement` and `area_regions`.
     pub produced: Produced,
+    /// P37: the stock the planner held as material and did not plan. The
+    /// runner records it as a finding (`RoughLeftStockFinding`).
+    pub left_stock: Option<crate::adaptive3d::LeftStock>,
 }
 
 /// One volumetric op. See the module doc for what the runner owns.
@@ -174,13 +177,24 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
         toolpath,
         annotations,
         mut produced,
+        left_stock,
     } = op.plan(&inputs, &cancel, ctx.debug_ctx)?;
+    // P37: the stock the planner held and did not plan, with the one fact
+    // the session knows about a later pass: whether a toolpath reads this
+    // op's regions (the demand below).
+    let regions_published = ctx.rest_analysis.is_some_and(|ra| ra.enabled);
+    ctx.record(&left_stock.map(
+        |left| crate::compute::toolpath_stats::RoughLeftStockFinding {
+            left,
+            regions_published,
+        },
+    ));
     // D44: a planner may state the regions it left to a rest pass
     // (`Produced::rest_regions`). They are published only on demand: when
     // an enabled `DerivedRestRegions` boundary names this op, which turns
     // its rest analysis on (`normalise_rest_analysis_demand`). With no
     // demand the side channel is as before.
-    if !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+    if !regions_published {
         produced.rest_regions = None;
         produced.rest_regions_top_z = None;
     }
