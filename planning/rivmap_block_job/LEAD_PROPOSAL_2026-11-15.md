@@ -161,3 +161,37 @@ shore.
 2. Laps that follow the cone top (about 5 mm above the front surface at the offset position),
    which leave 2.7 to 4 mm of wood at about 170 points.
 3. Leave the 189 moves: the shank rubs over at most 1.3 mm of height (median 0.85 mm).
+
+## Update 2026-11-16, fourth: the V-bit stays within its flute (operator ruling "Shallower V there")
+
+The file now (code `52edf200b`, P35 G):
+
+- "V rivers and lakes": `stock_source = "from_remaining_stock"` and
+  `keep_within_flute_length = true`. Where the wood over the tip is more than the flute length
+  less 0.1 mm, the op lifts the tip. No sample goes down.
+- "Lake relief band 6 mm, 1 lake to Z 11.4" (id 27) is disabled: it cut only air.
+
+Result (release GUI built from `52edf200b`, Generate All then a simulation, cap only, 0.2 mm):
+
+| Measure | Before | Now |
+|---|---|---|
+| V-bit moves with wood above the flute | 189 | 0 |
+| Shank or holder contacts, all toolpaths | 0 | 0 |
+| Collisions, all toolpaths | 0 | 0 |
+| Total time | 18228 s | 17907 s |
+
+- The lift (agent measure on the G-code of the CLI): 252 fed moves, largest 1.395 mm at
+  X291.661 Y323.325 (G-code frame), median 0.936 mm. The V-groove is shallower there by that
+  much. The tip stays at least 1.023 mm below the front surface (stated depth less the lift; the
+  mesh was not read again).
+- The steepest fed move with a lifted end goes down 0.976 mm over 0.223 mm (77 degrees) at the
+  cut feed. No generation rule lowers that feed.
+
+Safety findings that stay (all were there before this change):
+
+- "Drill light holes": 1 rapid into stock at X327.13 Y412.17 (cause not found).
+- "Front bulk rough 18 mm": 1 move pushes the centre of the tool into wood (move 18235 at
+  X116.434 Y291.638, 1.03 mm against a limit of 1.00 mm). Earlier updates of this note did not
+  list it.
+- "Pin drill, flip pins": 5 moves with wood above the 25 mm flute (30 mm deep).
+- "Day strip slit V60": 7 moves with wood above the 5.5 mm flute (7.44 mm).

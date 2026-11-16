@@ -1,6 +1,29 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-15, evening (read this first)
+## State on 2026-11-16 (read this first)
+
+- Committed, not pushed: P31 A, B, C, P32, P33 (see the section below), then M4-A (`bf225ba29`,
+  `4fd1af1e1`, FM1 bless `17b059da4`; note `phases/P34_M4A_2026-11-15.md`) and P35 A to G
+  (`02e3f01f6..52edf200b`; note `phases/P35_OFFSET_REST_ADVISOR_2026-11-16.md`).
+- M4 is CLOSED: one sample gives one depth (`Engagement::from_sample` reads
+  `axial_engagement_mm`). The operator read the feed diff and ruled "Commit it".
+- P35: a Profile takes `stock_to_leave_radial`; a Project Curve from remaining stock starts its
+  ladder at the stock top under the curve (`RestUse::LadderTop`), takes `lateral_offset`, and can
+  keep each sample within the flute length (`keep_within_flute_length`, warning
+  `geom.lifted_within_flute`); the strategy advisor reads the modulation switch; a split Profile
+  loop cuts each ring (`geom.profile_loop_split`).
+- The job proposal is `planning/rivmap_block_job/nz_wanaka_21_lead_proposal.toml`, with its note
+  `planning/rivmap_block_job/LEAD_PROPOSAL_2026-11-15.md`. The operator ruled "Keep both files";
+  the operator file is not changed (sha256 `ee6869be015b633b...`).
+- Gate rule (operator 2026-11-16): the lead reads the agent logs, then runs the real job in the
+  GUI. One lead gate and the core full gate run once, before the push.
+- Next: (1) the clean-up list (P32 note section 7, P33 note "Decisions for the lead", P35 note
+  sections 15 to 17); (2) the open job items of the proposal note; (3) one lead gate, the core
+  full gate once, then the push; (4) P27.
+- Open with the operator: may feed optimisation lift an entry above its stated feed; the 35.3 N
+  budget; whether the proposal replaces the operator file.
+
+## State on 2026-11-15, evening
 
 - Committed, not pushed: P31 A, B, C (`13335e447..d3f630423`), the GUI freeze fix `84aa45646`,
   P32 (`250dbd7e1`, `8d5f677e1`, rulings `7ed22f657`), P33 (`93f56946f`, `29583e163`, `28305b389`).
@@ -10,14 +33,6 @@
 - P33: a Project Curve takes `depth_per_pass` (passes inside one toolpath). A simulation that
   confirms modulated feeds makes them current. Generate All: no silent state found, no code.
   Note: `phases/P33_CURVE_PASSES_2026-11-15.md`.
-- The lead gate is green on `28305b389` for core (the known reds only); the viz gate ran on
-  `7ed22f657`. The release GUI of `28305b389` ran the wanaka job.
-- The job proposal is `planning/rivmap_block_job/nz_wanaka_21_lead_proposal.toml`, with its note
-  `planning/rivmap_block_job/LEAD_PROPOSAL_2026-11-15.md`. The operator file is not changed.
-- Next: (1) the operator reads the proposal note and rules on its open items; (2) M4-A (D of the
-  P31 note; the baseline binary is stale after P32); (3) the reds of P32 note 7.9; (4) the
-  clean-up list (P32 note section 7, P33 note "Decisions for the lead"); (5) the core full gate
-  once, then the push; (6) P27.
 
 ## HAND-OVER 2026-11-11 evening, updated 2026-11-12 night (read this section first)
 

@@ -2485,7 +2485,7 @@ enabled = false
 [[setups.toolpaths]]
 id = 27
 name = "Lake relief band 6 mm, 1 lake to Z 11.4"
-enabled = true
+enabled = false
 tool_id = 0
 model_id = 16
 boundary_inherit = true
@@ -3009,7 +3009,7 @@ enabled = true
 tool_id = 1
 model_id = 8
 boundary_inherit = true
-stock_source = "fresh"
+stock_source = "from_remaining_stock"
 coolant = "off"
 
 [setups.toolpaths.operation]
@@ -3026,6 +3026,7 @@ side = "center"
 projection = "point"
 spindle_rpm = 18000
 chain_distance_mm = 0.0
+keep_within_flute_length = true
 
 [setups.toolpaths.dressups]
 entry_style = "none"

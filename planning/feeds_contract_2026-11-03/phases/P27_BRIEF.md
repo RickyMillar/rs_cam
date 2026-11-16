@@ -132,7 +132,7 @@ The 11 physical and ruled rows stay (`P28-04`, `P28-07`, `P28-17`, `P28-20`, `P2
 | | | `S-NoSampleGate` | No sample gate for the vendor depth table, the rubbing floor and the plunge rate; option D-1 of `P29-11_DESIGN.md` 11.6.4 first |
 | A generator change | 2 | `U-PerimeterSweep`, `U-EntryFallback` | Generation facts: the geodesic grow refuses; a helix with no room ramps |
 | The clean-up pass | 1 | `U-efficiency` | The specific energy and the deflection chip ceiling of the efficiency card read the nominal tool |
-| The operator | 1 | `M4` | Two sample depths; M4-A or M4-A1 (`P29-11_DESIGN.md` section 3.5) |
+| The operator | 1 | `M4` | CLOSED 2026-11-15 (`4fd1af1e1`, M4-A, operator ruling "Commit it"; `P34_M4A_2026-11-15.md`). Was: two sample depths; M4-A or M4-A1 (`P29-11_DESIGN.md` section 3.5) |
 
 A new limit or model goes into `OperationConfig::cuts()` as a fact of the cut and judges every
 cut group, before and after the simulation (`limits/CLAUDE.md`, "How to add a limit"). The guard
