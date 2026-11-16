@@ -6,7 +6,7 @@ use crate::state::toolpath::{
 };
 use rs_cam_core::compute::operation_configs::PROJECT_CURVE_POINT_CAUTION;
 
-use super::super::linking_dressup::{Fields, combo_in_row, combo_param, plain_row};
+use super::super::linking_dressup::{Fields, check_param, combo_in_row, combo_param, plain_row};
 use super::super::{advanced, dv, dv_opt, p};
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -167,6 +167,17 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             " mm",
             0.1,
             Some("on the curve"),
+            fields,
+        );
+        // P35 G: a switch, off by default.
+        let _ = check_param(
+            ui,
+            p(
+                OperationType::ProjectCurve,
+                "keep_within_flute_length",
+                "Keep within flute length",
+            ),
+            &mut cfg.keep_within_flute_length,
             fields,
         );
         dv(

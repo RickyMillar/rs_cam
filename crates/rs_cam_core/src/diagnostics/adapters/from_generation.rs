@@ -14,7 +14,7 @@
 //! (`planning/unified_v3_design.md` §13/§14c/§14h).
 
 use crate::compute::toolpath_stats::{
-    TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE, ToolpathStats,
+    NoteKind, TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE, ToolpathStats,
 };
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
@@ -590,19 +590,21 @@ fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
 ///   straight sides. The loop still has tabs, but not where the side rule
 ///   puts them, or fewer than asked.
 /// - P35 D, `geom.profile_loop_split` (`Caution`): the radial stock to
-///   leave moves a loop to more than one ring (`TabNote::warns`). The op
-///   cuts each ring, and a part of the drawn loop is not cut.
+///   leave moves a loop to more than one ring, or the lateral offset of a
+///   Project Curve is not one piece (`NoteKind::Split`).
+/// - P35 G, `geom.lifted_within_flute` (`Caution`): a Project Curve lifted
+///   samples to stay within the flute length (`NoteKind::FluteLift`).
 ///
 /// Silent when the op recorded no note.
 fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     let Some(f) = &stats.tab_placement else {
         return Vec::new();
     };
-    let finding = |id: &'static str, severity: Severity, warns: bool| {
+    let finding = |id: &'static str, severity: Severity, kind: NoteKind| {
         let notes: Vec<String> = f
             .notes
             .iter()
-            .filter(|note| note.warns() == warns)
+            .filter(|note| note.kind() == kind)
             .map(ToString::to_string)
             .collect();
         (!notes.is_empty()).then(|| Diagnostic {
@@ -624,14 +626,22 @@ fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnost
             suppressed_diagnostics: vec![],
         })
     };
-    finding(ids::GEOM_TAB_PLACEMENT, Severity::Info, false)
-        .into_iter()
-        .chain(finding(
+    [
+        finding(ids::GEOM_TAB_PLACEMENT, Severity::Info, NoteKind::TabRemark),
+        finding(
             ids::GEOM_PROFILE_LOOP_SPLIT,
             Severity::Caution,
-            true,
-        ))
-        .collect()
+            NoteKind::Split,
+        ),
+        finding(
+            ids::GEOM_LIFTED_WITHIN_FLUTE,
+            Severity::Caution,
+            NoteKind::FluteLift,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// A/M6: which rest reference the claims pipeline ran against.

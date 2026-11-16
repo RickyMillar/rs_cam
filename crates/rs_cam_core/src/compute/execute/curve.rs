@@ -25,6 +25,8 @@
 //! - the record of the link totals, only when the link stage ran
 //!   (G-LINKVISIBLE, D2);
 //! - the cut-run spans and the depth-run annotation;
+//! - P35 G: the flute-length lift of the full-depth path
+//!   ([`keep_within_flute`]), for an op that states a [`FluteLimit`];
 //! - P35: the top of the pass ladder ([`ladder_top_z`]): the op top Z, or
 //!   the stock top under the curve for an op from remaining stock whose
 //!   rest rule is `RestUse::LadderTop`.
@@ -74,6 +76,13 @@ pub(crate) struct PlannedCurve {
     pub offset_failures: Option<usize>,
 }
 
+/// P35 G: what [`keep_within_flute`] reads from the op.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FluteLimit {
+    /// The largest XY distance between two fed samples of the op (mm).
+    pub sample_spacing_mm: f64,
+}
+
 /// One curve op. See the module doc for what the runner owns.
 pub(crate) trait CurveOp {
     /// The label prefix of the cut-run spans.
@@ -105,6 +114,12 @@ pub(crate) trait CurveOp {
         _link: &CurveLink<'_>,
     ) -> (Toolpath, Option<RelinkTotals>) {
         (planned, None)
+    }
+
+    /// P35 G: `Some` when the op keeps each sample within the flute
+    /// length of its tool ([`keep_within_flute`]). The default is `None`.
+    fn flute_limit(&self) -> Option<FluteLimit> {
+        None
     }
 
     /// P33: the passes of the op over the planned curves, the first pass
@@ -143,6 +158,19 @@ pub(crate) fn run_curve<O: CurveOp>(
         if let Some(failures) = one.offset_failures {
             ctx.record(&super::findings::OffsetFailures(failures));
         }
+    }
+    // P35 G: the lift is on the full-depth path, before the guard and the
+    // pass ladder, so each pass of the ladder is above the lifted path.
+    if let Some(limit) = op.flute_limit() {
+        let stock = prepared.territory().unguarded_stock().ok_or_else(|| {
+            OperationError::InvalidParam(format!(
+                "{}: keep_within_flute_length reads the wood over the tool, so it needs the \
+                 remaining stock. Set the stock source of the toolpath to remaining stock, or \
+                 turn the switch off.",
+                op_type.label()
+            ))
+        })?;
+        notes.extend(keep_within_flute(&mut planned, stock, ctx.tool_def, limit));
     }
     // P35 F: a curve that the lateral offset does not give back as one
     // piece. The per-loop note list is the channel of P35 D.
@@ -202,6 +230,63 @@ pub(crate) fn run_curve<O: CurveOp>(
         generated_with_spans(linked, spans)
     };
     Ok(with_depth_run_annotation(generated, ctx.semantic_ctx))
+}
+
+/// P35 G (operator ruling 2026-11-16, "Shallower V there"): lift each fed
+/// sample of `planned` so that the wood over the tip is never more than
+/// the flute length less the margin. The note states what was lifted;
+/// `None` when no sample moved.
+///
+/// - The footprint is the flute-top zone of the tool as the simulation
+///   probes it (`stock::contact::flute_top_zone`: the envelope radius at
+///   the height of the flute length), the reference of
+///   `tool.flute_overreach`. The radius takes the sample spacing of the op
+///   on top, so the bound of a sample holds for each point of the two fed
+///   segments at that sample.
+/// - `stock` is the stock BEFORE the op. It is at or above the stock at
+///   each move, so the lift is at least what the reference needs.
+/// - The margin is the clearance of the air-cut filter
+///   (`dressup::AIR_CUT_CLEARANCE_MM`).
+/// - No sample goes down, and no XY moves. A rapid is not read.
+fn keep_within_flute(
+    planned: &mut Toolpath,
+    stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+    limit: FluteLimit,
+) -> Option<crate::compute::toolpath_stats::TabNote> {
+    let (zone_radius, flute_length_mm) = crate::stock::contact::flute_top_zone(cutter)?;
+    let reach = zone_radius + limit.sample_spacing_mm;
+    let margin = crate::dressup::AIR_CUT_CLEARANCE_MM;
+    let mut lifts: Vec<f64> = Vec::new();
+    let mut largest: Option<(f64, [f64; 3])> = None;
+    for m in &mut planned.moves {
+        if m.move_type == crate::toolpath::MoveType::Rapid {
+            continue;
+        }
+        let Some(top) = stock.max_top_z_in_disc(m.target.x, m.target.y, reach) else {
+            continue;
+        };
+        let bound = top - flute_length_mm + margin;
+        let lift = bound - m.target.z;
+        if lift <= 0.0 {
+            continue;
+        }
+        m.target.z = bound;
+        lifts.push(lift);
+        if largest.is_none_or(|(most, _)| lift > most) {
+            largest = Some((lift, [m.target.x, m.target.y, bound]));
+        }
+    }
+    let (largest_mm, at) = largest?;
+    lifts.sort_by(f64::total_cmp);
+    let median_mm = lifts.get(lifts.len() / 2).copied().unwrap_or(largest_mm);
+    Some(crate::compute::toolpath_stats::TabNote::LiftedWithinFlute {
+        lifted: lifts.len(),
+        largest_mm,
+        median_mm,
+        at,
+        flute_length_mm,
+    })
 }
 
 /// P35: the top of the pass ladder of a curve op.

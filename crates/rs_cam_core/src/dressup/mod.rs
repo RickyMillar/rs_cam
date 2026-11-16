@@ -29,6 +29,12 @@ mod link;
 pub mod tabs;
 
 pub use entry_descent::ENTRY_CONTACT_CLEARANCE;
+
+/// The clearance (mm) of the air-cut filter ([`filter_air_cuts`], its
+/// `tolerance` at the one call of the dressup pipeline): a move is air only
+/// when the whole cutter is this far over the stock. P35 G: the margin of
+/// the flute-length lift of a Project Curve reads it too.
+pub const AIR_CUT_CLEARANCE_MM: f64 = 0.1;
 pub(crate) use entry_descent::{ENTRY_CLEARANCE, emit_helix, emit_ramp, emit_stock_aware_plunge};
 pub use tabs::{Tab, apply_tabs, even_tabs};
 

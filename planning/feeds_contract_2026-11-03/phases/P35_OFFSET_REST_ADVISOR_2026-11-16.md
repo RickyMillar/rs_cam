@@ -670,3 +670,104 @@ code.
 | G5 | Switch on with `stock_source = "fresh"` refuses with a text that names the remaining stock. |
 | G6 | With `depth_per_pass` and `lateral_offset`: 0 flute overreach, and each earlier pass is above the lifted full-depth pass. |
 | G7 | Wanaka, "V rivers and lakes" with remaining stock and the switch on: 0 `tool.flute_overreach` moves (189 before). The largest lift is near 1.3 mm plus the margin plus the effect of the wider disc; no lifted sample ends above the front surface (the tip is 2.418 mm below it before the lift). No prediction of the count of lifted samples. |
+
+## 16. Part G: what is built, and the results
+
+- `ProjectCurveConfig::keep_within_flute_length: bool` (written to a file only when on). GUI row
+  "Keep within flute length" in the Advanced section of the Project Curve editor. NOT seen on
+  screen.
+- `compute/execute/curve.rs`: `CurveOp::flute_limit` (default `None`) and `keep_within_flute`
+  (rules 3 to 7). `run_curve` lifts the planned full-depth path before the engagement guard and
+  the pass ladder. With the switch on and no remaining stock it refuses: "keep_within_flute_length
+  reads the wood over the tool, so it needs the remaining stock. Set the stock source of the
+  toolpath to remaining stock, or turn the switch off."
+- `stock/contact.rs`: `flute_top_zone`, the radius and the height of the flute-top zone as the
+  simulation probes it. The lift reads it; it types no radius.
+- `dressup/mod.rs`: `AIR_CUT_CLEARANCE_MM` (0.1 mm). The call of the air-cut filter and the lift
+  read the one constant.
+- The report: `TabNote::LiftedWithinFlute { lifted, largest_mm, median_mm, at, flute_length_mm }`
+  on the note list of the op. `TabNote::kind` (`NoteKind`) replaces `TabNote::warns`, and the
+  diagnostics give three ids from the list: `geom.tab_placement` (Info), `geom.profile_loop_split`
+  (Caution) and the new `geom.lifted_within_flute` (Caution, `warn(Danger::Part)`, anchor
+  `Operation`, face "Tool lifted to its flute length: cut is shallower").
+
+| # | Result |
+|---|---|
+| G1 | Section 17. |
+| G2 | Held. Red before the code: "unknown parameter 'keep_within_flute_length'" (4 of 4 tests), and with the switch off the simulation finds 47 moves with flute overreach on the fixture (the worst 12.00 mm of wood over the tip, flute 5.0 mm). |
+| G3 | Held. `the_switch_lifts_the_tool_out_of_the_flute_overreach_p35g`: 0 flute overreach; the tip is at Z 15.1 (`20 - 5.0 + 0.1`) under the full height; the samples more than 4.2 mm before the step are equal to the path with the switch off; no sample goes down. |
+| G4 | Held. The note: "48 samples are lifted ... The largest lift is 7.100 mm at X17.00 Y0.00 (tip Z 15.100); the median lift is 7.100 mm". One `geom.lifted_within_flute` warning, no split and no tab remark. |
+| G5 | Held. `the_switch_refuses_a_fresh_stock_source_p35g`. |
+| G6 | Held. `the_ladder_and_the_lateral_offset_keep_within_the_flute_p35g`. |
+| G7 | Held. See below. |
+
+The slope of the lifted path on the fixture: the lift goes from 0 to 7.1 mm between two samples
+0.5 mm apart (the edge of the footprint crosses the step), so the fed move between them is a
+7.1 mm climb or descent over 0.5 mm. The rule makes such a step wherever the stock top in the
+footprint has a step. See rule 6 of section 15.2 for what feeds it.
+
+### The wanaka measure (read only)
+
+Three scratch copies of the proposal as committed (`ebe9bb043`, no 2 mm laps), release CLI of
+this tree, `project <copy> --setup "1 Back" --summary --emit-gcode <file>`, each under the memory
+guard, cell 0.2 mm, cap only. The copy with the switch is `p35/wanaka/proposal_v_within_flute.toml`
+in the scratch folder (two lines differ from the proposal: `stock_source =
+"from_remaining_stock"` and `keep_within_flute_length = true` on "V rivers and lakes").
+
+| "V rivers and lakes" | As committed (fresh) | Remaining stock, switch off | Remaining stock, switch on |
+|---|---|---|---|
+| `tool.flute_overreach` moves | 189 | 189 | 0 |
+| Moves | 22369 | 22344 | 22344 |
+| Fed moves in the G-code | 21852 | 21823 | 21823 |
+| Cut length | 8826 mm | 6521 mm | 6519 mm |
+| Rapid length | 8376 mm | 10681 mm | 10678 mm |
+| Samples that cut | 22629 | 22629 | 22668 |
+| Simulated time of the setup | 9532.1 s | 9225.3 s | 9224.6 s |
+
+- The lift, measured on the emitted G-code (the two remaining-stock runs have the same moves in
+  XY, move for move): 252 fed moves are lifted, none goes down. The largest lift is 1.395 mm (at
+  X291.661 Y323.325 in the G-code frame, tip Z 8.199); the median is 0.936 mm; the smallest is
+  0.04 mm; 14 lifts are over 1.3 mm. The count of lifted SAMPLES of the note was not read on this
+  job (the CLI does not print the note text).
+- The front surface: the op puts the tip 2.418 mm below the front surface under the sample
+  (`depth = -2.417820455`, point projection, from below). After the largest lift the tip is
+  1.023 mm below it, the least value. 0 lifted moves end above the front surface. These figures
+  are the stated depth less the lift; the mesh was not read again.
+- The op time: the setup time falls by 306.8 s with remaining stock (the entry descents become
+  rapid above the stock: 2305 mm of fed length becomes rapid), and by 0.7 s more with the switch.
+  The other ops are equal in the three runs.
+- The air-cut filter: the samples that cut are 22629 with and without remaining stock, so the
+  filter drops no part of the V path that cut wood. 29 fed moves of the fresh path are not in the
+  remaining-stock path.
+- Collisions: every op of the setup has 0 collisions in the three runs. The one rapid collision
+  is "Drill light holes" (known). The flute-top contact zones that stay: "Pin drill" 5, "Day
+  strip slit V60" 7.
+- With remaining stock the op gains the finding `geom.buried_curve` (the engagement guard reads
+  the stock only for an op from remaining stock).
+
+Decisions for the lead (part G):
+
+1. The footprint takes the sample spacing on top of the zone radius (rule 3). It lifts a little
+   more than the reference (the largest lift is 1.395 mm for an overreach of at most 1.3 mm plus
+   the 0.1 mm margin).
+2. The lifted path can have a steep fed step where the stock top has a step (see above). On the
+   job the largest change of lift between two neighbour fed moves is 0.985 mm, and the steepest
+   fed move with a lifted end is 77 degrees (0.976 mm of Z over 0.223 mm, at X325.881 Y288.080).
+   No generation rule lowers its feed.
+3. The proposal file is not changed; the two lines above are the change.
+
+## 17. Gates of part G (the tree with part G, 2026-11-16)
+
+| Gate | Result |
+|---|---|
+| Full clippy | Clean. |
+| Core `--lib` | 2836 passed, 1 failed: `the_envelope_meets_its_time_budget` (the known red of a parallel run). The `_w1` rows of the diagnostics table passed with the new id. |
+| `rs_cam_mcp`, `rs_cam_cli` tests | Passed. |
+| Viz `--lib` (`--test-threads 2`) | First run: 706 of 707 dots, then no thread of the test binary used CPU for 20 minutes (every thread in a futex wait; the threads were named `app::mcp::comma..` and `compute::worker`). The step stopped that one process by its PID. A second run of the same gate passed: 705 passed, 2 ignored, in 74 s. The cause of the idle run was NOT found; a `cargo test --release --workspace` of another session ran on the machine in that time. |
+| Viz `mcp_wire_surface_pin`, `one_place_per_diagnostic_w2b`, `the_inspector_bad_states_w0`, `the_help_key_is_the_param_name_ui04`, `operations_registry_ui05`, `the_inspector_draws_only_kit_rows_w6`, `folder_maps_name_real_files_f140`, `a_job_with_each_finding_exports_and_names_it_on_every_surface_k6` | Passed. The wire pin did not move. |
+| `every_op_keeps_its_toolpath_g_opgolden` | 46 changes: the 46 known rows (sorted diff empty). The seven `project_curve/*` arms read "ok" (G1). |
+| `set_param_refuses_absent_field_n5` | Passed. No pin moved. |
+| 43 core sentries (the P35 test files, the Project Curve, Profile, tab, `compute/`, `dressup/`, `stock/` and `diagnostics/` sentries, the folder map and test hygiene sentries) | Passed, but for the two known reds: `every_op_conforms_w4` check 6 and `layered_framework_owns_the_ladder_w3`. |
+
+Not run for G: FM1, `perf_golden_sim_metrics`, `strategy_advisor_smoke`,
+`one_contact_finding_on_every_surface_p22_0c`.

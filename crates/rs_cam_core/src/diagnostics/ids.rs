@@ -396,6 +396,10 @@ diag_ids! {
     /// moves a loop to more than one ring. The op cuts each ring; the narrow
     /// parts of the loop between the rings are not cut.
     pub const GEOM_PROFILE_LOOP_SPLIT: &str = "geom.profile_loop_split" => warn(Danger::Part);
+    /// P35 G (operator ruling 2026-11-16): a Project Curve with
+    /// `keep_within_flute_length` lifted samples, so the cut is shallower
+    /// than asked there.
+    pub const GEOM_LIFTED_WITHIN_FLUTE: &str = "geom.lifted_within_flute" => warn(Danger::Part);
     /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
     /// `cavalier_contours` panicked and was contained, or one of the offset
     /// module's own input guards refused the ring — rather than collapsing.

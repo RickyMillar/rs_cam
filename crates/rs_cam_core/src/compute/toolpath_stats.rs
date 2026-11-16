@@ -1242,16 +1242,49 @@ pub enum TabNote {
         /// True for a closed ring, false for an open path.
         closed: bool,
     },
+    /// P35 G (operator ruling 2026-11-16, "Shallower V there"): a Project
+    /// Curve with `keep_within_flute_length` lifted samples so that the
+    /// wood over the tip is never more than the flute length less the
+    /// margin. The cut is shallower than asked at those samples. A warning
+    /// (`geom.lifted_within_flute`, `Caution`).
+    LiftedWithinFlute {
+        /// The count of lifted samples (fed moves of the full-depth path).
+        lifted: usize,
+        /// The largest and the median lift (mm).
+        largest_mm: f64,
+        median_mm: f64,
+        /// The tip position of the largest lift, after the lift (setup
+        /// frame).
+        at: [f64; 3],
+        /// The flute length of the tool (mm).
+        flute_length_mm: f64,
+    },
+}
+
+/// Which finding a [`TabNote`] is (the diagnostics give one id for each
+/// kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteKind {
+    /// A tab placement remark (`geom.tab_placement`, Info).
+    TabRemark,
+    /// A loop or a curve that an offset split (`geom.profile_loop_split`).
+    Split,
+    /// Samples lifted to stay within the flute (`geom.lifted_within_flute`).
+    FluteLift,
 }
 
 impl TabNote {
-    /// True for a note that warns of geometry the op does not cut as
-    /// drawn (P35 D: a split loop). The other notes are tab remarks.
+    /// The finding this note is. A split (P35 D, F) and a flute lift
+    /// (P35 G) warn of geometry the op does not cut as drawn; the other
+    /// notes are tab remarks.
     #[must_use]
-    pub const fn warns(&self) -> bool {
+    pub const fn kind(&self) -> NoteKind {
         match self {
-            Self::SplitLoop { .. } | Self::OffsetSplit { .. } => true,
-            Self::EvenSpacing { .. } | Self::FewerThanAsked { .. } | Self::OpenPath { .. } => false,
+            Self::SplitLoop { .. } | Self::OffsetSplit { .. } => NoteKind::Split,
+            Self::LiftedWithinFlute { .. } => NoteKind::FluteLift,
+            Self::EvenSpacing { .. } | Self::FewerThanAsked { .. } | Self::OpenPath { .. } => {
+                NoteKind::TabRemark
+            }
         }
     }
 }
@@ -1296,6 +1329,19 @@ impl std::fmt::Display for TabNote {
                 "The loop from X{x:.2} Y{y:.2} splits into {rings} rings with a radial stock \
                  to leave of {leave:.3} mm: each ring is cut, and the narrow parts of the loop \
                  between the rings are not cut."
+            ),
+            Self::LiftedWithinFlute {
+                lifted,
+                largest_mm,
+                median_mm,
+                at: [x, y, z],
+                flute_length_mm,
+            } => write!(
+                f,
+                "{lifted} samples are lifted so that the tool is not deeper in the wood than \
+                 its flute length ({flute_length_mm:.3} mm): the cut is shallower there. The \
+                 largest lift is {largest_mm:.3} mm at X{x:.2} Y{y:.2} (tip Z {z:.3}); the median \
+                 lift is {median_mm:.3} mm."
             ),
             Self::OffsetSplit {
                 start: [x, y],

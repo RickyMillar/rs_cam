@@ -643,6 +643,16 @@ fn flute_top_probe(cutter: &dyn MillingCutter) -> Option<ZoneProbe> {
     .find(|probe| probe.kind == ContactKind::FluteTop)
 }
 
+/// P35 G: the flute-top zone of `cutter` as the simulation probes it
+/// ([`flute_top_probe`]): the outer radius of the zone and its height over
+/// the tip, the flute length (mm). A reader that keeps a tool within its
+/// flute reads the footprint of the reference here, not a radius of its
+/// own.
+#[must_use]
+pub fn flute_top_zone(cutter: &dyn MillingCutter) -> Option<(f64, f64)> {
+    flute_top_probe(cutter).map(|probe| (probe.outer_mm, probe.bottom_mm))
+}
+
 /// The contact zones of one move that need the flushed stock: the ones
 /// that meet the stock as it stands with the stamps still queued. Queued
 /// stamps only remove wood, so a zone that meets nothing here meets

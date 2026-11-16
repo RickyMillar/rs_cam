@@ -24,7 +24,7 @@ use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 use std::borrow::Cow;
 
-use super::curve::{CurveFrame, CurveLink, CurveOp, PlannedCurve, run_curve};
+use super::curve::{CurveFrame, CurveLink, CurveOp, FluteLimit, PlannedCurve, run_curve};
 use super::height_field::{
     AnalyticField, HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule,
     run_height_field,
@@ -583,6 +583,14 @@ impl CurveOp for ProjectCurveOp<'_> {
             toolpath,
             notes: moved.notes,
             offset_failures: Some(moved.failures),
+        })
+    }
+
+    /// P35 G: `keep_within_flute_length`. The kernel puts its samples at
+    /// most `point_spacing` apart.
+    fn flute_limit(&self) -> Option<FluteLimit> {
+        self.cfg.keep_within_flute_length.then_some(FluteLimit {
+            sample_spacing_mm: self.cfg.point_spacing,
         })
     }
 

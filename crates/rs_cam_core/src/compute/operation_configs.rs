@@ -33,6 +33,10 @@ const HELP_DEPTH: &str = "Total cut depth from stock surface.";
 const HELP_DEPTH_PER_PASS: &str =
     "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large.";
 
+const HELP_PROJECT_CURVE_KEEP_WITHIN_FLUTE: &str = "Keep the tool within its flute length. Where the wood over the tip is more than the flute \
+     length of the tool, the op lifts the tip, so the cut is shallower there and no part of the \
+     tool above the flute meets wood. It reads the remaining stock: set the stock source to \
+     remaining stock. The op reports the count of lifted samples and the largest lift.";
 const HELP_PROJECT_CURVE_LATERAL_OFFSET: &str = "Lateral offset (mm) of the tool centre from the drawn curve, in XY, before the projection. \
      Empty or 0 cuts on the curve. An open path: a positive value is to the left of the drawn \
      direction, a negative value to the right. A closed ring: a positive value moves the ring \
@@ -3716,6 +3720,15 @@ pub struct ProjectCurveConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_PROJECT_CURVE_LATERAL_OFFSET, range = -10.0..=10.0)]
     pub lateral_offset: Option<f64>,
+    /// P35 G (operator ruling 2026-11-16, "Shallower V there"): the op
+    /// lifts each sample so that the wood over the tip is never more than
+    /// the flute length of the tool (`compute::execute::curve`,
+    /// `keep_within_flute`). It reads the remaining stock; with a Fresh
+    /// stock source the op refuses. Default off; a file with no key loads
+    /// it off, and the file writes the key only when it is on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[param(help = HELP_PROJECT_CURVE_KEEP_WITHIN_FLUTE, optional)]
+    pub keep_within_flute_length: bool,
 }
 
 /// `0.0` — chaining OFF.
@@ -3747,6 +3760,7 @@ impl Default for ProjectCurveConfig {
             chain_distance_mm: default_project_curve_chain_distance_mm(),
             selection: Selection::drawing(),
             lateral_offset: None,
+            keep_within_flute_length: false,
         }
     }
 }

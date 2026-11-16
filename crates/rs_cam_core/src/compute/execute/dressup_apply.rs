@@ -1311,7 +1311,16 @@ impl<'a> PipelineRun<'a> {
                 scope.set_param(SemanticKey::ToolRadius, tool_radius);
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, timing),
+            |at| {
+                crate::dressup::filter_air_cuts(
+                    at,
+                    stock,
+                    cut,
+                    safe_z,
+                    crate::dressup::AIR_CUT_CLEARANCE_MM,
+                    timing,
+                )
+            },
         )
     }
 

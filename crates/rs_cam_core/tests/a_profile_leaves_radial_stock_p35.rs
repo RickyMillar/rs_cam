@@ -481,7 +481,8 @@ fn a_split_loop_cuts_each_ring_and_warns_p35d() {
                 TabNote::EvenSpacing { .. }
                 | TabNote::FewerThanAsked { .. }
                 | TabNote::OpenPath { .. }
-                | TabNote::OffsetSplit { .. } => None,
+                | TabNote::OffsetSplit { .. }
+                | TabNote::LiftedWithinFlute { .. } => None,
             })
             .collect();
         assert_eq!(splits, vec![([0.0, 0.0], 2)], "{side:?}");

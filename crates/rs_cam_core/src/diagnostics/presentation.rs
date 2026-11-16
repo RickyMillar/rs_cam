@@ -558,6 +558,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "A loop splits: its narrow parts are not cut",
     ),
     (
+        ids::GEOM_LIFTED_WITHIN_FLUTE,
+        OP,
+        "Tool lifted to its flute length: cut is shallower",
+    ),
+    (
         ids::GEOM_OFFSET_LIBRARY_FAILURE,
         OP,
         "Offset failed: material can be left",
