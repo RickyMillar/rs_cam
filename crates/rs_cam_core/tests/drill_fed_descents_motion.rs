@@ -104,7 +104,12 @@ const HOLE_B: [f64; 2] = [40.0, 20.0];
 /// same inputs, so this only has to absorb accumulated `f64` noise.
 const Z_EPS: f64 = 1e-6;
 
-fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
+fn drill_session(mut cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
+    // The op states its feed and its spindle speed: an op with unset feeds
+    // does not generate (feeds contract), and this sentry reads motion, not
+    // feeds. 300 mm/min is the feed the case docs name.
+    cfg.feed_rate.get_or_insert(300.0);
+    cfg.spindle_rpm.get_or_insert(18_000);
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(StockConfig {
         x: FLAT_X,
