@@ -609,3 +609,64 @@ the gates from `rs_cam_mcp` on ran again afterwards, on the same tree.
 | 39 core sentries (the P35 test files, the Project Curve, Profile, tab, `compute/`, `dressup/` and `diagnostics/` sentries, the folder map and test hygiene sentries) | Passed, but for the two known reds: `every_op_conforms_w4` check 6 and `layered_framework_owns_the_ladder_w3` (the same two tests and the same hashes as before). |
 
 Not run for F: FM1, `perf_golden_sim_metrics`, `strategy_advisor_smoke`.
+
+## 15. Part G: a Project Curve keeps each sample within the flute length (operator ruling 2026-11-16, "Shallower V there")
+
+Need: on the wanaka proposal the V-bit of "V rivers and lakes" is deeper in the wood than its cone
+on 189 moves (at most 1.3 mm over). The 2 mm laps of part F cannot fix it. The op lifts the tool
+so that it is never deeper than its cutting length. Base commit `ebe9bb043`. Written before the
+code.
+
+### 15.1 The name, and what the reference measures
+
+- The words of the code: the tool fact is `flute_length`; the simulation finding is
+  `tool.flute_overreach`, and its clean form is `tool.flute_reach_within`; the feeds envelope has
+  the "flute guard". The key is `keep_within_flute_length` (a switch, off by default).
+- The reference is the flute-top zone of the tool body (`tool::body`, zone 3: at the height of
+  the flute length `L`, out to the envelope radius) and its probe (`stock::contact`,
+  `flute_top_probe`): a fed move is an overreach when a stock column whose centre is in the disc
+  of the envelope radius about the tip stands higher than tip Z + `L` (plus a float slack). The
+  simulation reads the stock as it stands at the move.
+
+### 15.2 The rules
+
+1. New key `keep_within_flute_length` on Project Curve, a switch, off by default. No key: the path
+   of today, byte for byte. A file gains the key only when it is on.
+2. The switch needs the remaining stock. With the switch on and `stock_source = "fresh"` the op
+   refuses, and the text says so. Reason: a Fresh op does not read the simulated stock (B19), and
+   the top of the stock box is not the wood over the curve after the ops before it (on the wanaka
+   job the V-bit runs on a cavity floor far below the box top; the box top would lift every
+   sample).
+3. For each fed sample of the full-depth path: `top` is the highest stock top (the stock BEFORE the
+   op) in the disc of the flute-top zone about the sample, with the radius of the zone (the probe
+   of the reference, from the tool model) plus the sample spacing of the op (`point_spacing`).
+   The added spacing makes the bound hold for each point of the two fed segments at the sample,
+   not only at the sample. Where `top - tip Z` is more than `L - margin`, the tip Z becomes
+   `top - L + margin`. No sample goes down.
+4. The margin is 0.1 mm: the clearance of the air-cut filter (the value at its call in
+   `compute/execute/dressup_apply.rs`), now a named constant that the two read.
+5. The stock before the op is at or above the stock at each move, so the rule lifts at least as
+   much as the reference needs.
+6. Neighbour samples: each sample takes its own bound, so the lifted path follows the stock top
+   in the disc less `L`. Two neighbour samples differ by at most the largest lift, over one sample
+   spacing. A lifted sample is a fed move like each other sample of the op; the entry of a chain is
+   the plunge of the op at the plunge rate. No generation rule of a Project Curve lowers the feed
+   of a steep descent between two samples (the surface itself can be steep); the plunge guard of
+   the feed modulation reads the emitted path after a simulation.
+7. The lift is on the full-depth path, before the pass ladder. The passes of the P33 ladder are
+   the lifted path moved up, so each is above it. The lateral offset is before the lift.
+8. The op reports the lift: one note on the note list of the op (the channel of D and F) with the
+   count of lifted samples, the largest and the median lift and the position of the largest. The
+   diagnostics give it under its own id (a lift is not a split), as a warning. No refusal.
+
+### 15.3 Predictions
+
+| # | Prediction |
+|---|---|
+| G1 | No key: the op golden does not move (the 46 known rows). |
+| G2 | Red first. Fixture: a V-bit, a curve under the stepped stock of part B (a floor at Z 12, the full height Z 20 over a short part), full depth Z 8, remaining stock, switch off: the simulation finds flute overreach on the op, and the door refuses the key `keep_within_flute_length`. |
+| G3 | Switch on: the simulation finds 0 flute overreach on the op. Under the full height the tip is at `20 - L + 0.1`. Away from the step (more than the zone radius plus the spacing) the path is equal to the path with the switch off. |
+| G4 | The note holds the count of lifted samples, the largest lift (`12 - L + 0.1` on the fixture) and its position; the diagnostics hold one warning. |
+| G5 | Switch on with `stock_source = "fresh"` refuses with a text that names the remaining stock. |
+| G6 | With `depth_per_pass` and `lateral_offset`: 0 flute overreach, and each earlier pass is above the lifted full-depth pass. |
+| G7 | Wanaka, "V rivers and lakes" with remaining stock and the switch on: 0 `tool.flute_overreach` moves (189 before). The largest lift is near 1.3 mm plus the margin plus the effect of the wider disc; no lifted sample ends above the front surface (the tip is 2.418 mm below it before the lift). No prediction of the count of lifted samples. |
