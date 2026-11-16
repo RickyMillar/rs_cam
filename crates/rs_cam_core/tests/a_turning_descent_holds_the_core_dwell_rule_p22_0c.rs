@@ -41,7 +41,7 @@ use rs_cam_core::ops::waterline::{
 };
 use rs_cam_core::stock::contact::WalkChecks;
 use rs_cam_core::stock::radial_profile::LUT_SAMPLES;
-use rs_cam_core::tool::body::{CoreZone, core_of, cut_table};
+use rs_cam_core::tool::body::{CoreZone, FedLead, core_of, cut_table};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 
@@ -149,7 +149,7 @@ fn a_cut_descent_that_turns_holds_the_core_dwell_rule_p22_0c() {
         "control: the straight-line limit through a 90 deg turn strikes"
     );
     let mut clamped = raw.clone();
-    core.clamp_descents(&mut clamped, None);
+    core.clamp_descents(&mut clamped, &FedLead::default());
     let mut raised = 0;
     for (a, b) in raw.iter().zip(&clamped) {
         assert_eq!((a.x, a.y), (b.x, b.y), "the clamp moves only Z");
@@ -167,11 +167,82 @@ fn a_cut_descent_that_turns_holds_the_core_dwell_rule_p22_0c() {
         })
         .collect();
     let mut kept = straight.clone();
-    core.clamp_descents(&mut kept, None);
+    core.clamp_descents(&mut kept, &FedLead::default());
     assert_eq!(
         kept, straight,
         "a straight descent at the limit is unchanged"
     );
+}
+
+/// P36 B (`P36_DRILL_RAPID_CENTRE_DESCENT_2026-11-16.md` section 2): the
+/// dwell rule reads the fed chain, not one piece.
+///
+/// The turning descent in two cut pieces that join at the corner, as the
+/// 3D Rough ships a cut that its stock read splits (the wanaka front
+/// rough: four short pieces in one turn, 1.06 mm of descent in one window).
+///
+/// - Each piece clamped with only the point where the tool stands (the
+///   read before P36): each piece is a straight descent at the limit, so
+///   the clamp raises nothing and the turn strikes.
+/// - Each piece clamped with the lead that followed the piece before: no
+///   core finding, and no point is lower.
+#[test]
+fn two_cut_pieces_hold_the_dwell_rule_across_their_join_p36() {
+    let tool = bit(1.0);
+    let core: CoreZone = core_of(&tool).expect("a non-centre-cutting tool");
+    let raw = turning_descent(core.max_descent_slope());
+    // 45 points along +X (the corner is the last), then the +Y leg, which
+    // starts at the corner.
+    let (first, second) = (&raw[..45], &raw[44..]);
+    assert_eq!(first[44], second[0], "the pieces join at the corner");
+
+    // The read before P36: only the anchor.
+    let mut alone_a = first.to_vec();
+    core.clamp_descents(&mut alone_a, &FedLead::default());
+    let mut alone_b = second.to_vec();
+    core.clamp_descents(&mut alone_b, &FedLead::standing_at(alone_a[44]));
+    let alone: Vec<P3> = alone_a
+        .iter()
+        .chain(alone_b.iter().skip(1))
+        .copied()
+        .collect();
+    assert_eq!(alone, raw, "each straight piece at the limit is unchanged");
+    assert!(
+        !core_findings(&tool, &fed(&alone)).is_empty(),
+        "control: pieces clamped one by one strike at the turn"
+    );
+
+    // P36: the lead follows the tool through both pieces.
+    let mut lead = FedLead::default();
+    let mut chain_a = first.to_vec();
+    core.clamp_descents(&mut chain_a, &lead);
+    core.follow(&mut lead, &chain_a);
+    lead.resume_at(Some(chain_a[44]));
+    let mut chain_b = second.to_vec();
+    core.clamp_descents(&mut chain_b, &lead);
+    let chained: Vec<P3> = chain_a
+        .iter()
+        .chain(chain_b.iter().skip(1))
+        .copied()
+        .collect();
+    let mut raised = 0;
+    for (a, b) in raw.iter().zip(&chained) {
+        assert_eq!((a.x, a.y), (b.x, b.y), "the clamp moves only Z");
+        assert!(b.z >= a.z, "the clamp only raises: {a:?} -> {b:?}");
+        raised += usize::from(b.z > a.z + 1e-9);
+    }
+    assert!(raised > 0, "the chain read raised the second piece");
+    let after = core_findings(&tool, &fed(&chained));
+    assert!(after.is_empty(), "with the lead: findings {after:?}");
+
+    // One path and two pieces with the lead give the same points.
+    let mut whole = raw.clone();
+    core.clamp_descents(&mut whole, &FedLead::default());
+    assert_eq!(chained, whole, "the join does not change the rule");
+
+    // A move that is not in the chain starts the lead again.
+    lead.resume_at(Some(P3::new(0.0, 0.0, 30.0)));
+    assert_eq!(lead, FedLead::standing_at(P3::new(0.0, 0.0, 30.0)));
 }
 
 /// A circle of `radius` about the origin at `z`, 360 points.

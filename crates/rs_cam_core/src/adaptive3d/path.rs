@@ -78,6 +78,7 @@ pub(crate) fn flat_shelf_levels(
     flat_levels
 }
 use crate::tool::MillingCutter;
+use crate::tool::body::FedLead;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -2223,9 +2224,14 @@ pub(super) fn lift_chords_to_leave(
 /// The cut path the emitter ships and the planner stamps for a cut `path`:
 /// [`drape_path_to_leave`], then `simplify_path_3d` at `tolerance`, then
 /// `blend_corners_3d` at `min_cutting_radius`, then [`lift_chords_to_leave`]
-/// with `probe` (`None`: no lift).
+/// with `probe` (`None`: no lift), then [`clamp_descents_to_limit`].
 /// ONE function: `segments_to_toolpath` and `clearing::shipped_cut_path` both
 /// call it, so the stamp and the emission cannot drift (G-PHANTOMSTAMP).
+///
+/// `anchor` is where the tool stands before the cut. `lead` is the fed
+/// chain of that tool (P36 B, [`FedLead`]): each caller keeps ONE lead per
+/// tool and gives it to every cut and link, so the core rule reads the
+/// chain across the joins.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -2240,6 +2246,7 @@ pub(super) fn emitted_cut_path(
     tolerance: f64,
     min_cutting_radius: f64,
     anchor: Option<P3>,
+    lead: &mut FedLead,
 ) -> Vec<P3> {
     let draped = drape_path_to_leave(path, mesh, index, cutter, stock_to_leave, cutter.radius());
     let simplified = simplify_path_3d(&draped, tolerance);
@@ -2250,7 +2257,7 @@ pub(super) fn emitted_cut_path(
         }
         None => blended,
     };
-    clamp_descents_to_limit(lifted, anchor, cutter)
+    clamp_descents_to_limit(lifted, anchor, lead, cutter)
 }
 
 /// K5 CentreCut, the plan stage (feeds contract P7 commit C): a tool that
@@ -2268,13 +2275,28 @@ pub(super) fn emitted_cut_path(
 /// from there to `path[1]` (G-PHANTOMSTAMP), so the first descent is read
 /// from it. A cut that follows a cut whose end the clamp raised starts
 /// there. `None`: `path[0]`.
+///
+/// P36 B: the rule reads the fed chain (`lead`), not this path alone. The
+/// chain goes on when `anchor` is where it ends, and starts again at
+/// `anchor` when a move that is not in the chain came between
+/// ([`FedLead::resume_at`]: an entry, a retract). After the clamp the path
+/// joins the chain ([`CoreZone::follow`](crate::tool::body::CoreZone::follow)).
+/// The wanaka front rough broke the rule by 0.06 mm over the joins of four
+/// short cut pieces, each clamped alone. A centre-cutting tool reads and
+/// writes no lead.
 pub(super) fn clamp_descents_to_limit(
     mut path: Vec<P3>,
     anchor: Option<P3>,
+    lead: &mut FedLead,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> Vec<P3> {
     if let Some(core) = crate::tool::body::core_of(cutter) {
-        core.clamp_descents(&mut path, anchor);
+        lead.resume_at(anchor);
+        core.clamp_descents(&mut path, lead);
+        // With no chain the path starts it: `path[0]` is where the feed
+        // starts.
+        let fed_from = usize::from(lead.position().is_some());
+        core.follow(lead, path.get(fed_from..).unwrap_or(&[]));
     }
     path
 }
@@ -2295,6 +2317,7 @@ pub(super) fn emitted_link_path(
     probe: Option<&dyn crate::tool::MillingCutter>,
     stock_to_leave: f64,
     tolerance: f64,
+    lead: &mut FedLead,
 ) -> Vec<P3> {
     let draped = drape_path_to_leave(
         &[from, target],
@@ -2308,7 +2331,9 @@ pub(super) fn emitted_link_path(
         Some(probe) => lift_chords_to_leave(&draped, mesh, index, probe, stock_to_leave, tolerance),
         None => draped,
     };
-    clamp_descents_to_limit(lifted, None, cutter)
+    // The link feeds from `from`, where the tool stands (the drape can
+    // raise `lifted[0]`, which no move goes to).
+    clamp_descents_to_limit(lifted, Some(from), lead, cutter)
 }
 
 #[cfg(test)]
@@ -2365,6 +2390,9 @@ pub(super) fn segments_to_toolpath_checked(
     let entry_style = effective_entry_style(params.entry_style, cutter);
     let mut refusal = None;
     let mut tp = Toolpath::new();
+    // P36 B: the fed chain of the tool, for the core dwell rule. The
+    // planner stamp keeps its own (`PlannerCursor::lead`) by the same calls.
+    let mut lead = FedLead::default();
     let mut annotations = Vec::new();
     // D4 — running pass index for `PassEntry` annotations. Increments
     // once per `Adaptive3dSegment::Rapid` / `RapidWithFloor` (each is
@@ -2677,6 +2705,7 @@ pub(super) fn segments_to_toolpath_checked(
                     probe,
                     params.depth.stock_to_leave,
                     params.emission_chord_tolerance(),
+                    &mut lead,
                 );
                 for pt in draped.iter().skip(1) {
                     tp.feed_to_with_intent(
@@ -2714,6 +2743,7 @@ pub(super) fn segments_to_toolpath_checked(
                     params.emission_chord_tolerance(),
                     params.geometry.min_cutting_radius,
                     tp.moves.last().map(|m| m.target),
+                    &mut lead,
                 );
                 // G-PHANTOMSTAMP: the first feed runs from where the tool
                 // stands to `blended[1]`; the planner mirror stamps the same

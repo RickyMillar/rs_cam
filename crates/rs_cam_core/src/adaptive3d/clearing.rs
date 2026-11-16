@@ -698,10 +698,15 @@ impl<'a> ClearZLevelContext<'a> {
 /// `segments_to_toolpath` leaves the tool after that same segment (a draped
 /// entry, the last blended cut point, the draped link end); the `Cut` and
 /// `Link` mirrors stamp their first feed from it, as the emitter feeds it.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct PlannerCursor {
     pub(super) last_pos: Option<P3>,
     pub(super) tool_pos: Option<P3>,
+    /// P36 B: the fed chain of the tool, for the core dwell rule
+    /// (`tool::body::FedLead`). The stamp of a cut and of a link reads and
+    /// extends it as the emitter does with its own lead, so the stamp is
+    /// the path that ships.
+    pub(super) lead: crate::tool::body::FedLead,
     /// G-BOUNDARYPHANTOM: the boundary clip dropped a segment (or a cut's
     /// tail) since the last pushed one, so the tool is not where the next
     /// segment starts and its first piece needs an entry
@@ -746,6 +751,7 @@ pub(super) fn shipped_cut_path(
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
     tool_pos: Option<P3>,
+    lead: &mut crate::tool::body::FedLead,
 ) -> Vec<P3> {
     super::path::emitted_cut_path(
         path,
@@ -757,6 +763,7 @@ pub(super) fn shipped_cut_path(
         tolerance,
         min_cutting_radius,
         tool_pos,
+        lead,
     )
 }
 
@@ -769,6 +776,7 @@ fn stamp_emitted_segment(
     lut: &RadialProfileLUT,
     tool_radius: f64,
     tool_pos: Option<P3>,
+    lead: &mut crate::tool::body::FedLead,
     segment: &Adaptive3dSegment,
     safe_z: f64,
     tolerance: f64,
@@ -787,7 +795,8 @@ fn stamp_emitted_segment(
             // RDP, blend, chord lift), so the planner's swept stamps cover
             // the SAME tubes the simulator will stamp from the emitted
             // feeds.
-            let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape, tool_pos);
+            let blended =
+                shipped_cut_path(path, tolerance, min_cutting_radius, drape, tool_pos, lead);
             // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
             // from where the tool stands, not from `blended[0]`. Stamp the
             // same polyline: the tool position, then `blended[1..]`. With
@@ -913,6 +922,7 @@ fn stamp_emitted_segment(
                 drape.probe,
                 drape.stock_to_leave,
                 tolerance,
+                lead,
             );
             stamp_along_path(material_stock, lut, tool_radius, &draped);
             draped.last().copied()
@@ -1606,6 +1616,7 @@ fn stamp_and_advance(
         lut,
         tool_radius,
         cursor.tool_pos,
+        &mut cursor.lead,
         &segment,
         safe_z,
         tolerance,

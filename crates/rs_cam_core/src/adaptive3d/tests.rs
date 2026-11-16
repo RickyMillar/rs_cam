@@ -2885,6 +2885,7 @@ fn a_chord_beside_a_peak_holds_the_leave_g_drapegap() {
         tol,
         0.0,
         None,
+        &mut crate::tool::body::FedLead::default(),
     );
     let mut worst = f64::NEG_INFINITY;
     for w in shipped.windows(2) {
@@ -3056,4 +3057,140 @@ fn the_planner_stock_keeps_the_post_of_a_small_helix_g_simcore() {
         std::ptr::eq(centre_cutting.entry(), &centre_cutting.cut),
         "a centre-cutting tool has one table"
     );
+}
+
+/// P36 B (`planning/feeds_contract_2026-11-03/phases/P36_DRILL_RAPID_CENTRE_DESCENT_2026-11-16.md`
+/// section 2): the ONE cut pipeline (`emitted_cut_path`) holds the core dwell
+/// rule across the join of two cut pieces, because the pieces share the fed
+/// chain of the tool (`FedLead`).
+///
+/// Two pieces of the probe tool (core diameter 8, protrusion 1) high over a
+/// flat model: 10 mm along +X, then 10 mm along +Y from the same corner, each
+/// a descent at the straight-line limit (1 mm in 8 mm) in 0.5 mm steps. Each piece alone
+/// holds the rule. In the window of XY diameter 8 mm that ends on the second
+/// piece and starts on the first, the path goes down more than 1 mm.
+///
+/// - Red proof: a new lead for each piece (the read before P36) leaves a
+///   window descent above the protrusion.
+/// - One lead for both pieces: at most the protrusion at every vertex.
+/// - A centre-cutting tool keeps both pieces as they are, and its lead stays
+///   empty.
+#[test]
+fn two_cut_pieces_share_the_fed_chain_p36() {
+    use super::path::emitted_cut_path;
+    use crate::tool::body::{FedLead, core_of};
+    let mesh = crate::mesh::make_test_flat(60.0);
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let slope = 1.0 / 8.0;
+    // 0.5 mm steps; the model is at Z 0, far below, so the drape moves
+    // nothing. Each point is 0.02 mm to one side of its leg in turn, so the
+    // simplification keeps every vertex (the clamp reads the rule at the
+    // vertices).
+    let side = |k: i32| if k % 2 == 0 { 0.0 } else { 0.02 };
+    let first: Vec<P3> = (0..=20)
+        .map(|k| {
+            let d = 0.5 * f64::from(k);
+            P3::new(d, side(k), 20.0 - slope * d)
+        })
+        .collect();
+    let second: Vec<P3> = (0..=20)
+        .map(|k| {
+            let d = 0.5 * f64::from(k);
+            P3::new(10.0 + side(k), d, 20.0 - slope * (10.0 + d))
+        })
+        .collect();
+    // No simplification and no blend, so the vertices stay.
+    let ship = |tool: &crate::tool::ToolDefinition,
+                path: &[P3],
+                anchor: Option<P3>,
+                lead: &mut FedLead| {
+        emitted_cut_path(path, &mesh, &index, tool, None, 0.0, 0.0, 0.0, anchor, lead)
+    };
+    // The largest descent, over every vertex, from the highest point of the
+    // path before it inside one XY diameter of `reach` (0.01 mm samples).
+    let worst_window_descent = |poly: &[P3], reach: f64| -> f64 {
+        let mut dense: Vec<P3> = vec![poly[0]];
+        for w in poly.windows(2) {
+            let n = (((w[1].x - w[0].x).hypot(w[1].y - w[0].y) / 0.01).ceil() as usize).max(1);
+            for i in 1..=n {
+                let t = i as f64 / n as f64;
+                dense.push(w[0] + (w[1] - w[0]) * t);
+            }
+        }
+        let mut worst = 0.0_f64;
+        for end in poly {
+            let e = dense
+                .iter()
+                .position(|p| (p - end).norm() < 1e-9)
+                .expect("a vertex is a sample");
+            let mut window: Vec<P3> = vec![dense[e]];
+            for q in dense[..e].iter().rev() {
+                if window
+                    .iter()
+                    .step_by(25)
+                    .chain(window.last())
+                    .any(|w| (w.x - q.x).hypot(w.y - q.y) > reach)
+                {
+                    break;
+                }
+                worst = worst.max(q.z - end.z);
+                window.push(*q);
+            }
+        }
+        worst
+    };
+
+    let tool = simcore_probe_tool(true);
+    let core = core_of(&tool).expect("the probe tool has a core");
+    let (p, reach) = (core.protrusion_mm, core.diameter_mm());
+
+    // Red proof: each piece with its own lead.
+    let alone_a = ship(&tool, &first, None, &mut FedLead::default());
+    let alone_b = ship(
+        &tool,
+        &second,
+        alone_a.last().copied(),
+        &mut FedLead::default(),
+    );
+    let alone: Vec<P3> = alone_a
+        .iter()
+        .chain(alone_b.iter().skip(1))
+        .copied()
+        .collect();
+    let before = worst_window_descent(&alone, reach);
+    assert!(
+        before > p + 0.05,
+        "control: two pieces read alone go down {before:.3} mm in one window"
+    );
+
+    // One lead for the tool.
+    let mut lead = FedLead::default();
+    let chain_a = ship(&tool, &first, None, &mut lead);
+    let chain_b = ship(&tool, &second, chain_a.last().copied(), &mut lead);
+    let chained: Vec<P3> = chain_a
+        .iter()
+        .chain(chain_b.iter().skip(1))
+        .copied()
+        .collect();
+    let after = worst_window_descent(&chained, reach);
+    assert!(
+        after <= p + 0.01,
+        "with the fed chain a window goes down {after:.3} mm, above the protrusion {p}"
+    );
+    for (a, b) in alone.iter().zip(&chained) {
+        assert!(b.z >= a.z, "the chain read only raises: {a:?} -> {b:?}");
+    }
+    assert_eq!(
+        lead.position(),
+        chained.last().copied(),
+        "the lead follows the tool"
+    );
+
+    // A centre-cutting tool: no clamp, no lead.
+    let plain = simcore_probe_tool(false);
+    let mut plain_lead = FedLead::default();
+    let plain_a = ship(&plain, &first, None, &mut plain_lead);
+    let plain_b = ship(&plain, &second, plain_a.last().copied(), &mut plain_lead);
+    assert_eq!((plain_a, plain_b), (first, second));
+    assert_eq!(plain_lead, FedLead::default());
 }

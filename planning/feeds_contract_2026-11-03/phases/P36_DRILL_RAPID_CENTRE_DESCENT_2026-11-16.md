@@ -183,6 +183,90 @@ go down more than p in one window when the path turns. `emitted_link_path` has t
 - P-B6: no op golden row changes (no fixture has a tool with a core in a 3D Rough). If a row
   changes, the lead rules.
 
-## 3. Results
+## 3. Results (measured after the code, the release CLI of the fixed tree)
 
-See the hand-over report of the P36 agent; the lead adds the measured table here.
+Each setup ran alone (`--setup "1 Back"`, `"1b Clamp pads"`, `"3 Front"`). The whole job in
+one run stopped on the memory guard at 14 GiB and at 16 GiB (it asked for 16.88 GiB; the
+shared machine had 19 GiB free). So ids 21, 23 and 24 read the stock of setup "3 Front" only,
+not the stock that setup "1 Back" cut; their counts for the whole job are not measured.
+The time column is `nc-time` of each op section of the G-code (the built-in machine preset,
+`--max-feed 10000`); it compares two files and is not the cycle time of the job machine.
+
+### 3.1 The rules as built
+
+- R-A1: as written. `drill_hole_columns` takes `DrillTops { top_z, stock_top_z }`. A standing
+  top above the Top Z gives `effective_safe_z(retract_z, standing top)`; at or below it, the
+  standing top + the clearance of a fresh hole (the D8 rule, not changed).
+- R-A2 is narrower than section 1.5: a rapid in place does not frame a segment only when the
+  run that it would end already holds a fed move (a retract of the cycle). A rapid in place
+  with no fed move before it frames as before, so a run of rapids with no cut is still dropped
+  (`split_into_segments_drops_a_cutless_run_of_internal_rapids` was red with the wider rule).
+- R-B: as written. `FedLead` is in `tool/body.rs`; `CoreZone::clamp_descents(path, &FedLead)`
+  and `CoreZone::follow`; `PlannerCursor::lead`; `PlannerCursor` is no longer `Copy`.
+  One more change: `emitted_link_path` reads its first descent from the tool position, as a
+  cut does. Before, it read the draped start point, which no move goes to.
+
+### 3.2 Predictions against measures
+
+| Prediction | Measured |
+|---|---|
+| P-A1, P-A2, P-A3 | Red before the code for the stated cause (R-plane 14 against 23; 10 against 17; pecks `[8, 11, 14, 17, 20]`, the reverse order). Green after. |
+| P-A4 | Green; the segment starts at the first feed of the hole (`src_range` 2..7), by the narrower rule. |
+| P-A5 | `project.rapid_collision` 1 -> 0. 42 holes at R 30.5 with `[24.5, 18.5, 12.5, 8.5]`. Time 247 -> 340 s (+93 s). The prediction (+24 s) counted only the feed; the fourth peck adds a retract and a re-entry per hole. |
+| P-A6 | 11 -> 0; every hole in falling order. |
+| P-A7 | 0 collisions; 38 holes R 21.50, then 21.79, 22.19, 22.60 and the corner hole 30.50 with 4 pecks. Time 247 -> 249 s. Scratch copy `p36_remaining_drill.toml`. |
+| P-A8, P-B6 | The op golden shows the 46 known rows, bit for bit the list of `opgolden_known_46_rows.txt`. No new row. |
+| P-B1, P-B2, P-B3 | Green. `adaptive3d_emission_byte_parity` green. FM1 green (2 passed). |
+| P-B4 | `safety.non_centre_cutting_descent` on id 20: 1 -> 0. G-code vertices over 1.0015 mm: 143 -> 44. Of the 44: 35 are inside one keep-down entry (moves 19078 to 19112) and 8 are in the first moves after an entry (the stated limit). 1 (move 16542) is not explained by a measure: a vertex of its window is 7.9998 mm from the window end in the file, against the reach of 8, so the 0.001 mm rounding of the file can put it in the window (inferred). The simulation reports none of the 44. |
+| P-B5 | Id 20: 22517 -> 22520 moves, 976 -> 978 s. Id 1: the same 14628 moves, 4 moves raised by about 0.5 mm, the same time. WRONG for the ops after them: id 2 (6 mm, centre cutting) 20044 -> 19992 moves, 1444 -> 1441 s, and id 21 40124 -> 40115 moves, the same time. They are from remaining stock, and the stock that the 18 mm tool leaves moved. |
+
+### 3.3 Collisions and contacts per op, before -> after (the proposal file)
+
+| Id | Op | Moves | Holder collisions | Rapid collisions | Contact zones | Time (s) |
+|---|---|---|---|---|---|---|
+| 0 | Face back to T1 | 317 | 0 | 0 | none | 302 |
+| 1 | Back bulk rough 18 mm | 14628 | 0 | 0 | none | 443 |
+| 2 | Back rest 6 mm | 20044 -> 19992 | 0 | 0 | none | 1444 -> 1441 |
+| 3 | Pin drill, flip pins | 118 -> 98 | 0 | 0 | flute top 5 | 89 |
+| 4 | Drill light holes | 463 -> 547 | 0 | 1 -> 0 | none | 247 -> 340 |
+| 11 | River channel 6 mm | 48023 | 0 | 0 | none | 2382 |
+| 28 | Lake outline channel | 8452 | 0 | 0 | none | 279 |
+| 25 | Lake relief band, 11 lakes | 7206 | 0 | 0 | none | 392 |
+| 12 | Lake pocket 2 mm, 11 lakes | 30111 | 0 | 0 | none | 5928 |
+| 13 | Lake pocket 2 mm, 1 lake | 194 | 0 | 0 | none | 130 |
+| 14 | ANTENNA pocket 2 mm | 640 | 0 | 0 | none | 42 |
+| 15 | V rivers and lakes | 22344 | 0 | 0 | none | 1040 |
+| 16 | Day strip slit V60 | 19 | 0 | 0 | flute top 7 | 43 |
+| 17 | Face clamp pads 6 mm | 64 | 0 | 0 | none | 31 |
+| 18 | Face front to T | 361 | 0 | 0 | none | 327 |
+| 19 | Engrave day labels V60 | 314 | 0 | 0 | none | 50 |
+| 20 | Front bulk rough 18 mm | 22517 -> 22520 | 0 | 0 | core 1 -> none | 976 -> 978 |
+| 21 | Front 3D rough | 40124 -> 40115 | 0 | 0 | none | 2235 |
+| 23 | Front scallop finish | 463770 | 0 | 0 | none | 11161 |
+| 24 | Outline profile with tabs | 1560 | 0 | 0 | none | 715 |
+
+The pin drill (id 3) has the same pecks in the same order; it lost 20 rapids in place that the
+reorder wrote two times.
+
+### 3.4 Open, for the lead
+
+1. The job gap of section 1.2: the cavity corner and a strip of about 1.8 to 2.5 mm at the
+   cavity wall keep their height after setup "1 Back". No op of the job cuts them. The corner
+   hole is then drilled through 17 mm of wood.
+2. The Drill of the proposal file on fresh stock now costs 93 s. The scratch copy with the
+   remaining stock costs 2 s and has the same safety result.
+3. `DrillHole::top_z` keeps the cap at the Top Z (F19). Where wood stands above a pinned Top Z,
+   the drill metrics still count the cut from the Top Z.
+4. The clamp reads the dwell rule at the vertices. A long chord after a turn can break the rule
+   between its ends (two 10 mm chords at the limit through 90 deg: 1.37 mm). The simulation
+   finds such a move; the generator does not prevent it.
+5. The window does not go back through an entry (section 2.3). 8 vertices of id 20 are at such
+   joins, with no simulation finding.
+6. `drill_fed_descents_motion` (3 tests) is red on `NotSet` feeds in the prologue, before the
+   Drill adapter runs. It is not in the list of known reds. It is the sentry of the peck
+   schedule against the emitted motion, so that guard does not run now.
+7. A Bore has the same cap: `compute/execute/bore.rs` `bore_holes` takes
+   `column_top.min(top_z)` and `ops/bore.rs` sends a rapid to that top + the start clearance.
+   Read in the code, not measured (the job has no Bore). R-A1 is not applied to the Bore.
+8. The equality of the planner lead and the emitter lead holds by construction (the same two
+   pipelines). No parity sentry runs a tool with a core.

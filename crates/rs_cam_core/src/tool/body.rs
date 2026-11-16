@@ -671,21 +671,37 @@ impl CoreZone {
     /// at most `2 c` descends more than `p`, and no straight segment is
     /// steeper than [`Self::max_descent_slope`].
     ///
-    /// `anchor` is where the tool stands before the path (the first descent
-    /// reads from it); `None`: `path[0]`. `path[0]` itself does not move.
-    /// The rule reads only this path: the history before `anchor` is the
-    /// caller's (an entry, or the cut before it).
+    /// P36 B: the rule reads the FED CHAIN, not one path. `lead` holds the
+    /// points the tool fed through before this path ([`FedLead`]); its last
+    /// point is where the tool stands, and the first descent reads from it.
+    /// A window walks back through the path and then through the lead, so
+    /// two pieces that each hold the straight-line limit cannot together
+    /// go down more than `p` in one window where the path turns between
+    /// them (the wanaka front rough: 1.06 mm in a window over the joins of
+    /// four short cut pieces). An empty lead: the chain starts at
+    /// `path[0]`. `path[0]` itself does not move, and no point of the lead
+    /// moves.
     ///
     /// The rule is checked at each vertex, with the window that ends there;
     /// the window start inside a segment is found by bisection. On a
     /// straight descent at the straight-line limit it raises nothing (the
     /// window of `2 c` drops exactly `p`).
-    pub fn clamp_descents(&self, path: &mut [P3], anchor: Option<P3>) {
+    pub fn clamp_descents(&self, path: &mut [P3], lead: &FedLead) {
         let slope = self.max_descent_slope();
         let reach = self.diameter_mm();
-        for i in 1..path.len() {
-            let (Some(prev), Some(cur)) = (vertex(path, anchor, i - 1), vertex(path, anchor, i))
-            else {
+        // The chain: the part of the lead a window can reach (it ends where
+        // the tool stands, in place of `path[0]`), then `path[1..]`.
+        let tail = lead.tail_in_reach(reach);
+        let mut chain: Vec<P3> = Vec::with_capacity(tail.len() + path.len());
+        if tail.is_empty() {
+            chain.extend(path.first().copied());
+        } else {
+            chain.extend_from_slice(tail);
+        }
+        let first = chain.len();
+        chain.extend(path.iter().skip(1).copied());
+        for i in first..chain.len() {
+            let (Some(prev), Some(cur)) = (chain.get(i - 1).copied(), chain.get(i).copied()) else {
                 continue;
             };
             let dxy = (cur.x - prev.x).hypot(cur.y - prev.y);
@@ -694,16 +710,31 @@ impl CoreZone {
             if z < lowest {
                 z = lowest;
             }
-            if let Some(top) = window_top(path, anchor, i, reach, z + self.protrusion_mm)
+            if let Some(top) = window_top(&chain, i, reach, z + self.protrusion_mm)
                 && top - self.protrusion_mm - z > DWELL_NOISE_MM
             {
                 z = top - self.protrusion_mm;
             }
             if z != cur.z
-                && let Some(point) = path.get_mut(i)
+                && let Some(point) = chain.get_mut(i)
             {
                 point.z = z;
             }
+        }
+        for (point, clamped) in path.iter_mut().skip(1).zip(chain.iter().skip(first)) {
+            point.z = clamped.z;
+        }
+    }
+
+    /// The tool fed through `fed` after the path that `lead` ends: add the
+    /// points to the lead, and keep only what a later window can reach
+    /// ([`FedLead::tail_in_reach`] of the core diameter).
+    pub fn follow(&self, lead: &mut FedLead, fed: &[P3]) {
+        lead.points.extend_from_slice(fed);
+        let keep = lead.tail_in_reach(self.diameter_mm()).len();
+        let drop = lead.points.len() - keep;
+        if drop > 0 {
+            lead.points.drain(..drop);
         }
     }
 
@@ -763,13 +794,68 @@ impl CoreZone {
     }
 }
 
-/// Vertex `k` of the path the dwell rule reads: `anchor` in place of
-/// `path[0]`.
-fn vertex(path: &[P3], anchor: Option<P3>, k: usize) -> Option<P3> {
-    if k == 0 {
-        anchor.or_else(|| path.first().copied())
-    } else {
-        path.get(k).copied()
+/// P36 B: the fed chain before a path, for the dwell rule
+/// ([`CoreZone::clamp_descents`]): the points the tool fed through, in
+/// order, the last one where the tool stands.
+///
+/// One value follows one tool. The 3D Rough emitter and its planner stamp
+/// each keep one and give it to the ONE cut pipeline and the ONE link
+/// pipeline (`adaptive3d::path::emitted_cut_path`, `emitted_link_path`),
+/// which call [`Self::resume_at`] before a path and [`CoreZone::follow`]
+/// after it. The clamp takes no bare point: a caller cannot leave the
+/// history out.
+///
+/// The chain ends at a move that is not part of it (an entry, a retract):
+/// [`Self::resume_at`] starts it again where the tool then stands. The
+/// entry emitters hold their own core rules.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FedLead {
+    points: Vec<P3>,
+}
+
+impl FedLead {
+    /// A chain that starts where the tool stands, `at`.
+    #[must_use]
+    pub fn standing_at(at: P3) -> Self {
+        Self { points: vec![at] }
+    }
+
+    /// Where the chain ends: where the tool stood after the last fed
+    /// point. `None`: no chain.
+    #[must_use]
+    pub fn position(&self) -> Option<P3> {
+        self.points.last().copied()
+    }
+
+    /// The tool stands at `at` before the next path (`None`: nowhere yet).
+    /// When that is where the chain ends, the chain goes on. Else a move
+    /// that is not in the chain came between (an entry, a retract), and
+    /// the chain starts again at `at`.
+    pub fn resume_at(&mut self, at: Option<P3>) {
+        if self.position() == at {
+            return;
+        }
+        self.points.clear();
+        self.points.extend(at);
+    }
+
+    /// The end of the chain that a window of XY diameter `reach` can hold:
+    /// the points back from the last one while each is within `reach` (XY)
+    /// of the last one, and one point more (the window start can lie on
+    /// the segment to it). Every point of a window that holds the last
+    /// point is within `reach` of it.
+    fn tail_in_reach(&self, reach: f64) -> &[P3] {
+        let Some(last) = self.points.last() else {
+            return &[];
+        };
+        let within = self
+            .points
+            .iter()
+            .rev()
+            .take_while(|p| (p.x - last.x).hypot(p.y - last.y) <= reach)
+            .count();
+        let start = self.points.len().saturating_sub(within + 1);
+        self.points.get(start..).unwrap_or(&[])
     }
 }
 
@@ -809,16 +895,17 @@ fn boundary_t(window: &[P3], from: P3, to: P3, reach: f64) -> f64 {
 /// `i`, so the contiguous run of such points (plus the one before it)
 /// holds the window. Only when that run reaches `bar` does the exact walk
 /// run.
-fn window_top(path: &[P3], anchor: Option<P3>, i: usize, reach: f64, bar: f64) -> Option<f64> {
-    let end = vertex(path, anchor, i)?;
-    let last = vertex(path, anchor, i - 1)?;
+fn window_top(path: &[P3], i: usize, reach: f64, bar: f64) -> Option<f64> {
+    let vertex = |k: usize| path.get(k).copied();
+    let end = vertex(i)?;
+    let last = vertex(i - 1)?;
     if (last.x - end.x).hypot(last.y - end.y) > reach {
         return None;
     }
     let mut bound = last.z;
     let mut k = i - 1;
     while k > 0 {
-        let q = vertex(path, anchor, k - 1)?;
+        let q = vertex(k - 1)?;
         bound = bound.max(q.z);
         if (q.x - end.x).hypot(q.y - end.y) > reach {
             break;
@@ -832,8 +919,8 @@ fn window_top(path: &[P3], anchor: Option<P3>, i: usize, reach: f64, bar: f64) -
     let mut top = last.z;
     let mut k = i - 1;
     while k > 0 {
-        let here = vertex(path, anchor, k)?;
-        let q = vertex(path, anchor, k - 1)?;
+        let here = vertex(k)?;
+        let q = vertex(k - 1)?;
         if fits(&window, q, reach) {
             window.push(q);
             top = top.max(q.z);

@@ -212,7 +212,15 @@ impl BandEdge {
                         // The band reads no tool position; with a tool that
                         // does not cut at its centre the first descent of a
                         // cut is read from `path[0]` here (K5, P7 C).
-                        shipped_cut_path(path, ctx.cut_tolerance, ctx.min_cutting_radius, &drape, None);
+                        // P36 B: no fed chain either (an empty lead).
+                        shipped_cut_path(
+                            path,
+                            ctx.cut_tolerance,
+                            ctx.min_cutting_radius,
+                            &drape,
+                            None,
+                            &mut crate::tool::body::FedLead::default(),
+                        );
                     self.lower_along(&shipped);
                 }
                 Adaptive3dSegment::Link(p) => self.lower_along(&[*p]),
