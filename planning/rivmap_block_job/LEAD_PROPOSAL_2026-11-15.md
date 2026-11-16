@@ -219,3 +219,41 @@ three holes at the wall X 333.5, and 25.50 (uncut) at the corner hole; the model
 The 18 mm rough stops 1.8 mm from that wall, and "Back rest 6 mm" makes no fed move above
 Y 266.6 (its log: 12 lines "C38 piece left to the rest pass"). No toolpath of the job cuts that
 wood. In work.
+
+## Update 2026-11-17, sixth: the cavity walls, and what setup "1 Back" still leaves (P37)
+
+Measured (`phases/P37_CAVITY_LEFT_PIECES_2026-11-16.md` of the feeds contract, instrument
+`phases/p37/gapmap.py`: the emitted G-code replayed on 0.2 mm nodes against
+`back_target_s1.stl`): after setup "1 Back", 5 897 mm2 of wood that a 6 mm tool can reach
+stands above the target and no toolpath cuts it.
+
+| Where | Area mm2 | Tallest mm |
+|---|---|---|
+| Cavity wall band (four walls and the corners) | 3 027 | 12.27 |
+| Mech and slit pocket walls | 1 103 | 20.70 |
+| Step shelf | 690 | 5.00 |
+| Rings at lakes, hollow and rivers | 664 | 9.00 |
+| 8.6 mm slot (target Z 4.5), not cut at all | 413 | 21.00 |
+
+Cause: the 18 mm rough stops about 1.5 mm from each wall; the 6 mm rest rough does not see a
+strip narrower than its radius at a wall, and it drops each region under 144 mm2 (125 regions,
+the slot is one) with no message.
+
+The file now: new "Cavity rest pocket 6 mm" (id 40, Pocket from remaining stock on the cavity
+outline, 2.25 mm per pass, feeds copied from id 25, not from Suggest). Agent measure: wall band
+3 027 to 62 mm2 (the rest is rings at lakes near the walls), +230 s of feed, and the corner
+light hole starts in a cut cavity (stock 16.5).
+
+Result (release GUI built from `b2909b22a`, cap only): 0 collisions, 0 rapid collisions, no
+critical safety finding, 17911 s. The new caution `geom.rough_left_stock` shows on "Back rest
+6 mm": 155 areas with stock and no planned cut, 149 still hold stock on 2 212 mm2, the tallest
+21.00 mm at X228.10 Y48.70 (setup frame). The pocket has one caution: width 5.60 mm against
+5.12 mm at the corner patches.
+
+**Still open on this setup (not new; the operator file has the same toolpaths):**
+
+- "Back rest 6 mm" states 6 mm per pass, and the simulation measures a cut 20.70 mm deep and
+  3.2 mm wide (limit 2.75 mm), and an entry that removes 14.70 mm. The likely cause is the
+  dropped small regions: wood stays at the upper levels, and a lower level then meets its full
+  height. In work as a code fix.
+- The slot, the mech pocket walls, the shelf and the lake rings are cut by no toolpath.
