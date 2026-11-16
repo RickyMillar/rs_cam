@@ -1,6 +1,37 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-16 (read this first)
+## State on 2026-11-17 (read this first)
+
+- Committed, not pushed, after P35 G: P36 (`dced6f0c2`, `d4792a009`, `f15eee305`; note
+  `phases/P36_DRILL_RAPID_CENTRE_DESCENT_2026-11-16.md`), P37 (`c9ed0736c`, `b2909b22a`; note
+  `phases/P37_CAVITY_LEFT_PIECES_2026-11-16.md`), the drill sentry repair `905af4674`, and the P38
+  record `eeb6d3474` (note `phases/P38_REST_ROUGH_DROPS_2026-11-17.md`).
+- P36: the drill R-plane is the clearance over the standing material; a rapid in place after a
+  fed move does not frame a TSP segment; the centre-descent clamp reads the fed chain across cut
+  and link joins (`tool::body::FedLead`).
+- P37: a 3D Rough states the stock that it held and did not plan (`geom.rough_left_stock`,
+  export gate `RoughLeftStock`, warn only). No motion change.
+- P38 is a record only. NO code of P38 is in the tree. The prototype patches are in
+  `phases/p38/not_landed/` (W1 the one-pass rule, W2 the coverage reading at a stock to leave
+  of 0). W1 failed its acceptance: ramp entries stay 14.5 mm deep, 8 tests go red, more cut below
+  the target. W2 was measured only on top of W1.
+- OPEN, fundamental: "Back rest 6 mm" of the wanaka back (6 mm per pass) cuts 20.7 mm deep in the
+  body and 14.5 mm in the ramp entries, at HEAD and in the operator file. P39 (the ramp entry
+  reads the stock only on a disc at its start) is in work; note
+  `phases/P39_RAMP_ENTRY_STOCK_2026-11-17.md` when it exists.
+- After P39: apply W1 again and read its reds; fix the disc-edge read (a cell centre exactly one
+  radius from the axis) before any golden movement is read as real; split W2 onto HEAD by hand,
+  without the partial supersede, and measure it alone (rivmap100 also: does a good rough become
+  Critical at a stock to leave of 0?).
+- The lead promised the operator the before and after of the wanaka job before any commit that
+  moves the output of a rest rough.
+- Clean-up list additions: Bore has the capped column top that the drill had; the descent clamp
+  reads its rule at vertices only; no parity sentry for the planner and emitter lead; no sentry
+  holds the export gate `RoughLeftStock`; the text of `geom.rough_left_stock` says "Report-only:
+  no gate consumes this" although a gate exists (W2 holds the fix).
+- The rest of the section below still holds (gate rule, next steps, open items with the operator).
+
+## State on 2026-11-16
 
 - Committed, not pushed: P31 A, B, C, P32, P33 (see the section below), then M4-A (`bf225ba29`,
   `4fd1af1e1`, FM1 bless `17b059da4`; note `phases/P34_M4A_2026-11-15.md`) and P35 A to G
