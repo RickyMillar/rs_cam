@@ -1699,7 +1699,7 @@ enabled = true
 tool_id = 0
 model_id = 9
 boundary_inherit = true
-stock_source = "fresh"
+stock_source = "from_remaining_stock"
 coolant = "off"
 feeds_lock = "spindle"
 

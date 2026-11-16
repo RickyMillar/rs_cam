@@ -195,3 +195,27 @@ Safety findings that stay (all were there before this change):
   list it.
 - "Pin drill, flip pins": 5 moves with wood above the 25 mm flute (30 mm deep).
 - "Day strip slit V60": 7 moves with wood above the 5.5 mm flute (7.44 mm).
+
+## Update 2026-11-16, fifth: the drill rapid and the centre descent are closed (code, P36)
+
+Both findings were code defects (`phases/P36_DRILL_RAPID_CENTRE_DESCENT_2026-11-16.md` of the
+feeds contract; commits `d4792a009`, `f15eee305`).
+
+- The drill put its rapid plane 5 mm above the pinned top (Z 21.5) under wood that stands to
+  Z 25.5 at the corner hole. Now the rapid plane reads the wood that stands over each hole.
+- The front rough went down 1.06 mm in one 8 mm window across the joins of short cut pieces;
+  the limit is 1.00 mm. Now the rule reads the fed chain across the joins.
+- The file: "Drill light holes" has `stock_source = "from_remaining_stock"` (+2 s; on fresh
+  stock the safe rapid plane costs +93 s).
+
+Result (release GUI built from `f15eee305`, all 20 toolpaths generated new, cap only): 0
+collisions, 0 rapid collisions, no critical safety finding, 17906 s. The two cautions that stay:
+"Pin drill, flip pins" (5 moves, 30 mm deep against a 25 mm flute) and "Day strip slit V60"
+(7 moves, 7.44 mm against a 5.5 mm flute).
+
+**New open item: the back cavity is not to size.** Measured by the agent on the simulated stock
+under the 6 mm footprint at the light holes: the floor is 16.50 at 38 holes, 16.79 to 17.60 at
+three holes at the wall X 333.5, and 25.50 (uncut) at the corner hole; the model floor is 16.5.
+The 18 mm rough stops 1.8 mm from that wall, and "Back rest 6 mm" makes no fed move above
+Y 266.6 (its log: 12 lines "C38 piece left to the rest pass"). No toolpath of the job cuts that
+wood. In work.
