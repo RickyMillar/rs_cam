@@ -24,6 +24,7 @@ use tracing::info;
 
 mod centre_clip;
 mod clearing;
+mod entry_ramp;
 pub(crate) use clearing::effective_trochoid_cap_mult;
 mod intended_floor;
 mod keep_down;

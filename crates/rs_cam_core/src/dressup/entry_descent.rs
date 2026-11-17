@@ -122,9 +122,68 @@ pub(super) fn fold_walk_budget(max_angle_deg: f64) -> f64 {
 /// admits: the tool radius (at least 1 mm) and, for a tool that does not
 /// cut at its centre, its minimum ramp leg (G-SIMCORE).
 pub(super) fn fold_min_run_mm(tool_radius_mm: f64, safety: &EntrySafety<'_>) -> f64 {
+    ramp_min_run_mm(tool_radius_mm, safety.core)
+}
+
+/// The shortest run that a ramp laps: the tool radius (at least 1 mm) and,
+/// for a tool that does not cut at its centre, its minimum ramp leg
+/// (G-SIMCORE). The fold gate reads it ([`fold_min_run_mm`]), and the 3D
+/// Rough planner reads it for the free run of a ramp entry (P39).
+pub(crate) fn ramp_min_run_mm(
+    tool_radius_mm: f64,
+    core: Option<crate::tool::body::CoreZone>,
+) -> f64 {
     tool_radius_mm
         .max(1.0)
-        .max(safety.core.map_or(0.0, |core| core.min_ramp_leg_mm()))
+        .max(core.map_or(0.0, |core| core.min_ramp_leg_mm()))
+}
+
+/// P39: the legs of the zigzag of [`emit_ramp`]: the direction of the out
+/// leg and, when the caller planned the entry, the longest leg that it
+/// permits. ONE value describes the shape: the 3D Rough planner chooses it
+/// where the stock is in scope, reads the stock under it, stamps the moves
+/// that [`emit_ramp`] writes for it, and the emitter ships the same moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RampLegs {
+    /// The XY direction of the out leg.
+    pub(crate) dir: (f64, f64),
+    /// The longest leg (mm), or `None` for the cap of the angle alone
+    /// ([`ramp_leg_cap_mm`]).
+    pub(crate) max_leg_mm: Option<f64>,
+}
+
+impl RampLegs {
+    /// Legs along `dir` with the cap of the angle alone.
+    pub(crate) fn along(dir: (f64, f64)) -> Self {
+        Self {
+            dir,
+            max_leg_mm: None,
+        }
+    }
+}
+
+/// The longest leg (mm) of the zigzag of [`emit_ramp`] at `max_angle_deg`:
+/// one lap descends [`ENTRY_CLEARANCE`], and a tool that does not cut at
+/// its centre keeps its minimum leg. `None` for an angle that [`emit_ramp`]
+/// does not ramp at.
+pub(crate) fn ramp_leg_cap_mm(
+    max_angle_deg: f64,
+    core: Option<crate::tool::body::CoreZone>,
+) -> Option<f64> {
+    let angle = core.map_or(max_angle_deg, |core| {
+        core.clamp_ramp_angle_deg(max_angle_deg)
+    });
+    (angle > 0.0 && angle < 90.0).then(|| {
+        leg_cap_mm(
+            angle.to_radians().tan(),
+            core.map_or(0.0, |core| core.min_ramp_leg_mm()),
+        )
+    })
+}
+
+/// The one formula of the leg cap ([`ramp_leg_cap_mm`], [`emit_ramp`]).
+fn leg_cap_mm(tan: f64, min_leg: f64) -> f64 {
+    (ENTRY_CLEARANCE / tan / 2.0).max(min_leg)
 }
 
 /// P29-8e (lead ruling Q8, F6): how far [`collect_following_cut`] walks for
@@ -566,13 +625,14 @@ pub(crate) fn emit_ramp(
     tp: &mut Toolpath,
     start: &P3,
     end: &P3,
-    dir: (f64, f64),
+    legs_of: RampLegs,
     max_angle_deg: f64,
     feed_rate: f64,
     safety: &EntrySafety<'_>,
     fold: Option<&RampFold<'_>>,
 ) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
+    let dir = legs_of.dir;
     // G-CENTRECUT / G-SIMCORE (P22-0b): the zigzag angle of the tool caps
     // the ramp (`max_ramp_slope`: the reversal dwell, not the straight-line
     // limit).
@@ -717,7 +777,11 @@ pub(crate) fn emit_ramp(
     // of at least the core diameter (`min_ramp_leg_mm`); a shallow ramp then
     // descends less steeply than the angle.
     let half_len = ramp_xy_len / 2.0;
-    let leg_cap = (ENTRY_CLEARANCE / tan / 2.0).max(min_leg);
+    // P39: a planned entry permits a shorter leg; the ramp then laps more.
+    let leg_cap = leg_cap_mm(tan, min_leg);
+    let leg_cap = legs_of
+        .max_leg_mm
+        .map_or(leg_cap, |max| max.min(leg_cap).max(min_leg));
     let legs = crate::util::steps::steps(ramp_xy_len, 2.0 * leg_cap)
         .unwrap_or(0)
         .saturating_mul(2)
@@ -761,7 +825,8 @@ pub(crate) fn emit_ramp(
                 tan,
                 probe,
             ),
-            None => clip_polyline_to_floor(&planned, probe),
+            // P39: planned legs ship the whole clipped profile.
+            None => clip_polyline_to_floor(&planned, probe, legs_of.max_leg_mm.is_some()),
         };
         match clipped {
             Some(points) => {
@@ -907,7 +972,7 @@ fn replan_descent_at_limit(
 /// Between two samples a chord can sag below a convex surface by
 /// `curvature * spacing^2 / 8`; at 0.5 mm this stays far inside the
 /// sentry's 0.2 mm tolerance for any surface a cutter can follow.
-const ENTRY_CLIP_SPACING_MM: f64 = 0.5;
+pub(crate) const ENTRY_CLIP_SPACING_MM: f64 = 0.5;
 
 /// Clip a planned entry polyline to the probe floor.
 ///
@@ -923,9 +988,28 @@ const ENTRY_CLIP_SPACING_MM: f64 = 0.5;
 /// stays at or above the planned straight line, and every skipped
 /// sample was measured at or above the floor, so the emitted path
 /// never dips below a measured sample.
+///
+/// P39, `whole_profile`: also emit the sample before a lifted run and the
+/// sample after it. Without them the chord from a leg start to the first
+/// lifted sample goes UP over the planned line, so no lap lowers the stock
+/// under that chord, and the lap that reaches the floor takes all of it in
+/// one piece (Wanaka back id 2, entry at (142.15, 43.81): 14 mm). With them
+/// the path is `max(planned, floor)` at each sample, the samples of each
+/// lap stand at the same XY, and a lap lowers `max(planned, floor)` by one
+/// lap or less at each of them. The 3D Rough passes `true` for the legs
+/// that its planner chose; every other door keeps the points it shipped
+/// before P39.
 #[expect(clippy::indexing_slicing, reason = "windows(2) pairs, bounded")]
-fn clip_polyline_to_floor(planned: &[P3], probe: &EntrySurfaceProbe<'_>) -> Option<Vec<P3>> {
+fn clip_polyline_to_floor(
+    planned: &[P3],
+    probe: &EntrySurfaceProbe<'_>,
+    whole_profile: bool,
+) -> Option<Vec<P3>> {
     let mut out = Vec::new();
+    // The sample before the current one: lifted, and already in `out` (the
+    // first point of `planned` is the tool position).
+    let mut prev_lifted = false;
+    let mut prev_skipped: Option<P3> = None;
     for pair in planned.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
@@ -945,10 +1029,17 @@ fn clip_polyline_to_floor(planned: &[P3], probe: &EntrySurfaceProbe<'_>) -> Opti
             };
             let lifted = floor > q.z + 1e-6;
             if lifted {
+                if let Some(before) = prev_skipped.take().filter(|_| whole_profile) {
+                    out.push(before);
+                }
                 out.push(P3::new(q.x, q.y, floor));
-            } else if k == n {
+            } else if k == n || (whole_profile && prev_lifted) {
                 out.push(q);
+                prev_skipped = None;
+            } else {
+                prev_skipped = Some(q);
             }
+            prev_lifted = lifted;
         }
     }
     Some(out)

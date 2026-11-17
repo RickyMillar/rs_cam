@@ -90,6 +90,7 @@ use super::clearing::{
     clear_z_level_contour_parallel, clear_z_level_slice, detect_material_regions_labeled,
     waterline_cleanup,
 };
+use super::entry_ramp::EntryRamp;
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 
@@ -400,6 +401,10 @@ pub(super) enum Adaptive3dSegment {
         /// P22b: the bore of a Geodesic Adaptive helix entry, as the
         /// planner stamped it (`clearing.rs::plan_entry`).
         bore: EntryBore,
+        /// P39: the ramp of the entry, as the planner chose and stamped it
+        /// (`entry_ramp::plan`). With `Legs`, `rapid_floor_z` and
+        /// `contact_z` are the reads over the swept footprint of the legs.
+        ramp: EntryRamp,
     },
     /// Feed directly at cutting depth (no retract)
     Link(P3),
@@ -1427,6 +1432,7 @@ fn adaptive_3d_segments_probed(
         rest_region_filter: params.linking.rest_region_filter,
         entry_floor_radius: entry_floor_radius(params, cutter.radius()),
         entry_bore: entry_bore_rule(params, cutter),
+        entry_ramp: entry_ramp_rule(params, cutter),
         stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
         centre_clip: centre_clip.as_ref(),
         stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
@@ -1830,6 +1836,21 @@ fn entry_bore_rule(
             ClearingStrategy3d::GeodesicAdaptive | ClearingStrategy3d::ContourParallel,
             EntryStyle3d::Helix { .. } | EntryStyle3d::Ramp { .. } | EntryStyle3d::Plunge,
         ) => None,
+    }
+}
+
+/// P39: the ramp rule of the op, when its entries ramp (a stated ramp, or
+/// the G-CENTRECUT ramp of a plunge op); else `None`.
+fn entry_ramp_rule(
+    params: &Adaptive3dParams,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> Option<super::entry_ramp::RampRule> {
+    match effective_entry_style(params.entry_style, cutter) {
+        EntryStyle3d::Ramp { max_angle_deg } => Some(super::entry_ramp::RampRule {
+            angle_deg: max_angle_deg,
+            entry_clearance_mm: params.entry_clearance_mm,
+        }),
+        EntryStyle3d::Plunge | EntryStyle3d::Helix { .. } => None,
     }
 }
 
@@ -2504,7 +2525,7 @@ pub(super) fn segments_to_toolpath_checked(
                 });
             }
             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
-                let (raw_entry, rapid_floor_z, contact_z, core_top_z, stay_down, bore) =
+                let (raw_entry, rapid_floor_z, contact_z, core_top_z, stay_down, bore, ramp) =
                     match segment {
                         Adaptive3dSegment::RapidWithFloor {
                             entry,
@@ -2513,6 +2534,7 @@ pub(super) fn segments_to_toolpath_checked(
                             core_top_z,
                             stay_down,
                             bore,
+                            ramp,
                         } => (
                             entry,
                             Some(*rapid_floor_z),
@@ -2520,10 +2542,17 @@ pub(super) fn segments_to_toolpath_checked(
                             *core_top_z,
                             stay_down.as_ref(),
                             *bore,
+                            *ramp,
                         ),
-                        Adaptive3dSegment::Rapid(entry) => {
-                            (entry, None, None, None, None, EntryBore::OpStyle)
-                        }
+                        Adaptive3dSegment::Rapid(entry) => (
+                            entry,
+                            None,
+                            None,
+                            None,
+                            None,
+                            EntryBore::OpStyle,
+                            EntryRamp::OpStyle,
+                        ),
                         Adaptive3dSegment::Cut(_)
                         | Adaptive3dSegment::Link(_)
                         | Adaptive3dSegment::Marker(_) => continue,
@@ -2648,25 +2677,42 @@ pub(super) fn segments_to_toolpath_checked(
                             ),
                         ),
                         EntryStyle3d::Ramp { max_angle_deg } => {
-                            crate::dressup::emit_ramp(
-                                &mut tp,
-                                &start,
-                                entry,
-                                (1.0, 0.0),
-                                max_angle_deg,
-                                params.plunge_rate,
-                                &entry_safety(
-                                    material_top,
-                                    rapid_floor_z.is_some(),
-                                    contact_z,
-                                    core_top_z,
+                            // P39: the legs are the planner's
+                            // (`entry_ramp::plan`); it read the stock under
+                            // them and stamped the moves that this call
+                            // writes. With no free run the entry is the peck
+                            // ladder. `OpStyle` (no stock read, or a tool
+                            // that cannot plunge): along +X, as before P39.
+                            let (legs, angle_deg) = match ramp {
+                                EntryRamp::Legs { legs, rule } => (Some(legs), rule.angle_deg),
+                                EntryRamp::OpStyle => (
+                                    Some(crate::dressup::RampLegs::along((1.0, 0.0))),
+                                    max_angle_deg,
                                 ),
-                                // G-RAMPCONTAIN: no fold. This door enters PRISM
-                                // stock with `dir = (1.0, 0.0)`; a leg past the
-                                // mesh footprint cuts stock this operation is
-                                // allowed to cut (R0.2 section 2.2).
-                                None,
-                            )
+                                EntryRamp::Peck => (None, max_angle_deg),
+                            };
+                            match legs {
+                                Some(legs) => super::entry_ramp::emit(
+                                    &mut tp,
+                                    &frame,
+                                    entry,
+                                    descent_floor,
+                                    (material_top, rapid_floor_z.is_some(), contact_z, core_top_z),
+                                    legs,
+                                    angle_deg,
+                                    params.plunge_rate,
+                                ),
+                                None => {
+                                    emit_peck_plunge(
+                                        &mut tp,
+                                        entry,
+                                        descent_floor,
+                                        contact_z,
+                                        params,
+                                    );
+                                    None
+                                }
+                            }
                         }
                     };
                     refusal = refusal.or(refused);
@@ -2695,6 +2741,9 @@ pub(super) fn segments_to_toolpath_checked(
                             entry_end_move_idx: entry_end,
                             style_label: if stay_down_used {
                                 "keep-down link"
+                            } else if ramp == EntryRamp::Peck {
+                                // P39: the entry that shipped is the ladder.
+                                entry_style_label(EntryStyle3d::Plunge)
                             } else {
                                 entry_style_label(entry_style)
                             },
@@ -2953,6 +3002,7 @@ mod tests {
                 core_top_z: None,
                 stay_down: None,
                 bore: EntryBore::OpStyle,
+                ramp: EntryRamp::OpStyle,
             }],
             params,
             &mesh,

@@ -401,6 +401,9 @@ pub(super) struct ClearZLevelContext<'a> {
     /// P22b (ruling Q1, option (a)): the helix bore rule of a Geodesic
     /// Adaptive op that states a helix entry, else `None`.
     pub(super) entry_bore: Option<EntryBoreRule>,
+    /// P39: the ramp rule of the op (`path.rs::entry_ramp_rule`), or `None`
+    /// when its entries do not ramp.
+    pub(super) entry_ramp: Option<super::entry_ramp::RampRule>,
     /// The resolved stay-down distance (`path.rs::resolved_stay_down_mm`).
     /// The planner writes a keep-down stock proof only inside it.
     pub(super) stay_down_mm: f64,
@@ -612,6 +615,9 @@ pub(super) struct StampDrape<'a> {
     /// planned so far at this level, or `None` (no bore: every other op,
     /// and every door outside the Geodesic level sink).
     pub(super) bore: Option<BoreAt<'a>>,
+    /// P39: the ramp rule of the op, or `None` when its entries do not
+    /// ramp. `plan_entry` chooses the legs of each ramp entry with it.
+    pub(super) ramp: Option<super::entry_ramp::RampRule>,
 }
 
 /// P22b (ruling Q1, option (a)): the helix bore of a Geodesic Adaptive op
@@ -680,6 +686,7 @@ impl<'a> ClearZLevelContext<'a> {
             stay_down_clearance_mm: self.stay_down_clearance_mm,
             entry_lut: self.entry_lut,
             bore: None,
+            ramp: self.entry_ramp,
         }
     }
 
@@ -849,6 +856,7 @@ fn stamp_emitted_segment(
             contact_z,
             core_top_z,
             bore,
+            ramp,
             ..
         } => {
             // Toolpath: rapid descent from safe_z (or a keep-down link) down
@@ -900,6 +908,39 @@ fn stamp_emitted_segment(
                 let mut fed = Vec::with_capacity(helix.moves.len() + 1);
                 fed.push(start);
                 fed.extend(helix.moves.iter().map(|m| m.target));
+                stamp_along_path(material_stock, lut, tool_radius, &fed);
+                return Some(emitted_entry_end(*entry, descent_floor));
+            }
+            // P39: a planned ramp stamps the moves the emitter writes for it
+            // (`entry_ramp::emit`), as a cut: the stamp is the path that
+            // ships. The next entry of the op then reads the slot.
+            if let super::entry_ramp::EntryRamp::Legs { legs, rule } = ramp
+                && descent_floor > entry.z + 1e-6
+            {
+                let frame = super::path::EntryFrame {
+                    mesh: drape.mesh,
+                    index: drape.index,
+                    cutter: drape.cutter,
+                    stock_to_leave: drape.stock_to_leave,
+                    entry_clearance_mm: rule.entry_clearance_mm,
+                    // The feed does not move a point of the ramp.
+                    ramp_feed: None,
+                    core: crate::tool::body::core_of(drape.cutter),
+                };
+                let mut legs_tp = crate::toolpath::Toolpath::new();
+                let _refusal = super::entry_ramp::emit(
+                    &mut legs_tp,
+                    &frame,
+                    entry,
+                    descent_floor,
+                    (*rapid_floor_z, true, Some(*contact_z), *core_top_z),
+                    *legs,
+                    rule.angle_deg,
+                    0.0,
+                );
+                let mut fed = Vec::with_capacity(legs_tp.moves.len() + 1);
+                fed.push(start);
+                fed.extend(legs_tp.moves.iter().map(|m| m.target));
                 stamp_along_path(material_stock, lut, tool_radius, &fed);
                 return Some(emitted_entry_end(*entry, descent_floor));
             }
@@ -1009,6 +1050,39 @@ fn plan_entry(
     let contact_z = material_stock
         .max_top_z_in_disc(entry.x, entry.y, floor_radius)
         .map_or(rapid_floor_z, |z| z.min(rapid_floor_z));
+    // P39: an entry that ramps gets its legs here, where the stock, the
+    // model and the centre boundary are in scope, and the two reads cover
+    // the swept footprint of the legs (never under the disc reads).
+    let ramp_rule = match bore {
+        EntryBore::OpStyle => drape.ramp,
+        EntryBore::Fallback { ramp_angle_deg, .. } => {
+            drape.bore.map(|at| super::entry_ramp::RampRule {
+                angle_deg: ramp_angle_deg,
+                entry_clearance_mm: at.rule.entry_clearance_mm,
+            })
+        }
+        EntryBore::Helix { .. } => None,
+    };
+    let planned = ramp_rule.map(|rule| {
+        let draped = drape_point(
+            &entry,
+            drape.mesh,
+            drape.index,
+            drape.cutter,
+            drape.stock_to_leave,
+        );
+        super::entry_ramp::plan(material_stock, tool_radius, draped, rule, drape)
+    });
+    let ramp = planned
+        .as_ref()
+        .map_or(super::entry_ramp::EntryRamp::OpStyle, |p| p.ramp);
+    let (rapid_floor_z, contact_z) = match planned.and_then(|p| p.footprint_tops) {
+        Some((floor, contact)) => {
+            let floor = rapid_floor_z.max(floor);
+            (floor, contact_z.max(contact).min(floor))
+        }
+        None => (rapid_floor_z, contact_z),
+    };
     // P22-0c-3: the wood under the core disc, for the static plunge check.
     let core_top_z = crate::tool::body::core_of(drape.cutter).and_then(|core| {
         crate::stock::contact::core_material_top(material_stock, &core, entry.x, entry.y)
@@ -1020,6 +1094,7 @@ fn plan_entry(
         core_top_z,
         stay_down,
         bore,
+        ramp,
     }
 }
 
@@ -2087,6 +2162,7 @@ pub(super) fn waterline_cleanup(
         stay_down_clearance_mm: 0.0,
         entry_lut: ctx.entry_lut,
         bore: None,
+        ramp: ctx.entry_ramp,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();

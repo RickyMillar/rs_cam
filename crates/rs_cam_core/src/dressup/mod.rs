@@ -35,7 +35,10 @@ pub use entry_descent::ENTRY_CONTACT_CLEARANCE;
 /// when the whole cutter is this far over the stock. P35 G: the margin of
 /// the flute-length lift of a Project Curve reads it too.
 pub const AIR_CUT_CLEARANCE_MM: f64 = 0.1;
-pub(crate) use entry_descent::{ENTRY_CLEARANCE, emit_helix, emit_ramp, emit_stock_aware_plunge};
+pub(crate) use entry_descent::{
+    ENTRY_CLEARANCE, ENTRY_CLIP_SPACING_MM, RampLegs, emit_helix, emit_ramp,
+    emit_stock_aware_plunge, ramp_leg_cap_mm, ramp_min_run_mm,
+};
 pub use tabs::{Tab, apply_tabs, even_tabs};
 
 use crate::dexel_stock::TriDexelStock;
@@ -616,7 +619,7 @@ pub fn apply_entry_at(
                         &mut result,
                         &toolpath.moves[i - 1].target,
                         &m.target,
-                        ramp_dir,
+                        RampLegs::along(ramp_dir),
                         max_angle_deg,
                         feed_rate.min(plunge_rate),
                         &safety,

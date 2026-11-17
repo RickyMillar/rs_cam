@@ -2229,7 +2229,7 @@ fn helix_and_ramp_descend_at_the_ramp_feed_when_set() {
             &mut ramp,
             &start,
             &end,
-            (1.0, 0.0),
+            super::entry_descent::RampLegs::along((1.0, 0.0)),
             3.0,
             PLUNGE,
             &safety,
@@ -2273,7 +2273,7 @@ fn helix_and_ramp_start_at_the_entry_clearance() {
             &mut ramp,
             &start,
             &end,
-            (1.0, 0.0),
+            super::entry_descent::RampLegs::along((1.0, 0.0)),
             3.0,
             300.0,
             &safety,
@@ -2332,7 +2332,7 @@ fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
         &mut ramp,
         &start,
         &end,
-        (1.0, 0.0),
+        super::entry_descent::RampLegs::along((1.0, 0.0)),
         20.0,
         300.0,
         &safety,
@@ -2701,7 +2701,7 @@ fn the_rest_ladder_of_a_non_centre_tool_keeps_the_core_out_of_wood_p22_0c() {
             &mut tp,
             &start,
             &end,
-            (1.0, 0.0),
+            super::entry_descent::RampLegs::along((1.0, 0.0)),
             3.0,
             300.0,
             &safety,
@@ -3078,4 +3078,116 @@ fn no_fold_ramp_point_is_below_the_followed_cut_review_f1() {
     }
     // The generator must exercise the fold, not only its plunge fallback.
     assert!(folds >= 100, "only {folds} of 400 cases folded");
+}
+
+/// P39 (R-1d): a ramp leg that the model clip lifts ships its whole clipped
+/// profile when the 3D Rough planner chose it (`RampLegs::max_leg_mm`).
+///
+/// The fixture is the Wanaka back entry at (142.15, 43.81): a floor, a
+/// ledge at Z 11 and the top of the part at Z 25.5 along +X, under stock to
+/// Z 25.5. The ramp starts above all of it. Without the whole profile each
+/// out leg is ONE chord from the start column up to the first lifted
+/// sample, so no lap lowers the stock over the ledge, and the lap that
+/// reaches Z 11 takes it in one piece (14 mm on the job). With it, no ramp
+/// move meets more than one lap of stock. Red with `whole_profile` off.
+#[test]
+fn a_planned_ramp_leg_over_a_ledge_takes_one_lap_at_most_p39() {
+    use crate::dexel_stock::StockCutDirection;
+    use crate::geo::BoundingBox3;
+    use crate::tool::{FlatEndmill, MillingCutter as _};
+    const TOP: f64 = 25.5;
+    const CELL: f64 = 0.25;
+    let quad = |x0: f64, x1: f64, z: f64, base: u32| {
+        (
+            vec![
+                P3::new(x0, -10.0, z),
+                P3::new(x1, -10.0, z),
+                P3::new(x1, 10.0, z),
+                P3::new(x0, 10.0, z),
+            ],
+            vec![[base, base + 1, base + 2], [base, base + 2, base + 3]],
+        )
+    };
+    let (mut vertices, mut triangles) = (Vec::new(), Vec::new());
+    for (x0, x1, z, base) in [
+        (-10.0, 14.6, 0.0, 0),
+        (14.6, 16.5, 11.0, 4),
+        (16.5, 30.0, TOP, 8),
+    ] {
+        let (v, t) = quad(x0, x1, z, base);
+        vertices.extend(v);
+        triangles.extend(t);
+    }
+    let mesh = crate::mesh::TriangleMesh::from_raw(vertices, triangles);
+    let index = crate::mesh::SpatialIndex::build(&mesh, 8.0);
+    let tool = FlatEndmill::new(6.0, 30.0);
+    let r = tool.radius();
+    let safety = EntrySafety {
+        surface: Some(EntrySurfaceProbe {
+            mesh: &mesh,
+            index: &index,
+            cutter: &tool,
+            stock_to_leave: 0.0,
+            off_mesh: OffMeshEntry::Unconstrained,
+            rest_stock: None,
+        }),
+        fold_lap_cap: None,
+        stock_top_measured: true,
+        contact_top: Some(TOP),
+        ..no_probe(TOP)
+    };
+    let start = P3::new(0.0, 0.0, TOP + 0.5);
+    let end = P3::new(0.0, 0.0, 8.0);
+    // The most stock above the cutter along one ramp move, on a replay.
+    let worst_bite = |legs: super::entry_descent::RampLegs| {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(start);
+        let _ =
+            super::entry_descent::emit_ramp(&mut tp, &start, &end, legs, 3.0, 500.0, &safety, None);
+        let mut stock = TriDexelStock::from_bounds(
+            &BoundingBox3 {
+                min: P3::new(-10.0, -10.0, -2.0),
+                max: P3::new(30.0, 10.0, TOP),
+            },
+            CELL,
+        );
+        let lut = crate::stock::radial_profile::RadialProfileLUT::from_cutter(
+            &tool,
+            crate::stock::radial_profile::LUT_SAMPLES,
+        );
+        let mut worst = 0.0_f64;
+        for pair in tp.moves.windows(2) {
+            let (a, b) = (pair[0].target, pair[1].target);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let n = crate::util::steps::steps(dx.hypot(dy), CELL * 0.5)
+                .unwrap_or(0)
+                .max(1);
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                let z = a.z + (b.z - a.z) * t;
+                if let Some(top) =
+                    stock.max_top_z_in_disc(a.x + dx * t, a.y + dy * t, r - 2.0 * CELL)
+                {
+                    worst = worst.max(top - z);
+                }
+            }
+            stock.stamp_linear_segment(&lut, r, a, b, StockCutDirection::FromTop);
+        }
+        worst
+    };
+    let planned = worst_bite(super::entry_descent::RampLegs {
+        dir: (1.0, 0.0),
+        max_leg_mm: Some(19.0),
+    });
+    assert!(
+        planned <= ENTRY_CLEARANCE + CELL,
+        "a planned leg meets {planned:.2} mm of stock above the cutter; one lap is {ENTRY_CLEARANCE} mm"
+    );
+    // The fixture is the defect: the same legs with the clip of the other
+    // doors (no whole profile) take far more than one lap.
+    let unplanned = worst_bite(super::entry_descent::RampLegs::along((1.0, 0.0)));
+    assert!(
+        unplanned > 3.0 * ENTRY_CLEARANCE,
+        "the fixture no longer shows the defect: {unplanned:.2} mm"
+    );
 }
