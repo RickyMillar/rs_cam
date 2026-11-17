@@ -1,6 +1,25 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-17 (read this first)
+## State on 2026-11-18 (read this first)
+
+- Committed, not pushed: P39 (`49f9420b3`, `0a1f60fe1`; note
+  `phases/P39_RAMP_ENTRY_STOCK_2026-11-17.md`): the planner chooses, reads and stamps the ramp of
+  a 3D Rough entry (`adaptive3d/entry_ramp.rs`); wanaka back id 2 entry row 14.5 to 2.0 mm.
+- P40 A (`7b4a65d2f`; note `phases/P40_WALL_CHORD_ONE_PASS_2026-11-17.md`): each entry chord
+  holds the model plus the stock to leave (`hold_entry_chords`); ramp nodes under the target on
+  the wanaka back 32 to 0.
+- The one-pass rule failed two trials at the segment door (P38 W1, P40 B; patches in
+  `phases/p38/not_landed/`, `phases/p40/not_landed/`). Lead ruling: the rule goes in the region
+  grid (P41). The body of id 2 still cuts 20.7 mm deep at 6 mm per pass.
+- Golden: 46 known cells plus 6 cells of `adaptive3d/ramp_geodesic` (P39), not blessed.
+- Open from P40: the entry lift is on only with `gouge_probe`; the cut pipeline may have the
+  wall chord gap (by reading); `model_gouge::measure` samples a move at a quarter of the
+  diameter and misses a short steep chord; `whole_profile` is off at the other `emit_ramp` doors.
+- W2 of P38 (the coverage reading at a stock to leave of 0) is still not split onto HEAD.
+- A restart of the machine on 2026-11-18 emptied the scratch folder. Nothing in the repo was lost.
+- The lead shows the operator the wanaka before and after of each rest rough motion change.
+
+## State on 2026-11-17
 
 - Committed, not pushed, after P35 G: P36 (`dced6f0c2`, `d4792a009`, `f15eee305`; note
   `phases/P36_DRILL_RAPID_CENTRE_DESCENT_2026-11-16.md`), P37 (`c9ed0736c`, `b2909b22a`; note
