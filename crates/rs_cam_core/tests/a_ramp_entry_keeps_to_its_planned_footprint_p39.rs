@@ -75,7 +75,11 @@ const CENTRE_HALF: f64 = 10.0;
 /// The top of the ledge of the ledge fixture.
 const LEDGE_Z: f64 = 10.0;
 
-fn params(strategy: ClearingStrategy3d, centre_boundary: Vec<Polygon2>) -> Adaptive3dParams {
+fn params(
+    strategy: ClearingStrategy3d,
+    centre_boundary: Vec<Polygon2>,
+    gouge_probe: Option<std::sync::Arc<dyn MillingCutter>>,
+) -> Adaptive3dParams {
     Adaptive3dParams {
         entry_clearance_mm: 0.5,
         ramp_feed_rate: None,
@@ -89,7 +93,7 @@ fn params(strategy: ClearingStrategy3d, centre_boundary: Vec<Polygon2>) -> Adapt
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary,
-            gouge_probe: None,
+            gouge_probe,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: DPP,
@@ -150,13 +154,25 @@ fn generate(
     strategy: ClearingStrategy3d,
     centre: Vec<Polygon2>,
 ) -> (Toolpath, FlatEndmill) {
+    generate_with_probe(mesh, strategy, centre, None)
+}
+
+/// [`generate`] with the reduced tool of the model gouge guard
+/// (`Adaptive3dGeometry::gouge_probe`): with it the chord lift of the cuts
+/// and, P40, of the entries is on.
+fn generate_with_probe(
+    mesh: &TriangleMesh,
+    strategy: ClearingStrategy3d,
+    centre: Vec<Polygon2>,
+    gouge_probe: Option<std::sync::Arc<dyn MillingCutter>>,
+) -> (Toolpath, FlatEndmill) {
     let index = SpatialIndex::build(mesh, 8.0);
     let tool = FlatEndmill::new(6.0, 25.0);
     let tp = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
         mesh,
         &index,
         &tool,
-        &params(strategy, centre),
+        &params(strategy, centre, gouge_probe),
         &rs_cam_core::interrupt::NeverCancel,
         None,
     )
@@ -302,5 +318,98 @@ fn a_lifted_ramp_leg_still_takes_one_lap_at_most() {
     for (strategy, name) in STRATEGIES {
         let (tp, tool) = generate(&mesh, strategy, Vec::new());
         check(&format!("terrain, {name}"), &audit(&tp, &tool, None), false);
+    }
+}
+
+/// P40 A: a ramp leg that the model clip lifts over a wall of the model
+/// holds the model on each chord (the 3D Rough door of
+/// `dressup::entry_descent::hold_entry_chords`).
+///
+/// Record: `planning/feeds_contract_2026-11-03/phases/P40_WALL_CHORD_ONE_PASS_2026-11-17.md`.
+///
+/// The fixture is the ledge of this file with a centre boundary that is a
+/// strip along X: X -5.9 to 15, Y -1 to 1. The tool stands on the floor
+/// while its centre is under X -3. Inside the strip no direction has a run
+/// of 3 mm (the shortest run, the tool radius) that the clip does not lift,
+/// so the planner takes the longest run that the centre may take: +X, over
+/// the ledge. The clip lifts the leg onto the ledge, and a chord of each
+/// lap goes over the wall line.
+///
+/// The op states the reduced tool of the model gouge guard, as the session
+/// does (`gouge_probe`), so the chord lift is on. The judge is the rule of
+/// the guard (`compute::model_gouge`, `Allowance`: the reduced tool, the
+/// limit `CL Z + leave - tolerance`, the bar `MODEL_GOUGE_Z_TOL_MM`), read
+/// at `MODEL_GOUGE_TOL_MM` along each `EntryRamp` move. The guard itself
+/// reads a move at a quarter of the diameter.
+///
+/// Contour Parallel only: Geodesic Adaptive emits no move inside this strip.
+///
+/// Red with `adaptive3d::path::EntryFrame::chord_lift` returning `None`.
+#[test]
+fn a_lifted_ramp_leg_over_a_wall_holds_the_model_p40() {
+    use rs_cam_core::compute::model_gouge::{MODEL_GOUGE_TOL_MM, MODEL_GOUGE_Z_TOL_MM};
+    /// `params`: the chord tolerance of the op.
+    const TOL: f64 = 0.1;
+    let mesh = ledge_mesh();
+    let index = SpatialIndex::build(&mesh, 8.0);
+    let strip = Polygon2::rectangle(-5.9, -1.0, 15.0, 1.0);
+    for (strategy, name) in STRATEGIES
+        .into_iter()
+        .filter(|(s, _)| *s == ClearingStrategy3d::ContourParallel)
+    {
+        let reduced = FlatEndmill::new(6.0 - 2.0 * TOL, 25.0);
+        let (tp, tool) = generate_with_probe(
+            &mesh,
+            strategy,
+            vec![strip.clone()],
+            Some(std::sync::Arc::new(reduced)),
+        );
+        let judge = FlatEndmill::new(6.0 - 2.0 * TOL, 25.0);
+        let (mut worst, mut worst_at) = (0.0_f64, None);
+        let (mut ramp_moves, mut on_ledge) = (0_usize, 0_usize);
+        for i in 1..tp.moves.len() {
+            let (a, m) = (tp.moves[i - 1].target, &tp.moves[i]);
+            let b = m.target;
+            if m.intent != MoveIntent::EntryRamp {
+                continue;
+            }
+            ramp_moves += 1;
+            if b.x > -3.0 && (b.z - LEDGE_Z).abs() < 1e-6 {
+                on_ledge += 1;
+            }
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let n = (dx.hypot(dy) / MODEL_GOUGE_TOL_MM).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(
+                    a.x + dx * t,
+                    a.y + dy * t,
+                    &mesh,
+                    &index,
+                    &judge,
+                );
+                let under = cl.z - TOL - (a.z + (b.z - a.z) * t);
+                if cl.contacted && under > worst {
+                    worst = under;
+                    worst_at = Some((i, a, b));
+                }
+            }
+        }
+        eprintln!(
+            "wall, {name}: {ramp_moves} ramp moves, {on_ledge} end on the ledge, deepest chord \
+             {worst:.3} mm under the limit at {worst_at:?}"
+        );
+        assert!(
+            on_ledge > 0,
+            "wall, {name}: no ramp move ends on the ledge ({ramp_moves} ramp moves): the fixture \
+             does not lift a leg"
+        );
+        assert!(
+            worst <= MODEL_GOUGE_Z_TOL_MM,
+            "wall, {name}: a ramp chord is {worst:.3} mm under the model plus the leave less the \
+             tolerance at {worst_at:?}"
+        );
+        // The one-lap rule of P39 holds with the lift on.
+        check(&format!("wall, {name}"), &audit(&tp, &tool, None), false);
     }
 }

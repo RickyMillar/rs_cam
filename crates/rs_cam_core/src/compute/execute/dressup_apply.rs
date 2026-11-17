@@ -839,6 +839,10 @@ impl<'a> PipelineRun<'a> {
         crate::dressup::EntrySafety {
             stock_top: ctx.stock_top,
             surface: ctx.entry_surface,
+            // P40: each entry chord holds the model plus the leave.
+            chord_lift: ctx
+                .entry_surface
+                .map(|_| crate::dressup::ChordLift::SURFACE_OP),
             fold_lap_cap: ctx.transform_capabilities.ramp_fold_lap_cap,
             helix_floor_lap: ctx.transform_capabilities.helix_floor_lap,
             helix_containment: ctx.entry_containment,

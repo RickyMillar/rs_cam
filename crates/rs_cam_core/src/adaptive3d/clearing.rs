@@ -893,6 +893,7 @@ fn stamp_emitted_segment(
                     // The feed does not move a point of the helix.
                     ramp_feed: None,
                     core: crate::tool::body::core_of(drape.cutter),
+                    chord_lift: super::path::EntryFrame::chord_lift(drape.probe, tolerance),
                 };
                 let mut helix = crate::toolpath::Toolpath::new();
                 let _refusal = super::path::emit_bore_helix(
@@ -926,6 +927,7 @@ fn stamp_emitted_segment(
                     // The feed does not move a point of the ramp.
                     ramp_feed: None,
                     core: crate::tool::body::core_of(drape.cutter),
+                    chord_lift: super::path::EntryFrame::chord_lift(drape.probe, tolerance),
                 };
                 let mut legs_tp = crate::toolpath::Toolpath::new();
                 let _refusal = super::entry_ramp::emit(

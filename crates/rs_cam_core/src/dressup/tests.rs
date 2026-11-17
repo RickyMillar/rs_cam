@@ -1178,6 +1178,7 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         helix_floor_lap: false,
         helix_containment: None,
         core: None,
+        chord_lift: None,
     }
 }
 
@@ -1462,6 +1463,7 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         helix_floor_lap: false,
         helix_containment: None,
         core: None,
+        chord_lift: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),
@@ -3189,5 +3191,157 @@ fn a_planned_ramp_leg_over_a_ledge_takes_one_lap_at_most_p39() {
     assert!(
         unplanned > 3.0 * ENTRY_CLEARANCE,
         "the fixture no longer shows the defect: {unplanned:.2} mm"
+    );
+}
+
+/// P40 A: every shipped chord of a ramp or helix entry holds the model plus
+/// the stock to leave, also where a leg crosses a wall of the model.
+///
+/// Record: `planning/feeds_contract_2026-11-03/phases/P40_WALL_CHORD_ONE_PASS_2026-11-17.md`.
+///
+/// The fixture is a floor at Z 0 and a top at Z 12 with a wall at X 10. A
+/// 6 mm tool at X under 7 stands on the floor; from X 7 its edge is over
+/// the top. Each entry starts in the floor part and its legs (or turns) go
+/// over the line X 7. The clip of an entry reads the floor at samples
+/// (`ENTRY_CLIP_SPACING_MM` for a ramp, 10 degrees for a helix). Without
+/// the chord lift (`hold_entry_chords`) the chord between the last low
+/// sample and the first lifted sample goes through the top edge of the
+/// wall: 0.25 mm (the legs of the other doors), 5.1 mm (planned legs) and
+/// 0.50 mm (the helix) under the limit at `0a1f60fe1`.
+///
+/// The judge is the rule of the model gouge guard for a 3D Rough
+/// (`compute::model_gouge`, `Allowance`): the tool less the chord tolerance
+/// on its radius, the limit `CL Z + leave - tolerance`, the Z bar
+/// `MODEL_GOUGE_Z_TOL_MM`. The guard samples a move at a quarter of the
+/// diameter; this test samples at `MODEL_GOUGE_TOL_MM`, so it reads the
+/// inside of a chord 0.5 mm long.
+///
+/// A tool with a centre core is not a case: it takes a direction only when
+/// each lap comes down again at its limit slope
+/// (`replan_descent_at_limit`), so on this fixture it goes along -X.
+#[test]
+fn an_entry_chord_over_a_model_wall_holds_the_leave_p40() {
+    use crate::compute::model_gouge::{MODEL_GOUGE_TOL_MM, MODEL_GOUGE_Z_TOL_MM};
+    use crate::tool::FlatEndmill;
+    const TOP: f64 = 12.0;
+    /// The chord tolerance of the op of the fixture.
+    const TOL: f64 = 0.1;
+    let vertices = vec![
+        P3::new(-20.0, -20.0, 0.0),
+        P3::new(10.0, -20.0, 0.0),
+        P3::new(10.0, 20.0, 0.0),
+        P3::new(-20.0, 20.0, 0.0),
+        P3::new(10.0, -20.0, TOP),
+        P3::new(30.0, -20.0, TOP),
+        P3::new(30.0, 20.0, TOP),
+        P3::new(10.0, 20.0, TOP),
+    ];
+    let triangles = vec![
+        [0, 1, 2],
+        [0, 2, 3],
+        [1, 4, 7],
+        [1, 7, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+    ];
+    let mesh = crate::mesh::TriangleMesh::from_raw(vertices, triangles);
+    let index = crate::mesh::SpatialIndex::build(&mesh, 8.0);
+    let tool = FlatEndmill::new(6.0, 30.0);
+    // The reduced tool of the guard, as the 3D Rough builds it. The lift
+    // of the entry reads `tool`; the judge reads this one.
+    let reduced = FlatEndmill::new(6.0 - 2.0 * TOL, 30.0);
+    let safety = EntrySafety {
+        surface: Some(EntrySurfaceProbe {
+            mesh: &mesh,
+            index: &index,
+            cutter: &tool,
+            stock_to_leave: 0.0,
+            off_mesh: OffMeshEntry::Unconstrained,
+            rest_stock: None,
+        }),
+        chord_lift: Some(ChordLift { tolerance_mm: TOL }),
+        fold_lap_cap: None,
+        stock_top_measured: true,
+        contact_top: Some(TOP),
+        ..no_probe(TOP)
+    };
+    // The deepest point of an entry chord under the limit of the guard
+    // (mm), and the count of entry moves that end on the top past the wall.
+    let judge = |tp: &Toolpath| {
+        let mut worst = 0.0_f64;
+        let mut on_top = 0_usize;
+        for pair in tp.moves.windows(2) {
+            if !matches!(
+                pair[1].intent,
+                MoveIntent::EntryRamp | MoveIntent::EntryHelix
+            ) {
+                continue;
+            }
+            let (a, b) = (pair[0].target, pair[1].target);
+            if b.x > 7.0 && (b.z - TOP).abs() < 1e-6 {
+                on_top += 1;
+            }
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let n = crate::util::steps::steps(dx.hypot(dy), MODEL_GOUGE_TOL_MM)
+                .unwrap_or(0)
+                .max(1);
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                let cl = crate::surface::dropcutter::point_drop_cutter(
+                    a.x + dx * t,
+                    a.y + dy * t,
+                    &mesh,
+                    &index,
+                    &reduced,
+                );
+                if cl.contacted {
+                    worst = worst.max(cl.z - TOL - (a.z + (b.z - a.z) * t));
+                }
+            }
+        }
+        (worst, on_top)
+    };
+    let ramp = |legs: super::entry_descent::RampLegs| {
+        let start = P3::new(0.0, 0.0, TOP + 0.5);
+        let end = P3::new(0.0, 0.0, 2.0);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(start);
+        let _ =
+            super::entry_descent::emit_ramp(&mut tp, &start, &end, legs, 3.0, 500.0, &safety, None);
+        tp
+    };
+    let helix = {
+        let start = P3::new(5.0, 0.0, TOP + 0.5);
+        let end = P3::new(5.0, 0.0, 2.0);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(start);
+        let _ = super::entry_descent::emit_helix(&mut tp, &start, &end, 2.5, 3.0, 500.0, &safety);
+        tp
+    };
+    let cases = [
+        (
+            "ramp, the legs of the other doors",
+            ramp(super::entry_descent::RampLegs::along((1.0, 0.0))),
+        ),
+        (
+            "ramp, planned legs (whole profile)",
+            ramp(super::entry_descent::RampLegs {
+                dir: (1.0, 0.0),
+                max_leg_mm: Some(19.0),
+            }),
+        ),
+        ("helix", helix),
+    ];
+    let mut red = Vec::new();
+    for (name, tp) in &cases {
+        let (worst, on_top) = judge(tp);
+        assert!(on_top > 0, "{name}: no entry move goes over the wall");
+        if worst > MODEL_GOUGE_Z_TOL_MM {
+            red.push(format!("{name}: {worst:.3} mm under the limit"));
+        }
+    }
+    assert!(
+        red.is_empty(),
+        "an entry chord cuts the wall top (the bar is {MODEL_GOUGE_Z_TOL_MM} mm): {red:?}"
     );
 }

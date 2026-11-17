@@ -252,6 +252,42 @@ pub struct EntrySafety<'a> {
     /// emitter return a warning when it must plunge deeper than the
     /// protrusion.
     pub core: Option<crate::tool::body::CoreZone>,
+    /// P40: the chord lift of the entry (`entry_descent::hold_entry_chords`),
+    /// read with `surface`. `None`: the emitter ships the clipped samples
+    /// as they are.
+    pub chord_lift: Option<ChordLift>,
+}
+
+/// P40: the chord lift of an entry
+/// (`surface::chord_lift::lift_chords_to_leave`): each chord of a ramp or
+/// helix entry holds the model plus the stock to leave, also between two
+/// clip samples that stand on the two sides of a wall of the model.
+///
+/// The lift reads the rest height with the cutter of the surface probe,
+/// the tool that the clip of the entry reads. It puts a point within half
+/// the tolerance (at least 0.01 mm) of a jump of that rest height. The
+/// model gouge guard reads a tool that is smaller on its radius
+/// (`compute::model_gouge::probe_radial_tolerance_mm`), so a tolerance of
+/// at most twice that radial tolerance leaves no chord under the floor of
+/// the guard. (With the reduced tool itself the point stands that far past
+/// the jump that the guard reads, and a steep chord is under its floor
+/// there: 0.67 mm on the fixture of
+/// `an_entry_chord_over_a_model_wall_holds_the_leave_p40`.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChordLift {
+    /// The chord tolerance (mm): a chord may sit half of it under the rest
+    /// height.
+    pub tolerance_mm: f64,
+}
+
+impl ChordLift {
+    /// The lift of the dressup door (a surface op, `apply_entry`): twice
+    /// the radial tolerance of the model gouge guard of such an op
+    /// (`MODEL_GOUGE_TOL_MM`), the largest tolerance that puts a lift point
+    /// within that radial tolerance of a jump.
+    pub const SURFACE_OP: Self = Self {
+        tolerance_mm: 2.0 * crate::compute::model_gouge::MODEL_GOUGE_TOL_MM,
+    };
 }
 
 /// A contained helix whose fitted radius is at most this is a ramp (mm):

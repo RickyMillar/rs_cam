@@ -713,8 +713,11 @@ pub(crate) fn emit_ramp(
                         MoveIntent::EntryApproach,
                     );
                 }
-                for p in &plan.points {
-                    tp.feed_to_with_intent(*p, ramp_feed, MoveIntent::EntryRamp);
+                // P40: the laps run between the entry and the far point of
+                // the window; a wall of the model can stand between them.
+                let seed = tp.moves.last().map_or(*start, |m| m.target);
+                for p in hold_entry_chords(seed, plan.points, safety) {
+                    tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
                 }
             }
             None => {
@@ -830,7 +833,10 @@ pub(crate) fn emit_ramp(
         };
         match clipped {
             Some(points) => {
-                for p in points {
+                // P40: the clip reads the floor at samples; the chords
+                // between them hold the model through the ONE chord lift.
+                let seed = P3::new(start.x, start.y, ramp_start_z);
+                for p in hold_entry_chords(seed, points, safety) {
                     tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
                 }
             }
@@ -882,6 +888,51 @@ pub(crate) fn emit_ramp(
         }
     }
     None
+}
+
+/// P40: the ONE owner of the lifted profile of an entry. `points` are the
+/// points an emitter is about to ship over a surface probe (clipped legs,
+/// helix turns), and `seed` is where the tool stands before the first of
+/// them. Each chord passes the chord lift of the cuts and links of a 3D
+/// Rough (`surface::chord_lift::lift_chords_to_leave`, G-DRAPEGAP) with
+/// the cutter of the probe and [`EntrySafety::chord_lift`], so its interior
+/// holds the model plus the stock to leave.
+///
+/// The clips read the floor at samples (`ENTRY_CLIP_SPACING_MM`, or 10
+/// degrees of a helix turn). Two samples on the two sides of a wall of the
+/// model gave a chord through the top edge of the wall (Wanaka back id 2:
+/// 33 replay nodes, to 1.72 mm; the model gouge guard samples a move at a
+/// quarter of the diameter and did not see a chord 0.5 mm long).
+///
+/// The lift only raises a point and inserts points. With no chord under
+/// the rest height the points come back as they are (the same bytes). A
+/// tool with a centre core passes its descent rule again after a lift
+/// (`CoreZone::clamp_descents`: a raised point can make the next piece
+/// steeper than its limit), the order of the cut pipeline.
+fn hold_entry_chords(seed: P3, points: Vec<P3>, safety: &EntrySafety<'_>) -> Vec<P3> {
+    let (Some(probe), Some(lift)) = (&safety.surface, &safety.chord_lift) else {
+        return points;
+    };
+    let mut path = Vec::with_capacity(points.len() + 1);
+    path.push(seed);
+    path.extend_from_slice(&points);
+    let mut held = crate::surface::chord_lift::lift_chords_to_leave(
+        &path,
+        probe.mesh,
+        probe.index,
+        probe.cutter,
+        probe.stock_to_leave,
+        lift.tolerance_mm,
+    );
+    if held == path {
+        return points;
+    }
+    if let Some(core) = safety.core {
+        core.clamp_descents(&mut held, &crate::tool::body::FedLead::default());
+    }
+    // The seed is the tool position: no move goes to it.
+    held.drain(..1);
+    held
 }
 
 /// K5 CentreCut (feeds contract P7 commit C): the entry descent of a tool
@@ -1045,6 +1096,22 @@ fn clip_polyline_to_floor(
     Some(out)
 }
 
+/// The points of one full lap of radius `radius` around `centre` at its Z,
+/// after the point at `start_angle`, where the cutter stands.
+fn floor_lap_points(centre: &P3, radius: f64, start_angle: f64) -> impl Iterator<Item = P3> {
+    const STEPS_PER_REV: usize = 36;
+    let centre = *centre;
+    let step = std::f64::consts::TAU / STEPS_PER_REV as f64;
+    (1..=STEPS_PER_REV).map(move |k| {
+        let (sin_a, cos_a) = (start_angle + step * k as f64).sin_cos();
+        P3::new(
+            centre.x + radius * cos_a,
+            centre.y + radius * sin_a,
+            centre.z,
+        )
+    })
+}
+
 /// One full lap of radius `radius` around `centre` at its Z, as part of a
 /// helix entry (`EntryHelix`). `from_centre` first feeds out from the
 /// centre to the lap start; otherwise the cutter already stands on the lap
@@ -1058,25 +1125,20 @@ fn emit_floor_lap(
     from_centre: bool,
 ) {
     use crate::toolpath::MoveIntent;
-    const STEPS_PER_REV: usize = 36;
-    let at = |angle: f64| {
-        let (sin_a, cos_a) = angle.sin_cos();
-        P3::new(
-            centre.x + radius * cos_a,
-            centre.y + radius * sin_a,
-            centre.z,
-        )
-    };
     if from_centre {
-        tp.feed_to_with_intent(at(start_angle), feed, MoveIntent::EntryHelix);
-    }
-    let step = std::f64::consts::TAU / STEPS_PER_REV as f64;
-    for k in 1..=STEPS_PER_REV {
+        let (sin_a, cos_a) = start_angle.sin_cos();
         tp.feed_to_with_intent(
-            at(start_angle + step * k as f64),
+            P3::new(
+                centre.x + radius * cos_a,
+                centre.y + radius * sin_a,
+                centre.z,
+            ),
             feed,
             MoveIntent::EntryHelix,
         );
+    }
+    for q in floor_lap_points(centre, radius, start_angle) {
+        tp.feed_to_with_intent(q, feed, MoveIntent::EntryHelix);
     }
     if from_centre {
         tp.feed_to_with_intent(*centre, feed, MoveIntent::EntryHelix);
@@ -1222,18 +1284,20 @@ pub(crate) fn emit_helix(
     }
     let reached_floor = z <= end.z + 1e-9;
     let last_angle = step_angle * turns.len() as f64;
-    for q in turns {
-        tp.feed_to_with_intent(q, ramp_feed, MoveIntent::EntryHelix);
-    }
     // G-ADAPTPASSLOAD: one more full lap at the target Z, so the floor of
     // the hole is flat out to `radius + R` (no helical step for the first
     // cut out of it to read as fresh stock).
     if safety.helix_floor_lap && reached_floor {
-        emit_floor_lap(tp, end, radius, ramp_feed, last_angle, false);
+        turns.extend(floor_lap_points(end, radius, last_angle));
     }
-
     // Return to center at final Z
-    tp.feed_to_with_intent(*end, ramp_feed, MoveIntent::EntryHelix);
+    turns.push(*end);
+    // P40: each step is a chord of 10 degrees between two floor reads; the
+    // chords hold the model through the ONE chord lift.
+    let seed = P3::new(start.x, start.y, helix_top);
+    for q in hold_entry_chords(seed, turns, safety) {
+        tp.feed_to_with_intent(q, ramp_feed, MoveIntent::EntryHelix);
+    }
     None
 }
 

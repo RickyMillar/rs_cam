@@ -27,13 +27,18 @@
 //! the G-CENTRECUT warning at generation (`safety.non_centre_cutting_plunge`)
 //! and a CentreCut row in the lineage.
 //!
+//! "The clamp changes nothing for a centre-cutting tool" is held by
+//! `--lib the_descent_clamp_changes_only_a_tool_with_a_centre_core_k5`
+//! (feeds contract P40 A4). The session test that compared the steepest fed
+//! descent of two roughs read the falls of lifted ramp legs, and P39 took
+//! those legs out of the pocket fixture.
+//!
 //! Red: remove the plan clamp (`dressup::entry_descent::replan_descent_at_limit`
 //! not called, and `adaptive3d::path::clamp_descents_to_limit` returning its
 //! input). The pocket case then has core strikes.
 
 #![expect(
     clippy::expect_used,
-    clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -183,38 +188,6 @@ fn the_pocket_rough_lays_its_entries_and_cuts_at_the_limit() {
 fn the_bump_rough_keeps_its_limit() {
     let session = rough(dome(), bulk_18(false));
     assert_inside_the_limit(&session, "bump");
-}
-
-/// A centre-cutting tool keeps the drape: its toolpath is the toolpath of
-/// the rough before commit C (the clamp reads only a `No` fact).
-#[test]
-fn a_centre_cutting_tool_keeps_the_surface_slope() {
-    let yes = rough(pocket_block(), bulk_18(true));
-    let no = rough(pocket_block(), bulk_18(false));
-    let steepest = |session: &ProjectSession| {
-        session
-            .result_at(0)
-            .expect("a result")
-            .toolpath()
-            .moves
-            .windows(2)
-            .filter(|w| {
-                matches!(
-                    w[1].move_type,
-                    rs_cam_core::toolpath::MoveType::Linear { .. }
-                )
-            })
-            .map(|w| {
-                let (a, b) = (w[0].target, w[1].target);
-                let dxy = (b.x - a.x).hypot(b.y - a.y);
-                if dxy > 1e-6 { (a.z - b.z) / dxy } else { 0.0 }
-            })
-            .fold(0.0_f64, f64::max)
-    };
-    assert!(
-        steepest(&yes) > steepest(&no),
-        "the Yes tool keeps its steep descents; the No tool is held to the limit"
-    );
 }
 
 /// K5 CentreCut on a `StraightPlunge` op: a Trace with the 18 mm `No` tool

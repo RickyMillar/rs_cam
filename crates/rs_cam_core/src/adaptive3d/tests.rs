@@ -3260,3 +3260,67 @@ fn a_plan_that_drops_nothing_states_no_standing_stock_p37() {
         "{left:?}"
     );
 }
+
+/// K5 CentreCut (P40 A4): the descent clamp of the cut and link pipelines
+/// (`clamp_descents_to_limit`) reads only a tool with a centre core.
+///
+/// The path goes down 5 mm in 5 mm of XY, in 0.5 mm steps: steeper than the
+/// straight-line limit of the probe tool (1 mm in 8 mm).
+///
+/// - A tool that cuts at its centre keeps the path, bit for bit, and its
+///   fed lead stays empty.
+/// - The same tool with a centre core gets the path raised: no step is
+///   steeper than its limit, no point goes down, and the path changes.
+///
+/// It replaces `a_centre_cutting_tool_keeps_the_surface_slope` of the K5
+/// sentry, which compared the steepest fed descent of two session roughs.
+/// The steep descents it read were the falls of ramp legs that the model
+/// clip lifted, and P39 took those legs out of the pocket fixture.
+///
+/// Red: a clamp that gives every tool the core of the probe tool
+/// (`core_of(cutter).or(..)`) changes the first path.
+#[test]
+fn the_descent_clamp_changes_only_a_tool_with_a_centre_core_k5() {
+    use super::path::clamp_descents_to_limit;
+    use crate::tool::body::{FedLead, core_of};
+    let steep: Vec<P3> = (0..=10)
+        .map(|k| {
+            let d = 0.5 * f64::from(k);
+            P3::new(d, 0.0, 20.0 - d)
+        })
+        .collect();
+
+    let yes = simcore_probe_tool(false);
+    let mut yes_lead = FedLead::default();
+    let kept = clamp_descents_to_limit(steep.clone(), None, &mut yes_lead, &yes);
+    assert_eq!(
+        kept, steep,
+        "a centre-cutting tool keeps its steep path as it is"
+    );
+    assert!(
+        yes_lead.position().is_none(),
+        "a centre-cutting tool writes no lead"
+    );
+
+    let no = simcore_probe_tool(true);
+    let slope = core_of(&no)
+        .expect("the probe tool has a core")
+        .max_descent_slope();
+    let clamped = clamp_descents_to_limit(steep.clone(), None, &mut FedLead::default(), &no);
+    assert_eq!(clamped.len(), steep.len());
+    assert_ne!(clamped, steep, "the clamp raises the path of a `No` tool");
+    for (before, after) in steep.iter().zip(&clamped) {
+        assert!(
+            after.z >= before.z && after.x == before.x && after.y == before.y,
+            "the clamp only raises a point: {before:?} to {after:?}"
+        );
+    }
+    for pair in clamped.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let dxy = (b.x - a.x).hypot(b.y - a.y);
+        assert!(
+            a.z - b.z <= dxy * slope * (1.0 + 1e-9) + 1e-9,
+            "a step from {a:?} to {b:?} is steeper than the limit {slope:.4}"
+        );
+    }
+}
