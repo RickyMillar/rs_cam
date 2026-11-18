@@ -654,6 +654,13 @@ pub struct CheckRow {
     #[serde(skip)]
     face_in_group: String,
     detail: String,
+    /// P42 step 0: the deepest sample of the group on a depth row of a
+    /// gate (`DeepestSample`). The value of that row is the JUDGED sample,
+    /// the largest depth over its own cap (ruling Q3), so a deeper sample
+    /// with a higher cap of its own, or with no width, is not the value.
+    /// `None` on every other row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deepest: Option<crate::tool_load::verdict::DeepestSample>,
 }
 
 impl CheckRow {
@@ -702,6 +709,7 @@ impl CheckRow {
             face,
             face_in_group,
             detail,
+            deepest: None,
         }
     }
 
@@ -798,6 +806,13 @@ impl CheckRow {
             &[],
             None,
         )
+    }
+
+    /// The deepest sample of the group, on a depth row of a gate (P42
+    /// step 0).
+    #[must_use]
+    pub const fn deepest(&self) -> Option<crate::tool_load::verdict::DeepestSample> {
+        self.deepest
     }
 
     /// The subject.
@@ -1363,7 +1378,9 @@ fn group_row_with(
         extra.push(format!("remedy: {}", exceeded.remedy));
     }
     let compared = Compared::of_criterion(status.kind);
-    CheckRow::new(subject, check, compared, caveats, &extra, None)
+    let mut row = CheckRow::new(subject, check, compared, caveats, &extra, None);
+    row.deepest = status.deepest;
+    row
 }
 
 /// The row of a cell with no verdict: a group with no sample, or a group
@@ -1845,6 +1862,42 @@ mod tests {
             },
             Compared::Load,
         )
+    }
+
+    /// P42 step 0: a depth row of a gate carries the deepest sample of its
+    /// group on the wire, beside the value (the judged sample). A row with
+    /// none has no key.
+    #[test]
+    #[expect(clippy::expect_used, reason = "test: a failure panics")]
+    fn a_depth_row_states_the_deepest_sample_p42() {
+        use crate::tool_load::verdict::{DeepestSample, DepthVerdict, SampleEvidence};
+        let subject = || Subject::Group {
+            group: CutGroup::Body,
+            headline: true,
+            samples: Some(2),
+            material: None,
+        };
+        let mut verdict = DepthVerdict::fixture_within();
+        if let DepthVerdict::Within { evidence, .. } = &mut verdict {
+            *evidence = SampleEvidence::at(4).with_deepest(Some(DeepestSample {
+                depth_mm: 8.0,
+                sample_index: 7,
+            }));
+        }
+        let with = group_row(&verdict.as_criterion_status(), subject());
+        assert_eq!(with.deepest().map(|d| d.depth_mm), Some(8.0));
+        let json = serde_json::to_value(&with).expect("a row serialises");
+        let number = |path: &str| json.pointer(path).and_then(serde_json::Value::as_f64);
+        assert_eq!(number("/deepest/depth_mm"), Some(8.0));
+        assert_eq!(number("/deepest/sample_index"), Some(7.0));
+        // The value of the row stays the judged sample.
+        assert_eq!(number("/check/value"), Some(0.0));
+        let without = group_row(
+            &DepthVerdict::fixture_within().as_criterion_status(),
+            subject(),
+        );
+        let json = serde_json::to_value(&without).expect("a row serialises");
+        assert!(json.get("deepest").is_none(), "no deepest sample: no key");
     }
 
     /// P29-10 10g (item 4c): a cut with no row over is one line of counts;

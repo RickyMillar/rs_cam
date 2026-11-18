@@ -419,6 +419,7 @@ impl DrillGateOutcome {
             unmodeled_reason: None,
             sample_range: None,
             population,
+            deepest: None,
             display_peak: Some(self.observed()),
             unit: kind.unit(),
             // S4: the bound is the one this outcome already carries,

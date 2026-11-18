@@ -1091,6 +1091,7 @@ fn gantry_push_criterion(plunge_only: bool) -> CriterionStatus<'static> {
         }),
         sample_range: None,
         population: None,
+        deepest: None,
         display_peak: None,
         unit: CriterionKind::GantryPush.unit(),
         // S4: no machine-side thrust rating exists, so there is no
@@ -1383,6 +1384,9 @@ pub struct CriterionStatus<'a> {
     /// tell a measured pass from a vacuous one. Report-tier: `state` is
     /// unaffected, so a vacuous `Within` still reads `Within`.
     pub population: Option<GatePopulation>,
+    /// P42 step 0: the deepest sample of the group, where `display_peak`
+    /// is another sample (the depth gate). `None` on every other gate.
+    pub deepest: Option<DeepestSample>,
     pub display_peak: Option<f64>,
     pub unit: &'static str,
     /// **The bound `display_peak` was judged against, in `unit`.**
@@ -1685,6 +1689,29 @@ pub struct SampleEvidence {
     /// ambiguity X-VAC is about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub population: Option<GatePopulation>,
+    /// P42 step 0: the deepest sample of the population, where the gate
+    /// judges another sample (the depth gate: [`DeepestSample`]). `None`:
+    /// the gate states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deepest: Option<DeepestSample>,
+}
+
+/// P42 step 0: the deepest sample of a depth population.
+///
+/// The depth row prints the JUDGED sample: the largest depth over its own
+/// force-budget cap (P29-6 6c, ruling Q3). A deeper sample at a lower chip
+/// or a smaller width has a higher cap of its own, so it is not the judged
+/// sample; a deeper sample with no width has no number. Measured on the
+/// Wanaka back (P41 R7): the row read 6.0 mm while two samples cut 8.0 mm
+/// at a third of the feed. This record states the deepest sample beside the
+/// row, so that no surface reads the row value as "the deepest cut".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DeepestSample {
+    /// The largest `axial_engagement_mm` over every sample of the group
+    /// that removes material at a depth (with or without a width).
+    pub depth_mm: f64,
+    /// The index of that sample in the trace.
+    pub sample_index: usize,
 }
 
 impl SampleEvidence {
@@ -1695,6 +1722,7 @@ impl SampleEvidence {
             statistic: None,
             locality: None,
             population: None,
+            deepest: None,
         }
     }
 
@@ -1705,6 +1733,7 @@ impl SampleEvidence {
             statistic: None,
             locality: None,
             population: None,
+            deepest: None,
         }
     }
 
@@ -1715,6 +1744,7 @@ impl SampleEvidence {
             statistic: Some(statistic),
             locality: None,
             population: None,
+            deepest: None,
         }
     }
 
@@ -1733,6 +1763,13 @@ impl SampleEvidence {
     #[must_use]
     pub fn with_population(mut self, population: GatePopulation) -> Self {
         self.population = Some(population);
+        self
+    }
+
+    /// Builder: state the deepest sample of the population (P42 step 0).
+    #[must_use]
+    pub fn with_deepest(mut self, deepest: Option<DeepestSample>) -> Self {
+        self.deepest = deepest;
         self
     }
 
@@ -2084,6 +2121,7 @@ impl ChiploadVerdict {
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             population,
+            deepest: None,
             display_peak: peak,
             unit: CriterionKind::Chipload.unit(),
             bound: bounds.map(|b| b.max_mm_per_tooth),
@@ -2217,6 +2255,7 @@ impl PowerVerdict {
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             population,
+            deepest: None,
             display_peak: peak,
             unit: CriterionKind::Power.unit(),
             bound,
@@ -2382,6 +2421,7 @@ impl DeflectionVerdict {
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             population,
+            deepest: None,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
             bound: bounds.map(|b| b.exceeds_mm),
@@ -2515,7 +2555,7 @@ impl DepthVerdict {
     /// source carries the budget and the cut it is solved at, so a
     /// renderer formats the cap and its provenance from one value. A [`DepthVerdict::Reported`] row has a peak and no bound.
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range, population, bound) = match self {
+        let (state, peak, range, population, bound, deepest) = match self {
             DepthVerdict::Within {
                 peak_mm,
                 bound,
@@ -2527,6 +2567,7 @@ impl DepthVerdict {
                 option_range(&evidence.sample_range),
                 evidence.population,
                 Some(*bound),
+                evidence.deepest,
             ),
             DepthVerdict::Exceeds {
                 peak_mm,
@@ -2539,6 +2580,7 @@ impl DepthVerdict {
                 option_range(&evidence.sample_range),
                 evidence.population,
                 Some(*bound),
+                evidence.deepest,
             ),
             DepthVerdict::Reported {
                 peak_mm, evidence, ..
@@ -2548,8 +2590,9 @@ impl DepthVerdict {
                 option_range(&evidence.sample_range),
                 evidence.population,
                 None,
+                evidence.deepest,
             ),
-            DepthVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
+            DepthVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None, None),
         };
         CriterionStatus {
             group: None,
@@ -2559,6 +2602,7 @@ impl DepthVerdict {
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             population,
+            deepest,
             display_peak: peak,
             unit: CriterionKind::DepthOfCut.unit(),
             bound: bound.map(|b| b.cap_mm()),

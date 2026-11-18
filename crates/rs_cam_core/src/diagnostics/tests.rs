@@ -483,6 +483,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
             // X-VAC: this fixture reproduces the 2026-08-05 arc-fit
             // reading, which had a real triggering sample. Not vacuous.
             population: None,
+            deepest: None,
         },
         bounds: ChipBounds {
             min_mm_per_tooth: Some(0.0305),

@@ -1,0 +1,48 @@
+core: P42 step 0: a depth row states the deepest sample of its group beside the judged sample (`DeepestSample`, wire `limit_rows[..].deepest`)
+
+The depth row of a simulated toolpath prints the judged sample: the
+largest depth over its own force-budget cap (P29-6 6c, ruling Q3). It is
+not the deepest sample. Measured on the Wanaka back (P41 R7, run again):
+the body row of "Back rest 6 mm" read 6.0 mm while two samples of the same
+group read `axial_engagement_mm` 8.00.
+
+The cause. No filter drops the two samples: both are clearing cuts, not in
+a transit span, and both have an arc. A load cap of the planner slowed them
+to 1 623 and 2 068 mm/min (stated feed 5 279), so their chip is about a
+third of the chip of the judged sample, their own cap is deeper, and 8.00
+over that cap is a smaller ratio than 6.00 over 3.197. A sample with no arc
+has no number at all. Both rules are correct for a force judgement. The
+defect: the deepest depth was in the detail sentence only, and a reader
+took `value` as the deepest cut.
+
+The change.
+- `tool_load::verdict::DeepestSample { depth_mm, sample_index }`: the
+  largest `axial_engagement_mm` of every sample of the group that removes
+  material at a depth, with or without a width.
+- The depth gate puts it on `SampleEvidence::deepest` of each verdict with
+  evidence; `CriterionStatus::deepest` carries it; `limits::CheckRow` has
+  the field `deepest` on the wire (absent on a row with none).
+- `value`, `bound`, `margin`, the state, the face and the detail of a row
+  do not change. No gate outcome changes.
+
+Tests: `--lib the_verdict_states_the_deepest_sample_beside_the_judged_one_p42`
+(red when the gate does not fill the record) and
+`--lib a_depth_row_states_the_deepest_sample_p42` (the wire key).
+`phases/p42/lim.py` prints the number.
+
+Not done: no surface shows the number in its row face. The GUI drawer and
+the CLI summary print the detail sentence, which names the deepest depth as
+before.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+crates/rs_cam_core/src/tool_load/verdict.rs
+crates/rs_cam_core/src/tool_load/depth.rs
+crates/rs_cam_core/src/tool_load/drill_gates.rs
+crates/rs_cam_core/src/tool_load/CLAUDE.md
+crates/rs_cam_core/src/limits/row.rs
+crates/rs_cam_core/src/limits/CLAUDE.md
+crates/rs_cam_core/src/diagnostics/tests.rs
+crates/rs_cam_core/tests/a_weak_bound_cannot_refuse_an_export_g_s4weak.rs
+planning/feeds_contract_2026-11-03/phases/p42/COMMIT_MSG_0.txt
+planning/feeds_contract_2026-11-03/phases/p42/lim.py

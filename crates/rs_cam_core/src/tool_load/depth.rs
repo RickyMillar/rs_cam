@@ -201,14 +201,22 @@ pub(super) fn judge(
     let deepest_mm = deepest.map_or(0.0, |(_, d)| d);
     let evidence_at = |idx: Option<usize>, contributing: usize, statistic: ChiploadStatistic| {
         let population = GatePopulation::new(contributing, offered, PopulationUnit::Samples);
-        match idx {
+        let evidence = match idx {
             Some(idx) => SampleEvidence::at_with_stat(idx, statistic)
                 .with_locality(trace.samples.get(idx).and_then(|s| {
                     super::locality::classify_sample_locality(s, span_lookup.as_ref())
                 }))
                 .with_population(population),
             None => SampleEvidence::empty().with_population(population),
-        }
+        };
+        // P42 step 0: every verdict of this gate states the deepest sample
+        // of its group beside the judged one (`DeepestSample`).
+        evidence.with_deepest(deepest.map(|(sample_index, depth_mm)| {
+            super::verdict::DeepestSample {
+                depth_mm,
+                sample_index,
+            }
+        }))
     };
 
     // EXEMPT(P28-02)
@@ -954,6 +962,57 @@ mod tests {
                 assert_eq!(evidence.population.unwrap().contributing, 3);
             }
             other => panic!("expected Within, got {other:?}"),
+        }
+    }
+
+    /// P42 step 0 (P41 R7, measured on the Wanaka back: the row read 6.0 mm
+    /// and two samples cut 8.0 mm at a third of the feed). The row value is
+    /// the judged sample, the largest depth over its own cap (ruling Q3). A
+    /// deeper sample at a lower chip has a higher cap of its own, so it is
+    /// not the judged sample; a deeper sample with no arc has no number.
+    /// The verdict states the deepest sample of the group beside the row.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn the_verdict_states_the_deepest_sample_beside_the_judged_one_p42() {
+        let c = oak_cap_mm();
+        // Sample 0: the stated feed, 1.5 caps deep. Sample 1: deeper, at a
+        // tenth of the feed, so its own cap is higher. Sample 2: the
+        // deepest, with no arc: no width, no number.
+        let judged = sample(0, 1.5 * c, true);
+        let mut slow = sample(1, 1.6 * c, true);
+        slow.feed_rate_mm_min = 150.0;
+        let mut no_arc = sample(2, 1.8 * c, true);
+        no_arc.arc_engagement_radians = None;
+        for (samples, deepest_idx, deepest_mm) in [
+            (vec![judged.clone(), slow.clone()], 1, 1.6 * c),
+            (vec![judged, slow, no_arc], 2, 1.8 * c),
+        ] {
+            let t = trace(samples);
+            let verdict = run_in(OperationType::Adaptive, Some(&t), &oak());
+            match &verdict {
+                DepthVerdict::Exceeds {
+                    peak_mm, evidence, ..
+                } => {
+                    assert!(
+                        (peak_mm - 1.5 * c).abs() < 1e-12,
+                        "the row value is the judged sample: {peak_mm} against {}",
+                        1.5 * c
+                    );
+                    assert_eq!(evidence.sample_range, 0..1);
+                    let Some(deepest) = evidence.deepest else {
+                        panic!("the verdict states the deepest sample of its group");
+                    };
+                    assert_eq!(deepest.sample_index, deepest_idx);
+                    assert!((deepest.depth_mm - deepest_mm).abs() < 1e-12);
+                }
+                other => panic!("expected Exceeds, got {other:?}"),
+            }
+            // The row record carries it to every surface.
+            let status = verdict.as_criterion_status();
+            assert_eq!(status.deepest.map(|d| d.sample_index), Some(deepest_idx));
         }
     }
 
