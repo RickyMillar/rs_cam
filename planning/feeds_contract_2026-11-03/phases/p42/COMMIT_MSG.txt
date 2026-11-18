@@ -1,0 +1,39 @@
+planning: P42: the wall pass of each level of a rest rough: the cause, the design, the measures, and the patch that is not landed
+
+A record. No code of the wall pass is in the tree. Step 0 (the deepest
+sample on a depth row) is its own commit.
+
+The problem. P41 is a guard: a level of a rough on remaining stock keeps
+its tool off stock taller than one pass. It does not cut that stock, and
+under it each lower level stands 0.4 to 0.7 mm further from a wall (measured
+at the wall Y 104 of the Wanaka back).
+
+The trial. One contour per level along each planned region, one planner
+cell inside its raw outline, where stock stands on cells that no centre of
+the level can plan (`not_landed/w6_wall_pass.patch`, with its own commit
+message and gate results). Measured, HEAD against the patch:
+- Wanaka back, "Back rest 6 mm": deepest sample 6.0 mm in each group, 0
+  pieces deeper than 6.3 mm on the replay, 522 to 591 s; wood in the mech
+  and slit pockets 1 631.5 to 964.0 mm2; the slit V-bit 10.60 to 7.44 mm of
+  wood over its tip; 0 collisions; no new red in the gates.
+- It is not landed because one bar of the acceptance fails: cut below the
+  target, raw, 12.2 mm2 against 12.1 (4 nodes, each on a step line of the
+  target raster; with one node lowered 0.1 against 0.2).
+- Two more points for a ruling: "Front 3D rough" (terrain) goes from 868 to
+  1 333 s, and the wall cleanup depth row of "Back rest 6 mm" goes from
+  within to exceeds (advisory).
+
+Also in the record: the first line of the design (half a cell inside)
+failed the replay with 15 deep pieces at the edge of the disc; a second
+trial (the wall line on the grid with no centre held off) gives less wood
+and fails the replay (`not_landed/w4_wall_line_before_the_hold.patch`).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+planning/feeds_contract_2026-11-03/phases/P42_WALL_PASS_PER_LEVEL_2026-11-18.md
+planning/feeds_contract_2026-11-03/phases/p42/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p42/run_job.sh
+planning/feeds_contract_2026-11-03/phases/p42/gates.sh
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/w6_wall_pass.patch
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/w6_wall_pass.COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/w4_wall_line_before_the_hold.patch

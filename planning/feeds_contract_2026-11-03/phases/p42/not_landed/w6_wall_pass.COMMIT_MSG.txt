@@ -1,0 +1,73 @@
+This text is the commit message for `w6_wall_pass.patch`, if the lead lands it.
+The patch is NOT in the tree (note P42, section 0). Apply: `git apply <patch>` on a tree that
+holds HEAD `03762ea4e` or HEAD plus step 0.
+
+core: P42: each level of a Geodesic rough on remaining stock cuts to the wall that it can reach (`region_wall_pass`); the wood in the mech and slit pockets of the wanaka back falls from 1 631.5 to 964.0 mm2
+
+P41 is a guard: a level keeps its tool off stock that stands more than one
+Depth/Pass plus the stay-down clearance above the cutter. It does not cut
+that stock. Measured on the Wanaka back: the plan of each level keeps its
+centre 0.65 mm from the tool-centre limit of a wall (the margin of the
+plan), so a strip stands from the stock top; under the guard each lower
+level stands 0.4 to 0.7 mm further off, because the guard removes the
+centres that meet the strip and the plan keeps its margin again.
+
+The wall pass. After the plan of a level, one contour runs along the
+boundary of each region that the plan cut, where stock stands in the tool
+disc on cells where no centre of the level has material to plan
+(`level_contour::region_wall_pass`, `wall_read`).
+- The line: the raw outline of the region, one planner cell plus the cut
+  tolerance inside (the least distance of a centre from the raw boundary,
+  `grown_outlines` D19), simplified and sampled as the C4 band line.
+- The Z: the level floor, raised so that no cell whose centre is inside the
+  disc stands more than one Depth/Pass above the cutter. The read repeats
+  while a round lowers the strip, so stock taller than one pass goes down in
+  passes.
+- Not cut: a point outside the boundary clip, a point that the one-pass
+  rule blocks, a point within one planner cell of held stock taller than
+  the limit, and a point with no wall in its disc (the slope rule of the
+  wall cleanup, now one constant `WALL_STEEP_ANGLE_RAD`).
+- The runs, the gap merge, the load cap (`FeedCapStart`,
+  `FeedCapSource::LevelContour`) and the emission are those of the C4
+  contour: `run_feed_cap` and `emit_runs` are shared, so the planner stamps
+  the path that the emitter ships.
+- The switch is the dial of P41: `OnePassHold::RemainingStock` now carries
+  the link timing of the gap merge. A fresh rough and a Contour Parallel
+  rough do not get the pass.
+
+Measured, HEAD against this tree (note P42, section 7):
+- Wanaka back, "Back rest 6 mm": the depth rows and the deepest samples are
+  6.0 mm (body, links, wall cleanup) and 1.9 mm (entries); 0 pieces deeper
+  than 6.3 mm on the replay. 522 to 591 s. Wood at the end: mech and slit
+  pockets 1 631.5 to 964.0 mm2, cavity interior 570.2 to 408.4 mm2; the slit
+  V-bit meets 7.44 mm of wood over its tip (10.60). Below the target: raw
+  12.1 to 12.2 mm2 (4 nodes on step lines of the raster), one node lowered
+  0.2 to 0.1 mm2. 0 collisions. The fresh 18 mm rough keeps its G-code.
+- Wanaka front, "Front 3D rough" (terrain): 868 to 1 333 s. The pass cuts
+  the stair of the steep slopes. This cost needs a ruling (D-1).
+- rivmap100 (Contour Parallel): the same bytes. Its Geodesic copy: 157 more
+  moves, 15.5 s.
+
+One figure is over its bar: cut below the target, raw, 12.2 mm2 against 12.1.
+The cleanup depth row of "Back rest 6 mm" goes from within (3.0 mm against
+3.0 mm) to exceeds, advisory (6.0 mm against 4.54 mm): the wall pass takes
+one full Depth/Pass.
+
+Not done: the wall line follows the planned region, so where the guard
+holds centres the pass does not reach the strip of the level above (the
+trial is `w4_wall_line_before_the_hold.patch`). The slot, the step shelf and the
+regions under the small-region bound are as before.
+
+Tests: `--lib each_level_cuts_to_the_wall_that_it_can_reach_p42` (0.6 mm of
+wood at the foot of a wall with the pass, 1.2 mm with the guard alone; red
+without the pass).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/mod.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/compute/execute/rough_3d.rs
