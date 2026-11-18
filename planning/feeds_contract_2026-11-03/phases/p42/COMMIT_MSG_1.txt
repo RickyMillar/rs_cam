@@ -1,0 +1,41 @@
+planning: P42 round 2: the wall pass with the next-level rule fails two bars; the patch and the numbers
+
+A record. No code of the wall pass is in the tree.
+
+Round 2 applied the lead rulings to the round 1 patch:
+- D-1: a wall point of level N ships only where the strip top is more than
+  the one-pass limit above the cutter of the next level
+  (`OnePass::over_limit` against the level floor at the next level; the
+  last level: its own floor). The slope rule is removed.
+- D-10: measured first. The wall cleanup row exceeded because of the WIDTH
+  of the cut (4.27 mm at the judged sample), not the feed. A strip up to
+  about 1.1 mm wide is within the force budget at one pass and the stated
+  feed. The existing cap law holds the chip-area load, and the planner has
+  no force model, so a feed cap by that law cannot hold the row. The trial
+  built a width rule in its place: the pass cuts only the margin strip of
+  the plan (0.85 mm, the three margin numbers of the plan).
+- D-4: no dial; the pass is part of `OnePassHold::RemainingStock`.
+
+Measured (note P42, section 10.4), HEAD against round 2:
+- "Front 3D rough": the HEAD G-code, byte for byte (868 s). D-1 does what
+  the ruling expects on terrain.
+- "Back rest 6 mm": body and deepest sample 6.0 mm, entry 1.89 mm, 0 replay
+  pieces deeper than 6.3 mm, the slit V-bit 7.44 mm, one node below the
+  target 0.1 mm2, 0 collisions, the fresh rough the same section.
+- FAILS: the wall cleanup row still exceeds (6.0 mm against 4.06 mm: the
+  simulation reads a sample 3.10 mm wide where the planner read under
+  0.85 mm).
+- FAILS: wood in the mech and slit pockets 1 387.5 mm2 (bar under 1 155.6;
+  HEAD 1 631.5; the round 1 patch 964.0). The last level of a wall ships no
+  pass, and a wide place ships none.
+- id 2 takes 633 s (522 at HEAD): 166 ramp entries.
+
+Open: the row stays within only with the force model in the planner for the
+cap of a wall run, or with a ruling that the row may exceed (advisory, as
+the body row does at HEAD).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+planning/feeds_contract_2026-11-03/phases/P42_WALL_PASS_PER_LEVEL_2026-11-18.md
+planning/feeds_contract_2026-11-03/phases/p42/COMMIT_MSG_1.txt
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/r2_wall_pass_next_level_rule.patch

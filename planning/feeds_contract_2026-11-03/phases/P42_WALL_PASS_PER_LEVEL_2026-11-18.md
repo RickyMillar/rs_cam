@@ -20,63 +20,47 @@ says "the tree `w6`" or "the final tree", read: HEAD plus step 0 plus that patch
 
 ## 0. Summary: what failed, and what is not verified
 
-The acceptance failed on one bar, so the wall pass is reversed to HEAD code, as the brief says.
-The patch is ready to apply and its measures and gates are in this note.
+State after round 2 (the lead rulings, section 10): the wall pass is NOT in the tree. Round 2
+failed two bars, so the code is reversed to HEAD `1875dd3f8`, as the ruling says. Step 0 is
+committed (`1ef06d1fe`).
 
-What failed:
+What failed in round 2 (section 10.4):
 
-- Cut below the target, raw: 12.2 mm2 against the bar of 12.1 mm2 (4 nodes more; each new node
-  is on a step line of the target raster). With one node lowered it is 0.1 mm2 against 0.2.
-  Every other bar of the acceptance holds with the patch.
-- The brief says not to stack variants. Variants were stacked: three changes and one trial
-  after the first measure (section 5). The first design (the line half a cell inside the raw
-  outline) failed the replay with 15 pieces deeper than 6.3 mm.
-- "Front 3D rough" (id 21, terrain) takes 1 333 s with the patch, was 868 s. The wall pass
-  cuts the stair of the steep slopes. The slope rule that was added for it takes off only 64 s
-  (D-1).
-- The wall cleanup depth row of "Back rest 6 mm" changes state with the patch: within (3.0 mm
-  against 3.0 mm) to exceeds, advisory (6.0 mm against 4.54 mm). The wall pass takes one full
-  Depth/Pass at a wall, and the force budget at its width and chip is 4.54 mm. On id 21 the
-  same row is new and exceeds (4.01 mm against 3.48 mm). The body rows exceed that budget at
-  HEAD too (6.0 against 3.2), so the export warning lines do not change (D-10).
-- The goal "the guard has little to hold" is met in part. The wall line follows the planned
-  region, so where the guard holds centres off a strip the pass does not reach that strip. The
-  stock that the guard holds falls only from 710.8 to 553.3 mm2. On the lib fixture the wood at
-  the foot of a wall is 0.6 mm (1.2 mm at HEAD, 0.4 mm with no guard). The trial that fixes it
-  failed the replay (5.4, D-3).
-- Not covered, as section 3.3 said: the 8.6 mm slot (412.6 mm2), the step shelf (773.8 mm2),
-  the regions under the small-region bound. No figure of them moved.
-- "Day strip slit V60": with the patch the wood over its tip is back to 7.44 mm, and it has 8
-  moves with wood above the flute (8 at HEAD, 7 before P41).
-- Predictions that were false: 3, 4 (the step shelf), 5, 6 (the moves), 8 (in the good sense),
-  11 (the time).
-- Step 0: the deepest sample is on the wire and in `lim.py`. No row face shows it (D-8).
+- The wall cleanup depth row of "Back rest 6 mm" still exceeds: 6.0 mm against 4.06 mm (width
+  3.10 mm, 0.0812 mm/tooth). The ruling (D-10) asks for within.
+- Wood in the mech and slit pockets: 1 387.5 mm2. The bar is under 1 155.6 mm2 (HEAD 1 631.5; the
+  round 1 patch 964.0).
+- The fix of D-10 is not the fix that the ruling names. The ruling names a feed cap. The measured
+  cause is the width of the cut (4.27 mm at the judged sample), and the existing cap law cannot
+  hold the force budget, because the planner has no force model (10.1). I built a width rule in
+  its place (the pass cuts only the margin strip of the plan). It did not hold the row: the
+  simulation reads a sample 3.10 mm wide where the planner read under 0.85 mm. The place of the
+  disagreement is not found.
+- The time of id 2 rose to 633 s (522 at HEAD, 591 with the round 1 patch): 166 ramp entries.
 
-Not verified:
+What held in round 2: "Front 3D rough" is the HEAD G-code, byte for byte (868 s), so D-1 does
+what the ruling expects on terrain. On setup "1 Back": body and deepest sample 6.0 mm, entry
+1.89 mm, 0 replay pieces deeper than 6.3 mm, the slit V-bit 7.44 mm, one node below the target
+0.1 mm2, 0 collisions, id 1 the same section.
 
-- The GUI and MCP surfaces (no GUI was run). The wire key `deepest` was read only in
-  `summary.json` of the CLI.
-- Setup "3 Front" on the replay: the replay instruments hold the target of setup "1 Back" only.
-  Its depth figures are simulation samples.
-- The held centre cells as a count (prediction 5): the CLI log has no line of the guard.
-- Change 1 (`beside_held_stock`) alone on the final line: it was measured only with the first
-  line, so its need with the final line is not known.
-- That the wall pass ran in the session rest sentries (D44, D48, D50, D55). They stayed green;
-  only the one lib test is known to run the pass.
-- A run of one point: `emit_runs` (the C4 rule) gives it a second point one cell along X. The Z
-  rule and the guard of the wall pass do not read that point.
-- The wall pass with a tool that is not flat (the profile height is read; no fixture).
-- The gap merge of the wall pass with a link timing: the job runs it; the lib fixture runs with
-  none.
-- Contour Parallel on remaining stock: no wall pass, and no measure of its walls.
-- The time of id 2 is one run each, read from the emitted feeds.
+Not verified in round 2:
 
-What the patch gives (setup "1 Back", HEAD against HEAD plus the patch): id 2 depth rows and
-deepest samples 6.0 mm (body, links, wall cleanup) and 1.9 mm (entries); 0 pieces deeper than
-6.3 mm on the replay; mech and slit pockets 1 631.5 to 964.0 mm2 (1 155.6 before P41); cavity
-interior 570.2 to 408.4 mm2; the slit V-bit 10.60 to 7.44 mm; 0 collisions on each op; id 1 the
-same bytes; rivmap100 the same bytes; id 2 522 to 591 s, the setup 9 112.8 to 9 187.7 s; no new
-red in the gates.
+- rivmap100 and the gate set on the round 2 code (a bar failed first).
+- The share of the next-level rule and of the width rule in the 424 mm2 of pocket wood that
+  round 2 gives back.
+- Which wall move the simulation reads 3.10 mm wide.
+- The next-level rule has no lib test of its own for a slope; the Front run is its evidence.
+
+The reversal is verified: `git diff HEAD -- crates` is empty; the release CLI in
+`target/release` was built again from HEAD (md5 `62b82e4630aa892937b73a2398023539`), and its
+G-code of setup "1 Back" is the HEAD file, byte for byte (`cmp`). No gate set ran after the
+reversal: the tree holds no code change against HEAD.
+
+Round 1 for the record (sections 1 to 9; they are not changed): the round 1 patch held each bar
+but the raw figure below the target (12.2 against 12.1 mm2, which ruling D-2 now accepts), and
+it cost 465 s on "Front 3D rough" and moved the wall cleanup row to exceeds. Its not-verified
+list still stands for `w6_wall_pass.patch`: the GUI and MCP surfaces, a tool that is not flat,
+Contour Parallel, change 1 alone, a run of one point.
 
 ## 1. Step 0: why the depth row read 6.0 mm beside two samples of 8.00 mm
 
@@ -578,3 +562,165 @@ Logs: the scratch dir, `gate_s0_*.log`. No red is new against HEAD.
   cells. The wall lines of this job lie on multiples of 0.2 mm in the G-code frame, so the
   replay nodes are at planner cell centres or the grid origin is not what that text assumes.
   Not settled here; it does not change a figure of this note.
+
+## 10. Round 2: the lead rulings (2026-11-18)
+
+Start: HEAD `1875dd3f8` (step 0 `1ef06d1fe` and the record are committed) plus
+`not_landed/w6_wall_pass.patch`. Sections 10.1 to 10.3 were written before the code of round 2.
+Where this section and an earlier section differ, this section is the state of the trial.
+
+### 10.1 D-10 first: why the wall cleanup row read 6.0 mm against a cap of 4.54 mm (measured)
+
+The patch build again with the sample file (ops 0 to 2). 14 203 removing samples of id 2 are in
+wall cleanup moves; 4 704 of them have an arc.
+
+- The judged sample: depth 6.00 mm, width 4.27 mm (from its arc), 0.0606 mm/tooth (2 182
+  mm/min: the load cap of the run was on). The cap is the depth where the peak force at that
+  width and chip meets 35.3 N: 4.54 mm.
+- So the cause is the WIDTH, not the feed. The pass is thin at most samples (median width 0.2
+  to 0.4 mm), but 16 % of the samples with an arc are wider than 1.05 mm, and the widest is
+  5.8 mm. 214 of them are deeper than 3 mm. These are places where the plan left more than its
+  margin strip (the end of a run in a corner, a neck).
+- The force model at one pass of depth (a probe of `feeds::force_budget::peak_force_n`, 6 mm
+  flat tool, white oak, 6.0 mm deep, the stated 0.1285 mm/tooth; budget 35.3 N):
+
+| Width | Peak force at the stated chip | Chip that meets the budget |
+|---|---|---|
+| 0.4 mm | 17.5 N | over 0.2 mm |
+| 0.65 mm | 24.0 N | over 0.2 mm |
+| 1.0 mm | 32.2 N | 0.160 mm |
+| 1.5 mm | 42.7 N | 0.078 mm |
+| 2.54 mm | 56.2 N | 0.040 mm |
+| 4.27 mm | 66.1 N | 0.030 mm |
+
+- A strip up to about 1.1 mm wide is within the budget at the stated feed and one full pass. A
+  wider cut needs a third to a quarter of the stated chip.
+- The existing cap law cannot give that. It holds the chip-area load at the pass ceiling
+  (`ceiling / load`), and the body cut at that ceiling is itself over the force budget (the
+  body row: 6.0 mm against 3.2 mm, at HEAD too). The planner holds no force model: the machine
+  budget does not reach `ExecutionContext` (29 literals build it).
+- The fix at the cause: the wall pass cuts the margin strip of the plan and nothing wider. A
+  point is not cut when stock that stands more than one planner cell above the cutter reaches
+  deeper into the disc than the widest strip that the margin of the plan leaves:
+  `SIMPLIFY_INSET + SIMPLIFY_TOLERANCE + PERIMETER_INSET_MARGIN_MM` (0.85 mm, the three numbers
+  of the plan; no new number). Wider stock is the work of a plan, not of the wall pass. At
+  0.85 mm, and one cell more for the read of the simulation, the force at one pass is under the
+  budget on this job (32 to 33 N). The load cap of the C4 pattern stays.
+- This is NOT the fix that the ruling names (a feed cap). The reason is the two bullets above.
+
+### 10.2 D-1: the wall pass ships only where the next level would meet the strip too tall
+
+- The rule. A point of the wall line of level N stands only when the strip top is more than
+  the one-pass limit above the cutter of the NEXT level at that point:
+  `OnePass::over_limit(strip top - floor of the point at the next level)`. The floor is the ONE
+  level floor (`intended_floor::level_floor_z`, through `lift_to_level`) at the Z of the next
+  level of the op (the next level of the By Area job). With no next level the floor is the
+  floor of this level: the last level ships only where the strip is itself taller than the
+  limit (it then goes down in rounds).
+- `OnePass::over_limit` is the read of `one_pass.rs` (the limit against stock above a cutter);
+  `deep_cell` and the wall pass both call it.
+- On a slope a draped point has the same floor at the next level, and the tread of the stair is
+  one Depth/Pass or less: no pass. At a pocket wall two levels deep the strip of level N stands
+  two passes above the next floor: the pass ships.
+- The slope rule of round 1 (`beside_a_wall`, `WALL_STEEP_ANGLE_RAD`, the slope map in the
+  context) is removed.
+- A consequence, stated before the measure: the LAST level at a wall ships no pass (its strip
+  is one pass tall or less). So the margin strip of the last level stays at the foot of each
+  wall, as wide as before P41 (0.65 mm), one pass tall.
+
+### 10.3 Predictions of round 2 (before the code)
+
+1. "Front 3D rough": 868 to 930 s. No wall cleanup row, or a row that is within.
+2. Setup "1 Back", id 2: 540 to 590 s (fewer wall points than the patch: no last level, no wide
+   point).
+3. Mech and slit pockets: 1 050 to 1 200 mm2. The instrument counts area. The foot strip of the
+   last level has the footprint of the strip before P41, so the area comes back toward
+   1 155.6 mm2 while the volume falls. The bar "under 1 155.6" can fail on this figure.
+4. The wall cleanup row of id 2: within (depth at most 6.0 mm against a cap over 6.0 mm, or the
+   HEAD judged sample 3.0 against 3.0005).
+5. Id 2 body row and deepest sample 6.0 to 6.2 mm; entry at most 2.5 mm; 0 replay pieces deeper
+   than 6.3 mm.
+6. The slit V-bit: 7.44 to 10.60 mm. Not sure: the wood at the end of the slit may be a place
+   where only the last level reaches.
+7. One node below the target: at most 0.2 mm2. Collisions 0. Id 1 and rivmap100 the same bytes.
+
+### 10.4 Round 2 measured: two bars fail, the code is reversed
+
+Build `r2` (HEAD `1875dd3f8` plus `not_landed/r2_wall_pass_next_level_rule.patch`; CLI md5 in the
+scratch dir, `cli_r2`). One run of each setup.
+
+Setup "1 Back", HEAD against `r2` (the round 1 patch `w6` beside it):
+
+| | HEAD | Round 1 patch (`w6`) | Round 2 (`r2`) | Bar |
+|---|---|---|---|---|
+| id 2 body row; deepest sample | 6.0; 6.2 mm | 6.0; 6.0 mm | 6.0; 6.0 mm | at most 6.5: holds |
+| id 2 entry row; deepest sample | 2.00; 2.00 mm | 1.91; 1.92 mm | 1.89; 1.92 mm | at most 2.5: holds |
+| id 2 wall cleanup row | within, 3.0 against 3.0005 mm | exceeds, 6.0 against 4.54 mm (width 4.27 mm, 0.0606 mm/tooth) | exceeds, 6.0 against 4.06 mm (width 3.10 mm, 0.0812 mm/tooth; 295 samples judged) | within: FAILS |
+| Replay pieces deeper than 6.3 mm | 0 (deepest 6.23) | 0 (6.00) | 0 (6.20; 2 between 6.0 and 6.3) | 0: holds |
+| Wood left, mech and slit pockets | 1 631.5 mm2, 17 228 mm3 | 964.0 mm2, 12 259 mm3 | 1 387.5 mm2, 13 667 mm3 | under 1 155.6 mm2: FAILS |
+| Wood left, cavity interior | 570.2 mm2 | 408.4 mm2 | 570.4 mm2 | |
+| Wood left, step shelf; slot; wall band | 773.8; 412.6; 63.7 mm2 | the same | the same | |
+| Stock that the guard still holds (the finding text) | 710.8 mm2 | 553.3 mm2 | 578.1 mm2 | |
+| "Day strip slit V60": wood over the tip; moves above the flute | 10.60 mm; 8 | 7.44 mm; 8 | 7.44 mm; 8 | at most 7.44: holds |
+| Below the target: raw; one node lowered | 12.1; 0.2 mm2 | 12.2; 0.1 mm2 | 12.1; 0.1 mm2 (2 nodes, to 0.49 mm) | one node at most 0.2: holds |
+| Collisions, rapid collisions (each op) | 0, 0 | 0, 0 | 0, 0 | holds |
+| id 1 | | the same section | the same section, line for line | holds |
+| Time of id 2; fed; rapids; moves; ramp entries | 522 s; 35.45 m; 3 461 mm; 14 409; 118 | 591 s; 39.37 m; 4 152 mm; 15 901; 122 | 633 s; 42.91 m; 6 288 mm; 15 194; 166 | |
+| Setup `total_runtime_s` | 9 112.8 | 9 187.7 | 9 272.1 | |
+| Export warning lines | 24 | the same 24 | the same 24 | |
+
+Setup "3 Front": the G-code of `r2` is the HEAD file, byte for byte (`cmp`). Id 21: 868 s,
+38 903 moves, no wall cleanup sample; 0 collisions. The bar (at most 930 s, rows not worse) holds.
+
+rivmap100 was not run on `r2` (a bar had failed).
+
+What the two failures say:
+
+- The pocket wood (prediction 3 was 1 050 to 1 200 mm2; measured 1 387.5). The next-level rule
+  takes the pass away at the last level of each wall, and the width rule takes it away at each
+  wide place. Both leave area. The volume still falls (17 228 to 13 667 mm3), and the slit
+  V-bit is at 7.44 mm. The wood is 244 mm2 under HEAD and 232 mm2 over the value before P41.
+  The share of each rule was not measured (one round).
+- The wall cleanup row (prediction 4 was "within"). The planner read of the width (the cell
+  nearest to the tool axis that stands more than one cell above the cutter, at each point of
+  the line) kept each point under 0.85 mm. The simulation still reads a sample 3.10 mm wide at
+  6.0 mm of depth. So the two reads of the width do not agree at some place. Not found which:
+  the candidates are the first move of a run after its entry, the chord between two points,
+  and stock under one cell tall beside taller stock. The run is capped (0.0812 mm/tooth, 63 %
+  of the stated chip); the force budget at 3.10 mm asks for about 30 %.
+- Why a feed cap by the existing law cannot close it (10.1): the law holds the chip-area load
+  at the pass ceiling, and the body cut at that ceiling is over the force budget at one
+  Depth/Pass (the body row exceeds at HEAD: 6.0 against 3.2 mm). A cap that makes each wall
+  sample within needs the force model in the planner: the feed factor is the chip that meets
+  the budget at the width and depth of the move, over the stated chip (the table of 10.1). The
+  machine budget, the tool and the material are not in the planner today.
+- The entries: 166 against 122. Each refused wide point ends a run, and the next run gets an
+  entry. That is the 42 s over the round 1 patch.
+
+Predictions of round 2 against the measure: 1 TRUE (868 s, the HEAD file). 2 FALSE (633 s).
+3 FALSE (1 387.5). 4 FALSE (exceeds). 5 TRUE. 6 TRUE (7.44). 7 TRUE for the part that ran.
+
+### 10.5 The state after round 2
+
+- The tree is HEAD `1875dd3f8`: `git diff HEAD -- crates` is empty. The release CLI was built
+  again from it, and its G-code of setup "1 Back" was compared with the HEAD file (section 0
+  holds the result).
+- `not_landed/` holds three patches, each applies on HEAD (`git apply --check`):
+  `w6_wall_pass.patch` (round 1: the pass at each level, the slope rule),
+  `r2_wall_pass_next_level_rule.patch` (round 2: the next-level rule, the margin strip rule, no
+  slope rule, `OnePass::over_limit`, `LevelSlot::next_z`), and
+  `w4_wall_line_before_the_hold.patch` (the failed trial of 5.4).
+- No gate set ran on `r2` (a bar failed first). Only `--lib -- _p42 _p41 _c4` ran on it: 10
+  passed after the test bound was set to the measured 0.8 mm.
+
+### 10.6 Open after round 2
+
+- D-10 is the blocker. The row stays within only with (a) the force model in the planner for
+  the cap of a wall run, or (b) a wall pass that never takes one full Depth/Pass (the ruling
+  forbids a second step-down rule), or (c) a ruling that the row may exceed, advisory, as the
+  body row does. For (a) the session must hand the planner the machine budget, the tool and the
+  material; `ExecutionContext` has 29 literals.
+- D-1 as ruled is met on terrain. On the pockets it costs 424 mm2 against the round 1 patch,
+  together with the width rule. To know the share of each, run the round 2 patch with the
+  width rule off.
+- D-3, D-5, D-6, D-7, D-8, D-9: open, as section 9 states them. Not touched in round 2.
