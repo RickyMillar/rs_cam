@@ -211,10 +211,7 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
 /// Silent when the planner dropped nothing, and when every dropped piece is
 /// cut by a lower level of the same op.
 fn rough_left_stock(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    let Some(finding) = stats
-        .rough_left_stock
-        .filter(|f| f.left.standing_pieces > 0)
-    else {
+    let Some(finding) = stats.rough_left_stock.filter(|f| f.left.stands()) else {
         return Vec::new();
     };
     vec![Diagnostic {
@@ -1271,6 +1268,10 @@ mod tests {
                     standing_area_mm2: 61.5,
                     tallest_mm: 9.0,
                     tallest_at: [12.0, 34.0, 25.5],
+                    held_off_centres: 0,
+                    held_off_area_mm2: 0.0,
+                    held_off_tallest_mm: 0.0,
+                    held_off_at: [0.0; 3],
                 },
                 regions_published,
             }),

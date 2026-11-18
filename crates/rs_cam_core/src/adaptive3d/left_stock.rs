@@ -8,6 +8,12 @@
 //! counts as standing. The compute runner records the result as the
 //! finding `geom.rough_left_stock`.
 //!
+//! P41: the one-pass rule (`one_pass`) holds a tool centre off stock that
+//! stands more than one Depth/Pass plus the stay-down clearance above the
+//! cutter, and records each such stock cell. That record is cells, not an
+//! outline, so it has no [`LeftWhy`].
+//! [`left_stock`] reads those cells too ([`LeftStock::held_off_area_mm2`]).
+//!
 //! The record is evidence only. It does not feed `Produced::rest_regions`
 //! or the wall-contour skip (`ClearZLevelContext::left_pieces`), so it
 //! moves no tool.
@@ -67,18 +73,43 @@ pub struct LeftStock {
     /// centre and the stock top there.
     pub tallest_mm: f64,
     pub tallest_at: [f64; 3],
+    /// P41: the tool centres that the one-pass
+    /// rule held off (region cells and wall contour points), summed over
+    /// the levels.
+    pub held_off_centres: usize,
+    /// The XY area of the stock cells that held a centre off and still
+    /// stand more than the limit above that cutter at the end of the plan
+    /// (mm²).
+    pub held_off_area_mm2: f64,
+    /// The tallest such stock above the cutter that it held off (mm), its
+    /// cell centre and the stock top there.
+    pub held_off_tallest_mm: f64,
+    pub held_off_at: [f64; 3],
+}
+
+impl LeftStock {
+    /// True when the operation must state this record: a dropped piece
+    /// still holds stock, or the one-pass rule held the tool off stock that
+    /// still stands. The ONE rule of the finding and of the export gate.
+    #[must_use]
+    pub fn stands(&self) -> bool {
+        self.standing_pieces > 0 || self.held_off_area_mm2 > 0.0
+    }
 }
 
 /// Read the recorded outlines on the planner stock at the end of the plan.
-/// `None`: the plan recorded nothing and dropped no cut group.
+/// `None`: the plan recorded nothing, dropped no cut group and held no
+/// centre off.
 pub(super) fn left_stock(
     unplanned: &[Unplanned],
     dropped_cut_groups: usize,
+    one_pass: &super::one_pass::OnePass,
     stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
 ) -> Option<LeftStock> {
-    if unplanned.is_empty() && dropped_cut_groups == 0 {
+    let held = one_pass.held.borrow();
+    if unplanned.is_empty() && dropped_cut_groups == 0 && held.centres == 0 {
         return None;
     }
     let count = |why: LeftWhy| unplanned.iter().filter(|u| u.why == why).count();
@@ -94,6 +125,10 @@ pub(super) fn left_stock(
         standing_area_mm2: 0.0,
         tallest_mm: 0.0,
         tallest_at: [0.0; 3],
+        held_off_centres: held.centres,
+        held_off_area_mm2: 0.0,
+        held_off_tallest_mm: 0.0,
+        held_off_at: [0.0; 3],
     };
     let mut standing_cells = 0usize;
     for piece in unplanned {
@@ -136,6 +171,28 @@ pub(super) fn left_stock(
         }
     }
     out.standing_area_mm2 = standing_cells as f64 * cell * cell;
+    // P41: the stock cells that held a centre off and still stand more than
+    // the limit above the cutter of that centre. A lower level cannot cut
+    // them (the rule holds it off too), so they stand unless a pass at
+    // their own level took them.
+    let mut held_cells = 0usize;
+    for (&(row, col), &cutter_z) in &held.cells {
+        if row >= grid.rows || col >= grid.cols {
+            continue;
+        }
+        let top = stock_top_z_at(stock, row, col);
+        let over = top - cutter_z;
+        if over <= one_pass.limit_mm {
+            continue;
+        }
+        held_cells += 1;
+        if over > out.held_off_tallest_mm {
+            let (x, y) = grid.cell_to_world(row, col);
+            out.held_off_tallest_mm = over;
+            out.held_off_at = [x, y, top];
+        }
+    }
+    out.held_off_area_mm2 = held_cells as f64 * cell * cell;
     Some(out)
 }
 

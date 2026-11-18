@@ -312,7 +312,7 @@ impl ProjectSession {
                         if let Some(left) = self
                             .result_at(idx)
                             .and_then(|r| r.stats.rough_left_stock)
-                            .filter(|f| f.left.standing_pieces > 0)
+                            .filter(|f| f.left.stands())
                         {
                             push(
                                 ids::GEOM_ROUGH_LEFT_STOCK,

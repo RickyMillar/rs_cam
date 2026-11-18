@@ -51,7 +51,13 @@ const FLOOR_Z: f64 = 4.0;
 const MESH_HALF: f64 = 40.0;
 const MESH_STEP: f64 = 0.5;
 const POCKET_HALF_X: f64 = 30.0;
-const POCKET_HALF_Y: f64 = 20.0;
+/// P41: the pocket is a slot 7 mm wide for the 6 mm tool, so a centre of the
+/// slot stands beside the model wall and its rapid floor is the wall top:
+/// the deep column of the fixture is air beside the model. With a half
+/// width of 20 mm the one deep site was a corner where op 0 left real stock
+/// 6 mm tall; the one-pass rule (`adaptive3d/one_pass.rs`) holds the tool
+/// off that stock, so that site was not air and it is gone.
+const POCKET_HALF_Y: f64 = 3.5;
 const TOOL_DIAMETER: f64 = 6.0;
 const DEPTH_PER_PASS: f64 = 3.0;
 /// The source's axial leave: the skin op 1 cuts.

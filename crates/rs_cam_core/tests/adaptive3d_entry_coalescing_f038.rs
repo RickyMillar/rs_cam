@@ -175,6 +175,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             keep_down_route: None,
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: rs_cam_core::adaptive3d::OnePassHold::Off,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,

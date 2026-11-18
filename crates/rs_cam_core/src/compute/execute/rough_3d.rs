@@ -200,6 +200,13 @@ impl Adaptive3dRough<'_> {
                 // The rest region filter acts only on remaining stock (a
                 // rest rough), and only when a bound is set.
                 rest_region_filter: inputs.seed_stock.and(cfg.rest_region_filter()),
+                // P41: the one-pass rule acts only on remaining stock, where
+                // the planner stock is the simulated stock.
+                one_pass_hold: if inputs.seed_stock.is_some() {
+                    crate::adaptive3d::OnePassHold::RemainingStock
+                } else {
+                    crate::adaptive3d::OnePassHold::Off
+                },
             },
             feed_rate: self.feed_rate,
             plunge_rate: self.plunge_rate,

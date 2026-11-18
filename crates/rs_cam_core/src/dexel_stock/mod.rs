@@ -322,6 +322,16 @@ impl TriDexelStock {
         sum
     }
 
+    /// The covered part (0 to 1) of a square cell of side `cs` by a disc of
+    /// squared radius `r_sq`, where `(du, dv)` is the cell centre less the
+    /// disc centre. It is the coverage of a point stamp
+    /// (`stamping::point_cell_coverage`), for a planner rule that must
+    /// predict what one stamp removes from a cell (adaptive3d `one_pass`).
+    #[must_use]
+    pub(crate) fn disc_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f64 {
+        f64::from(stamping::point_cell_coverage(du, dv, r_sq, cs))
+    }
+
     /// Highest material top over all Z-grid cells intersecting the disc of
     /// `radius` around `(cx, cy)` (world frame). Mirrors the collision
     /// checker's view: a tool descending at this XY can touch material in

@@ -102,7 +102,7 @@ pub enum Gate {
     FeedHeldAtFloor,
     /// P37: a 3D Rough held stock, planned no cut there, and the stock
     /// stands at the end of its plan
-    /// (`ToolpathStats::rough_left_stock`, `standing_pieces > 0`).
+    /// (`ToolpathStats::rough_left_stock`, `LeftStock::stands`).
     RoughLeftStock,
 }
 

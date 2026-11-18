@@ -808,6 +808,17 @@ impl std::fmt::Display for RoughLeftStockFinding {
             l.standing_area_mm2,
             l.tallest_mm,
         )?;
+        if l.held_off_area_mm2 > 0.0 {
+            let [x, y, z] = l.held_off_at;
+            write!(
+                f,
+                " It kept the tool off stock that stands more than one Depth/Pass above the \
+                 cutter: a lower level does not cut what a level above left. {:.1} mm² of \
+                 that stock still stands; the tallest stands {:.2} mm above the cutter at \
+                 X{x:.2} Y{y:.2} (stock top Z {z:.3}).",
+                l.held_off_area_mm2, l.held_off_tallest_mm,
+            )?;
+        }
         if l.dropped_cut_groups > 0 {
             write!(
                 f,

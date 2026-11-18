@@ -1,0 +1,121 @@
+core: P41: the one-pass rule in the region grid: a level of a rough on remaining stock keeps its tool off stock that stands more than Depth/Pass plus the stay-down clearance above the cutter (`one_pass`, the dial `one_pass_hold`); the body row of the wanaka back rest rough falls from 20.7 to 6.0 mm
+
+A level of a 3D Rough on remaining stock met stock that no level above it cut (a region under
+the small-region bound, the margin strip of the plan at a wall, a strip narrower than the tool
+radius) and cut it at its full height. On the wanaka back, "Back rest 6 mm" (6 mm per pass)
+cut 20.7 mm deep in its clearing passes. The operator accepted the rule as a guard; the wall
+pass at each level, which removes the cause, is the next phase.
+
+The rule (`adaptive3d/one_pass.rs`): a stock cell is too tall for a level when one tool centre
+of the level, at its level floor, would take more than Depth/Pass plus the stay-down clearance
+from it in one stamp (the covered part of the cell by the tool disc times the stock above the
+cutter). Each material cell of the level grid that would take that much from such a cell is
+not a region cell. `build_material_bool_grid` applies it, so Geodesic Adaptive, the Contour
+Parallel rings and the clean-up raster read it, and the entries, links and order come from
+the plan of the smaller region. `waterline_cleanup` masks its contour points with the same
+read (`OnePass::blocks`).
+
+- The switch is a dial, `Adaptive3dLinking::one_pass_hold` (`OnePassHold`, default `Off`). The
+  session adapter sets `RemainingStock` only when the op has a seed stock, beside the rest
+  region filter: there the planner stock is the simulated stock on the simulation cell. On the
+  fresh 18 mm rough (planner cell 1.5 mm) the rule moved the second level and raised its
+  deepest cut from 10.0 to 14.5 mm, so a fresh rough keeps the rule off. `initial_stock` is not
+  the switch: a caller can seed a fresh block on a coarse cell.
+- The height of a cell is read against the lowest cutter that a centre of the level can have
+  over it (a material cell of the grid, inside the boundary clip), so the held centres are
+  discs of the tool radius and the closing of `grown_outlines` cannot give a held centre back
+  (measured: with the per-centre read three pieces cut 8.0 mm deep).
+- The record: `LeftStock::held_off_*` and `LeftStock::stands`; one more sentence in
+  `geom.rough_left_stock`. The finding, the adapter and the export gate read `stands`.
+- `TriDexelStock::disc_cell_coverage`: the coverage of the stamp, for the planner.
+- Each literal of `Adaptive3dLinking` gets the line `one_pass_hold: ..::Off` (23 test files);
+  no assert of them changes.
+- The D55 sentry fixture is now a slot 7 mm wide (was a pocket 40 mm wide). Its one deep entry
+  site was a corner where op 0 left real stock two passes tall, which the rule holds the tool
+  off. In the slot the deep column is air beside the model wall (1 stroke, Z 10.5 to 4.0). The
+  asserts are not changed. Not shown: that the new fixture is red without the D55 fix.
+
+Tests: `--lib _p41` (5 tests: the rib that an upper level leaves, the control, every strategy
+and order, the dial off, the wall contour mask). Red proofs: the dial off cuts the rib 11.50 mm
+deep; with `blocks` forced to `false` the mask test fails.
+
+Measured on setup "1 Back" of `nz_wanaka_21_lead_proposal.toml` (HEAD against this tree):
+
+- "Back rest 6 mm": body 20.7 to 6.0 mm, entry 1.99 to 2.00 mm, link 6.0, cleanup 3.0; the
+  deepest simulation sample 6.2 mm (0 of 163 392 over 6.5 mm); deep pieces on the replay of
+  the G-code 170 to 0; 585 to 522 s; 136 to 118 ramp entries.
+- Cut below the target after the two roughs: 12.6 to 12.1 mm2 raw, 0.2 mm2 with the target
+  lowered one node. 0 collisions and 0 rapid collisions on each op.
+- The fresh 18 mm rough keeps its G-code, byte for byte. The rivmap100 file and its Geodesic
+  Adaptive copy keep theirs.
+- Setup "3 Front", "Front 3D rough": body 6.41 to 4.31 mm, entry 1.56 mm, 870 to 868 s.
+- The price: the mech and slit pockets hold 1 631.5 mm2 at the end of the setup (1 155.6
+  before), the step shelf 773.8 mm2 (690.3). Each level under the first stands 0.2 to 0.4 mm
+  further from a wall. "Day strip slit V60" has 8 moves with wood above its flute (7 before)
+  and 10.60 mm of wood over its tip (7.44 mm).
+
+Found, not fixed here: the depth row of the simulation is not the deepest sample of its group.
+In the first build two samples of id 2 read 8.00 mm and the body row read 6.0 mm (note section
+10.7).
+
+Gates: core `--lib` 2 850 passed, 1 failed (the known time budget test); adaptive3d sentries
+75 passed, 7 ignored; dressup sentries 119 passed; other core sentries green; op golden the 46
+known cells and the 6 P39 cells, no other; FM1 2 passed; rs_cam_cli 113; rs_cam_mcp 39; viz
+`--lib` 705; clippy clean. No red is new against HEAD.
+
+Note: `planning/feeds_contract_2026-11-03/phases/P41_ONE_PASS_REGION_GRID_2026-11-18.md`
+(section 0 and section 10 are the state of this commit).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+
+--- paths to commit (the lead commits by path; this block is not part of the message) ---
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/left_stock.rs
+crates/rs_cam_core/src/adaptive3d/mod.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/compute/execute/rough_3d.rs
+crates/rs_cam_core/src/compute/toolpath_stats.rs
+crates/rs_cam_core/src/dexel_stock/mod.rs
+crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+crates/rs_cam_core/src/diagnostics/consequence.rs
+crates/rs_cam_core/src/session/compute/export.rs
+crates/rs_cam_core/tests/a_geodesic_arc_end_reads_the_stock_p22f2.rs
+crates/rs_cam_core/tests/a_geodesic_cap_survives_every_dressup_s7_4.rs
+crates/rs_cam_core/tests/a_geodesic_layer_opens_with_a_helix_bore_p22b.rs
+crates/rs_cam_core/tests/a_geodesic_slice_cuts_no_full_slot_sweep_p22f.rs
+crates/rs_cam_core/tests/a_geodesic_step_over_the_ceiling_is_cut_capped_d65.rs
+crates/rs_cam_core/tests/a_ramp_entry_keeps_to_its_planned_footprint_p39.rs
+crates/rs_cam_core/tests/a_rest_entry_does_not_peck_through_cleared_air_d55.rs
+crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
+crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
+crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
+crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
+crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+crates/rs_cam_core/tests/agent_search_coverage.rs
+crates/rs_cam_core/tests/end_to_end.rs
+crates/rs_cam_core/tests/findings_transport_join_h21.rs
+crates/rs_cam_core/tests/geodesic_adaptive_holds_the_pass_load_c12.rs
+crates/rs_cam_core/tests/geodesic_adaptive_keeps_the_research_geometry_s7_4.rs
+crates/rs_cam_core/tests/param_sweep.rs
+crates/rs_cam_core/tests/wanaka_z_layer_render.rs
+crates/rs_cam_core/src/adaptive3d/one_pass.rs
+planning/feeds_contract_2026-11-03/phases/P41_ONE_PASS_REGION_GRID_2026-11-18.md
+planning/feeds_contract_2026-11-03/phases/p41/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p41/cover.py
+planning/feeds_contract_2026-11-03/phases/p41/deep.py
+planning/feeds_contract_2026-11-03/phases/p41/lim.py
+planning/feeds_contract_2026-11-03/phases/p41/run_meas.sh
+planning/feeds_contract_2026-11-03/phases/p41/sect.py
+
+Not in the commit: `.mcp.json`, `planning/rivmap_block_job/derive_wanaka21.py`,
+`planning/adaptive_research_2026-10-23/*` and the `__pycache__` folders (they were changed or
+there before this work). `phases/p41/not_landed/` is deleted: its two files were the round 1
+copy of this tree.

@@ -1560,6 +1560,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
             keep_down_route: None,
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: rs_cam_core::adaptive3d::OnePassHold::Off,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,

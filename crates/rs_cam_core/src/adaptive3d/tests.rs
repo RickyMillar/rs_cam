@@ -148,6 +148,7 @@ fn default_params() -> Adaptive3dParams {
             keep_down_route: None,
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: super::OnePassHold::Off,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,
@@ -3323,4 +3324,252 @@ fn the_descent_clamp_changes_only_a_tool_with_a_centre_core_k5() {
             "a step from {a:?} to {b:?} is steeper than the limit {slope:.4}"
         );
     }
+}
+
+/// P41 fixture: a rest stock on a flat floor (Z 0). A block of 40 x 24 mm
+/// stands 3 mm tall. A rib 1.5 mm wide stands 12 mm tall across it (when
+/// `rib`). Cell 0.5 mm, tool 6.35 mm, Depth/Pass 3 mm, stock to leave 0.5,
+/// stay-down clearance 0.5.
+///
+/// The levels are 9, 6, 3 and 0.5. At 9 the rib is the only material: a
+/// region of 36 mm2, under the small-region bound (152.4 mm2), so the level
+/// drops it. So the rib is stock that an upper level leaves. At 0.5 the
+/// block is a region that holds the rib.
+///
+/// Returns the deepest simulated depth of a sample (`axial_engagement_mm`,
+/// the depth of every gate) and the record of the plan.
+fn deepest_cut_on_rib_fixture_p41(
+    rib: bool,
+    strategy: ClearingStrategy3d,
+    ordering: RegionOrdering,
+) -> (f64, Option<LeftStock>) {
+    let mesh = crate::mesh::make_test_flat(80.0);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.5, 141usize);
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (-35.0 + col as f64 * cell, -35.0 + row as f64 * cell);
+            if (-20.0..=20.0).contains(&x) && (-12.0..=12.0).contains(&y) {
+                tops[row * n + col] = if rib && (-0.5..=1.0).contains(&x) {
+                    12.0
+                } else {
+                    3.0
+                };
+            }
+        }
+    }
+    let stock = make_stock_with_cells(n, n, -35.0, -35.0, cell, -10.0, &tops);
+    let mut params = default_params();
+    params.clearing_strategy = strategy;
+    params.linking.region_ordering = ordering;
+    // The rule is a dial; the session sets it on remaining stock.
+    params.linking.one_pass_hold = OnePassHold::RemainingStock;
+    params.depth.stock_top_z = if rib { 12.0 } else { 3.0 };
+    params.initial_stock = Some(stock.clone());
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    let mut sim_stock = stock;
+    let samples = sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &out.toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId::from_raw(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            false,
+            &|| false,
+        )
+        .expect("the simulation is not cancelled");
+    let deepest = samples
+        .iter()
+        .map(|s| s.axial_engagement_mm)
+        .fold(0.0, f64::max);
+    (deepest, out.left_stock)
+}
+
+/// P41 (prediction 9): no simulated sample of a 3D Rough cuts deeper than
+/// one Depth/Pass plus the stay-down clearance, also where the levels above
+/// left stock. The rib of the fixture stands 11.5 mm above the floor of the
+/// last level; without the rule (`OnePassHold::Off`, the control below) the
+/// last level cuts it at that depth. The operation states the stock that it
+/// kept off.
+#[test]
+fn a_level_region_keeps_off_what_the_levels_above_left_p41() {
+    let (deepest, left) = deepest_cut_on_rib_fixture_p41(
+        true,
+        ClearingStrategy3d::GeodesicAdaptive,
+        RegionOrdering::Global,
+    );
+    let limit = 3.0 + 0.5;
+    assert!(
+        deepest <= limit + 1e-6,
+        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
+    );
+    // The block is cut on both sides of the rib: the rule holds off the
+    // centres at the rib, not the region.
+    assert!(deepest >= 2.0, "the block is one pass deep: {deepest:.2}");
+    let left = left.expect("the plan dropped the rib and kept off it");
+    assert!(left.held_off_centres >= 1, "{left:?}");
+    assert!(left.stands(), "{left:?}");
+    // The rib: 4 cells x 49 cells of 0.25 mm2 at most.
+    assert!(
+        left.held_off_area_mm2 > 0.0 && left.held_off_area_mm2 <= 49.0,
+        "{left:?}"
+    );
+    // 12 mm of stock above the cutter of the last level (Z 0.5).
+    assert!((left.held_off_tallest_mm - 11.5).abs() < 1e-3, "{left:?}");
+    let [x, _, z] = left.held_off_at;
+    assert!(
+        (-0.5..=1.0).contains(&x) && (z - 12.0).abs() < 1e-3,
+        "{left:?}"
+    );
+}
+
+/// P41: a plan that meets one pass of stock holds no centre off, and it
+/// cuts the block (the control of the fixture).
+#[test]
+fn a_plan_with_one_pass_of_stock_holds_no_centre_off_p41() {
+    let (deepest, left) = deepest_cut_on_rib_fixture_p41(
+        false,
+        ClearingStrategy3d::GeodesicAdaptive,
+        RegionOrdering::Global,
+    );
+    assert!(
+        (2.0..=3.5).contains(&deepest),
+        "the block is one pass deep: {deepest:.2}"
+    );
+    assert!(left.is_none_or(|l| l.held_off_centres == 0), "{left:?}");
+}
+
+/// P41: the rule is in the ONE level grid, so it holds for Contour Parallel
+/// and in the By Area order too.
+#[test]
+fn every_strategy_and_order_reads_the_one_pass_grid_p41() {
+    for (strategy, ordering) in [
+        (ClearingStrategy3d::ContourParallel, RegionOrdering::Global),
+        (ClearingStrategy3d::GeodesicAdaptive, RegionOrdering::ByArea),
+        (ClearingStrategy3d::ContourParallel, RegionOrdering::ByArea),
+    ] {
+        let (deepest, left) = deepest_cut_on_rib_fixture_p41(true, strategy, ordering);
+        let limit = 3.0 + 0.5;
+        assert!(
+            deepest <= limit + 1e-6,
+            "{strategy:?} {ordering:?}: a sample cuts {deepest:.2} mm deep; one Depth/Pass and \
+             the clearance are {limit} mm ({left:?})"
+        );
+    }
+}
+
+/// P41: the rule is a dial (`Adaptive3dLinking::one_pass_hold`). With the
+/// dial off the same fixture cuts the rib at its full height: the red state
+/// of the test above, and the proof that a caller who does not set the dial
+/// keeps the plan without the rule.
+#[test]
+fn the_one_pass_dial_off_keeps_the_plan_without_the_rule_p41() {
+    let mesh = crate::mesh::make_test_flat(80.0);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.5, 141usize);
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (-35.0 + col as f64 * cell, -35.0 + row as f64 * cell);
+            if (-20.0..=20.0).contains(&x) && (-12.0..=12.0).contains(&y) {
+                tops[row * n + col] = if (-0.5..=1.0).contains(&x) { 12.0 } else { 3.0 };
+            }
+        }
+    }
+    let stock = make_stock_with_cells(n, n, -35.0, -35.0, cell, -10.0, &tops);
+    let run = |hold: OnePassHold| {
+        let mut params = default_params();
+        params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+        params.linking.one_pass_hold = hold;
+        params.depth.stock_top_z = 12.0;
+        params.initial_stock = Some(stock.clone());
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled")
+    };
+    let off = run(OnePassHold::Off);
+    let on = run(OnePassHold::RemainingStock);
+    assert!(
+        off.left_stock.is_none_or(|l| l.held_off_centres == 0),
+        "the dial is off: {:?}",
+        off.left_stock
+    );
+    assert!(
+        on.left_stock.is_some_and(|l| l.held_off_centres > 0),
+        "the dial is on: {:?}",
+        on.left_stock
+    );
+    assert_ne!(
+        off.toolpath.moves.len(),
+        on.toolpath.moves.len(),
+        "the rule changes the plan of this fixture"
+    );
+}
+
+/// P41 (R6): the mask of the wall contour points (`OnePass::blocks`). A
+/// point whose disc covers a cell that stands more than the limit above the
+/// cutter is masked; the same point beside a cell one pass tall is not; with
+/// the rule off nothing is masked. Tool 6.35 mm, Depth/Pass 3, clearance
+/// 0.5: the limit is 3.5 mm.
+#[test]
+fn the_wall_contour_mask_holds_a_point_off_tall_stock_p41() {
+    use super::one_pass::{OnePass, OnePassTool};
+    let cutter = flat_cutter();
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    let tool = OnePassTool {
+        lut: &lut,
+        radius: 3.175,
+    };
+    let (cell, n) = (0.5, 41usize);
+    // A strip of cells at x 2.0 to 2.5 (inside the disc of a tool at the
+    // origin), `strip_top` tall, on stock at Z 0.
+    let stock_with = |strip_top: f64| {
+        let mut tops = vec![0.0f64; n * n];
+        for row in 0..n {
+            for col in 0..n {
+                let x = -10.0 + col as f64 * cell;
+                if (2.0..=2.5).contains(&x) {
+                    tops[row * n + col] = strip_top;
+                }
+            }
+        }
+        make_stock_with_cells(n, n, -10.0, -10.0, cell, -10.0, &tops)
+    };
+    let point = P3::new(0.0, 0.0, 0.0);
+    let rule = OnePass::new(3.0, 0.5, true);
+    assert!(
+        rule.blocks(&stock_with(9.0), tool, point),
+        "9 mm of stock above the cutter inside the disc: the point is masked"
+    );
+    assert_eq!(
+        rule.held.borrow().centres,
+        1,
+        "the masked point is recorded"
+    );
+    assert!(
+        !rule.blocks(&stock_with(3.0), tool, point),
+        "one pass of stock: the point is cut"
+    );
+    // A tall strip outside the disc does not mask the point.
+    assert!(
+        !rule.blocks(&stock_with(9.0), tool, P3::new(-4.0, 0.0, 0.0)),
+        "the strip is 6 mm from the centre, past the tool radius"
+    );
+    let off = OnePass::new(3.0, 0.5, false);
+    assert!(
+        !off.blocks(&stock_with(9.0), tool, point),
+        "the rule is off: nothing is masked"
+    );
+    assert_eq!(off.held.borrow().centres, 0);
 }

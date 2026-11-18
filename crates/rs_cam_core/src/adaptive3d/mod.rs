@@ -30,6 +30,7 @@ mod intended_floor;
 mod keep_down;
 mod left_stock;
 mod level_contour;
+mod one_pass;
 mod outer_band;
 mod path;
 mod region_map;
@@ -313,6 +314,32 @@ pub struct Adaptive3dLinking {
     /// `rest_max_region_width_mm`). `None`: every region is cut. The
     /// session sets it only on remaining stock (a rest rough).
     pub rest_region_filter: Option<RestRegionFilter>,
+    /// P41: the one-pass rule of the level grid ([`OnePassHold`]). The
+    /// session sets it only on remaining stock (a rest rough); a caller
+    /// that builds the params directly states it.
+    pub one_pass_hold: OnePassHold,
+}
+
+/// P41: the one-pass rule ([`Adaptive3dLinking::one_pass_hold`],
+/// `one_pass.rs`): a level keeps its tool off stock that stands more than
+/// one Depth/Pass plus the stay-down clearance above the cutter.
+///
+/// The rule reads the planner stock cell by cell, so it is exact only where
+/// the planner stock is the simulated stock on the simulation cell: a rough
+/// on remaining stock. A fresh rough plans on its own, coarser cell
+/// (`tool radius / 6`), where the read cannot see a strip narrower than a
+/// cell; measured on the Wanaka back, the rule on the fresh 18 mm rough
+/// (cell 1.5 mm) moved its second level and raised its deepest simulated
+/// cut from 10.0 to 14.5 mm. `initial_stock` is not the switch: a caller
+/// can seed a fresh block on a coarse cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OnePassHold {
+    /// No centre is held off: the plan of every level is the plan without
+    /// the rule.
+    #[default]
+    Off,
+    /// The rule is on: the planner stock is the remaining (simulated) stock.
+    RemainingStock,
 }
 
 /// The rest region filter ([`Adaptive3dLinking::rest_region_filter`]).

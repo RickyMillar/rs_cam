@@ -141,6 +141,7 @@ fn params(entry_style: EntryStyle3d, radius: f64, z_floor: Option<f64>) -> Adapt
             keep_down_route: None,
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: rs_cam_core::adaptive3d::OnePassHold::Off,
         },
         trochoid_cap_mult: cfg.trochoid_cap_mult,
         engagement_measure: cfg.engagement_measure,

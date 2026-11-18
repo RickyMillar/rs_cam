@@ -449,6 +449,21 @@ pub(super) struct ClearZLevelContext<'a> {
     /// `build_material_bool_grid` applies it to each grid it builds.
     /// `None`: every region is cut.
     pub(super) rest_region_filter: Option<super::RestRegionFilter>,
+    /// P41: the one-pass rule and its record (`one_pass.rs`).
+    /// `build_material_bool_grid` applies it to each grid it builds, and
+    /// `waterline_cleanup` to each contour point.
+    pub(super) one_pass: super::one_pass::OnePass,
+}
+
+impl ClearZLevelContext<'_> {
+    /// The tool of the one-pass read: the table of the cut stamp and the
+    /// tool radius.
+    pub(super) fn one_pass_tool(&self) -> super::one_pass::OnePassTool<'_> {
+        super::one_pass::OnePassTool {
+            lut: self.lut,
+            radius: self.tool_radius,
+        }
+    }
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -459,6 +474,10 @@ pub(super) struct ClearZLevelContext<'a> {
 /// (max of surface_z + stock_to_leave, z_level). The grid is padded with
 /// a 1-cell false border so marching squares and EDT detect edge boundaries.
 /// With a mask, only the owned cells can be `true`.
+///
+/// P41: a material cell whose tool would take more than one Depth/Pass plus
+/// the stay-down clearance from one stock cell is `false` (`one_pass`), so
+/// no plan of the level drives the tool there.
 ///
 /// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
 #[expect(
@@ -472,6 +491,11 @@ fn build_material_bool_grid(
     stock_to_leave: f64,
     mask: Option<&AreaMask>,
     rest_filter: Option<&super::RestRegionFilter>,
+    one_pass: (
+        &super::one_pass::OnePass,
+        super::one_pass::OnePassTool<'_>,
+        Option<&CentreClip>,
+    ),
 ) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
@@ -507,6 +531,28 @@ fn build_material_bool_grid(
                 padded_grid[(row + 1) * padded_cols + (col + 1)] = true;
             }
         }
+    }
+
+    // P41: the one-pass rule, before the rest region filter (the filter
+    // reads the regions that the level can cut).
+    let (rule, tool, centre_clip) = one_pass;
+    let held = rule.hold_off(
+        &mut padded_grid,
+        padded_cols,
+        material_stock,
+        super::one_pass::LevelFloor {
+            surface_hm,
+            z_level,
+            stock_to_leave,
+            centre_clip,
+        },
+        tool,
+    );
+    if held > 0 {
+        debug!(
+            z = z_level,
+            held, "One-pass rule: centres held off stock more than one pass above the cutter"
+        );
     }
 
     // The rest region filter: ONE place for every strategy and the
@@ -1783,6 +1829,7 @@ pub(super) fn clear_z_level_contour_parallel(
         ctx.stock_to_leave,
         area_mask,
         ctx.rest_region_filter.as_ref(),
+        (&ctx.one_pass, ctx.one_pass_tool(), ctx.centre_clip),
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -1949,6 +1996,7 @@ pub(super) fn clear_z_level_contour_parallel(
         ctx.stock_to_leave,
         area_mask,
         ctx.rest_region_filter.as_ref(),
+        (&ctx.one_pass, ctx.one_pass_tool(), ctx.centre_clip),
     );
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
@@ -2246,16 +2294,20 @@ pub(super) fn waterline_cleanup(
         // accepts, read once on the stock before this contour. No `keep`
         // (Global, the By Area bottom run): the whole closed contour, as
         // before.
-        let runs = match keep {
-            None => vec![cleanup_path],
-            Some(keep) => {
-                let flags: Vec<bool> = cleanup_path
-                    .iter()
-                    .map(|p| keep(material_stock, *p))
-                    .collect();
-                kept_runs(&cleanup_path, &flags)
-            }
-        };
+        // P41: a point whose tool would take more than one Depth/Pass plus
+        // the stay-down clearance from one stock cell is not cut
+        // (`one_pass`). No such point and no `keep`: the whole closed
+        // contour, as before. A point outside the boundary clip is not
+        // read: the clip drops it, so the rule holds nothing off there.
+        let flags: Vec<bool> = cleanup_path
+            .iter()
+            .map(|p| {
+                keep.is_none_or(|keep| keep(material_stock, *p))
+                    && !(ctx.centre_clip.is_none_or(|clip| clip.contains(p.x, p.y))
+                        && ctx.one_pass.blocks(material_stock, ctx.one_pass_tool(), *p))
+            })
+            .collect();
+        let runs = kept_runs(&cleanup_path, &flags);
         if runs.is_empty() {
             continue;
         }
@@ -2492,6 +2544,7 @@ fn detect_and_order_regions(
         ctx.stock_to_leave,
         area_mask,
         ctx.rest_region_filter.as_ref(),
+        (&ctx.one_pass, ctx.one_pass_tool(), ctx.centre_clip),
     );
     // Geodesic Adaptive (research C38 §11, G-CLIPAIR): regions stay inside the boundary,
     // and include the centres whose disc meets the reachable band.

@@ -256,6 +256,7 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             keep_down_route: None,
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: rs_cam_core::adaptive3d::OnePassHold::Off,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,

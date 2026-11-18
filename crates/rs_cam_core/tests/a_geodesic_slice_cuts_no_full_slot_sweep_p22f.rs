@@ -119,6 +119,7 @@ fn params() -> Adaptive3dParams {
             keep_down_route: Some(KeepDownRoute::CutFeed),
             level_contour: None,
             rest_region_filter: None,
+            one_pass_hold: rs_cam_core::adaptive3d::OnePassHold::Off,
         },
         feed_rate: FEED,
         plunge_rate: 500.0,

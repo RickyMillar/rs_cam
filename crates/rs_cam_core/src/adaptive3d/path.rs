@@ -1461,6 +1461,11 @@ fn adaptive_3d_segments_probed(
         left_pieces: std::cell::RefCell::new(Vec::new()),
         unplanned: std::cell::RefCell::new(Vec::new()),
         dropped_cut_groups: std::cell::Cell::new(0),
+        one_pass: super::one_pass::OnePass::new(
+            params.depth.depth_per_pass,
+            params.linking.stay_down_clearance_mm,
+            params.linking.one_pass_hold == super::OnePassHold::RemainingStock,
+        ),
         region_openings: std::cell::RefCell::new(Vec::new()),
         level_probe: probe.then(|| std::cell::RefCell::new(LevelProbeBuffer::default())),
         // C4: the reach band, when the option is on and the rough meets
@@ -1707,6 +1712,7 @@ fn adaptive_3d_segments_probed(
     let left_stock = super::left_stock::left_stock(
         &ctx.unplanned.take(),
         ctx.dropped_cut_groups.get(),
+        &ctx.one_pass,
         &material_stock,
         &surface_hm,
         params.depth.stock_to_leave,
@@ -2849,6 +2855,7 @@ mod tests {
                 keep_down_route: None,
                 level_contour: None,
                 rest_region_filter: None,
+                one_pass_hold: crate::adaptive3d::OnePassHold::Off,
             },
             trochoid_cap_mult: 1.6,
             feed_rate: 1500.0,
