@@ -121,6 +121,15 @@ impl OnePass {
         }
     }
 
+    /// THE height test of the rule: `over_mm` of stock above a cutter
+    /// surface is more than one Depth/Pass plus the stay-down clearance.
+    /// The level grid ([`deep_cell`]) and the wall pass of a level
+    /// (`level_contour::region_wall_pass`: the strip against the cutter of
+    /// the next level, P42) both read it.
+    pub(super) fn over_limit(&self, over_mm: f64) -> bool {
+        over_limit(over_mm, self.limit_mm)
+    }
+
     fn record(&self, cell: DeepCell) {
         let mut held = self.held.borrow_mut();
         held.centres += 1;
@@ -312,6 +321,11 @@ impl OnePass {
     }
 }
 
+/// [`OnePass::over_limit`] on its two numbers.
+fn over_limit(over_mm: f64, limit_mm: f64) -> bool {
+    over_mm > limit_mm
+}
+
 /// The lowest cutter surface (Z) that a tool centre of the level can have
 /// over the stock cell `cell`: over each grid cell where a centre can stand
 /// (`floor_at` gives its level floor, `None`: no centre stands there) and
@@ -435,7 +449,7 @@ fn deep_cell(
                 None => p.z + profile,
             };
             let over = top - cutter_z;
-            if over <= limit_mm {
+            if !over_limit(over, limit_mm) {
                 continue;
             }
             let covered = TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs);

@@ -285,7 +285,7 @@ impl AreaMask {
 
 /// The per-cell material test of the level grid: material stands above
 /// `max(surface + stock_to_leave, z_level)`.
-fn cell_has_material(
+pub(super) fn cell_has_material(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     row: usize,
@@ -453,6 +453,9 @@ pub(super) struct ClearZLevelContext<'a> {
     /// `build_material_bool_grid` applies it to each grid it builds, and
     /// `waterline_cleanup` to each contour point.
     pub(super) one_pass: super::one_pass::OnePass,
+    /// P42: the wall pass of each level (`level_contour::region_wall_pass`),
+    /// on with the one-pass rule. `None`: no wall pass.
+    pub(super) wall_pass: Option<super::level_contour::WallPass>,
 }
 
 impl ClearZLevelContext<'_> {
@@ -3248,7 +3251,7 @@ pub(super) struct LevelProbeBuffer {
 
 /// Lift a 2D point of a level's plan to 3D: the level, raised over terrain
 /// that stands above it (the ONE level floor, `intended_floor::level_floor_z`).
-fn lift_to_level(
+pub(super) fn lift_to_level(
     ctx: &ClearZLevelContext<'_>,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
@@ -4388,6 +4391,7 @@ pub(super) fn clear_z_level_slice(
     cursor: &mut PlannerCursor,
     area_mask: Option<&AreaMask>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
+    next_level_z: Option<f64>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let (remaining_cells, remaining_fraction) = level_gate(
@@ -4486,6 +4490,8 @@ pub(super) fn clear_z_level_slice(
     let mut cut_count = 0u32;
     let mut dropped_short_regions = 0usize;
     let region_total = regions.len();
+    // P42: the regions whose plan cut a segment; the wall pass runs on them.
+    let mut planned_regions: Vec<&crate::polygon::Polygon2> = Vec::new();
     let mut emission = LevelEmission {
         sink: LevelSink {
             segments,
@@ -4508,6 +4514,7 @@ pub(super) fn clear_z_level_slice(
         region_total,
     };
     for (region_idx, region_polygon) in regions.iter().enumerate() {
+        let cuts_before = *emission.cut_count;
         clear_one_region(
             ctx,
             &plan,
@@ -4516,6 +4523,9 @@ pub(super) fn clear_z_level_slice(
             region_idx,
             cancel,
         )?;
+        if *emission.cut_count > cuts_before {
+            planned_regions.push(region_polygon);
+        }
     }
 
     // The level end commits a trailing entry, as the coalescing pass kept it.
@@ -4553,7 +4563,23 @@ pub(super) fn clear_z_level_slice(
         replaced_entries,
     );
     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
+    // P42: the wall pass of the level, after its plan (`region_wall_pass`):
+    // the strip that the margin of the plan leaves at each wall of a
+    // planned region goes down one pass at this level.
+    let wall = super::level_contour::region_wall_pass(
+        ctx,
+        material_stock,
+        surface_hm,
+        super::level_contour::WallLevel {
+            z_level,
+            next_level_z,
+        },
+        &planned_regions,
+        segments,
+        cursor,
+    );
     if let Some(scope) = level_scope.as_ref() {
+        scope.set_counter("wall_pass_runs", wall.runs as f64);
         scope.set_counter("cut_segments", cut_count as f64);
         scope.set_counter(
             "perimeter_sweep_length_mm",

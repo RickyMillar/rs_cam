@@ -3365,7 +3365,9 @@ fn deepest_cut_on_rib_fixture_p41(
     params.clearing_strategy = strategy;
     params.linking.region_ordering = ordering;
     // The rule is a dial; the session sets it on remaining stock.
-    params.linking.one_pass_hold = OnePassHold::RemainingStock;
+    params.linking.one_pass_hold = OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
     params.depth.stock_top_z = if rib { 12.0 } else { 3.0 };
     params.initial_stock = Some(stock.clone());
     let out =
@@ -3469,6 +3471,196 @@ fn every_strategy_and_order_reads_the_one_pass_grid_p41() {
     }
 }
 
+/// P42 fixture: a floor at Z 0 and a vertical wall at X 10 that stands to
+/// Z 9. The remaining stock is a block 9 mm tall from X -20 to the wall, Y
+/// -12 to 12. Cell 0.2 mm, tool 6.35 mm, Depth/Pass 3 mm, stock to leave
+/// 0.5, stay-down clearance 0.5: the levels are 6, 3 and 0.5.
+///
+/// The plan of each level keeps its centre the margin of the plan from the
+/// tool-centre limit of the wall (X 6.825), so a strip stands at the wall.
+/// Returns, after a simulation of the toolpath on the stock: the deepest
+/// sample (`axial_engagement_mm`), and the width (mm) of the wood on the
+/// line Y 0 that stands more than 1 mm above the last floor (Z 0.5) in
+/// front of the wall (X under 10).
+fn wall_strip_fixture_p42(hold: OnePassHold) -> (f64, f64) {
+    let (wall_x, wall_top) = (10.0, 9.0);
+    let vertices = vec![
+        P3::new(-40.0, -40.0, 0.0),
+        P3::new(wall_x, -40.0, 0.0),
+        P3::new(wall_x, 40.0, 0.0),
+        P3::new(-40.0, 40.0, 0.0),
+        P3::new(wall_x, -40.0, wall_top),
+        P3::new(wall_x, 40.0, wall_top),
+        P3::new(40.0, -40.0, wall_top),
+        P3::new(40.0, 40.0, wall_top),
+    ];
+    let triangles = vec![
+        [0, 1, 2],
+        [0, 2, 3],
+        [1, 4, 5],
+        [1, 5, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+    ];
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.2, 351usize);
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (-35.0 + col as f64 * cell, -35.0 + row as f64 * cell);
+            tops[row * n + col] = if x > wall_x {
+                wall_top
+            } else if x >= -20.0 && (-12.0..=12.0).contains(&y) {
+                9.0
+            } else {
+                0.0
+            };
+        }
+    }
+    let stock = make_stock_with_cells(n, n, -35.0, -35.0, cell, -10.0, &tops);
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.linking.one_pass_hold = hold;
+    params.depth.stock_top_z = 9.0;
+    params.initial_stock = Some(stock.clone());
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    let mut sim_stock = stock;
+    let samples = sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &out.toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId::from_raw(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            false,
+            &|| false,
+        )
+        .expect("the simulation is not cancelled");
+    let deepest = samples
+        .iter()
+        .map(|s| s.axial_engagement_mm)
+        .fold(0.0, f64::max);
+    let row = 175; // Y 0
+    let standing = (0..n)
+        .filter(|&col| {
+            let x = -35.0 + col as f64 * cell;
+            (0.0..wall_x).contains(&x) && stock_top_z_at(&sim_stock, row, col) > 0.5 + 1.0
+        })
+        .count();
+    (deepest, standing as f64 * cell)
+}
+
+/// P42: each level of a rough on remaining stock cuts to the wall that it
+/// can reach (`level_contour::region_wall_pass`). The wall pass runs one
+/// planner cell plus the cut tolerance inside the boundary of the region
+/// that the level planned, so it cuts the part of the margin strip of the
+/// plan that it reaches, and no sample cuts deeper than one Depth/Pass plus
+/// the clearance. The wall is three passes deep, so the pass ships at each
+/// level (`wall_point_ships`): at 6 and 3 the next level would meet the
+/// strip two passes tall, and at the last level (0.5) the wall stands 8.5 mm
+/// above the floor. Measured: 0.6 mm of wood at the foot of the wall (0.8 mm
+/// with the next-level rule alone, so the bound is red without rule 2).
+///
+/// The control: the one-pass rule with no wall pass (the tree before P42).
+/// The strip is the margin of the plan at the first level, and each lower
+/// level stands further off (measured: 1.2 mm at the foot). So the claim
+/// is red without the wall pass.
+#[test]
+fn each_level_cuts_to_the_wall_that_it_can_reach_p42() {
+    let cell = 0.2;
+    let hold = || OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
+    let (deepest, strip_mm) = wall_strip_fixture_p42(hold());
+    let limit = 3.0 + 0.5;
+    assert!(
+        deepest <= limit + 1e-6,
+        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
+    );
+    super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
+    let (deepest_held, strip_held_mm) = wall_strip_fixture_p42(hold());
+    super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
+    assert!(deepest_held <= limit + 1e-6, "{deepest_held}");
+    assert!(
+        strip_mm <= 3.0 * cell + 1e-9,
+        "{strip_mm} mm of wood stands in front of the wall with the wall pass \
+         ({strip_held_mm} mm with none); three planner cells are {} mm",
+        3.0 * cell
+    );
+    assert!(
+        strip_held_mm >= strip_mm + 2.0 * cell - 1e-9,
+        "the control: with no wall pass the strip at the foot of the wall is wider by two \
+         cells or more: {strip_held_mm} mm against {strip_mm} mm"
+    );
+}
+
+/// P42 (lead rulings D-1): the ship rule of the wall pass
+/// (`level_contour::wall_point_ships`), Depth/Pass 3 mm and clearance 0.5 mm
+/// (limit 3.5 mm).
+/// - A wall two passes deep (top Z 6, levels 3 and 0): the pass ships at
+///   both levels. At level 3 the next level would meet the strip 6 mm tall
+///   (rule 1). At the last level the strip is 3 mm tall, under the limit,
+///   and the wall stands 6 mm above the floor (rule 2): red without rule 2.
+/// - A stair tread one pass tall on a draped slope ships none: the point has
+///   the same floor at the next level, and the surface over the strip is one
+///   pass above it.
+/// - A pocket one pass deep ships none.
+/// - With the rule off (no limit holds) nothing ships.
+#[test]
+fn a_wall_deeper_than_one_pass_ships_the_pass_at_each_level_p42() {
+    use super::level_contour::{WallHeights, wall_point_ships};
+    let rule = super::one_pass::OnePass::new(3.0, 0.5, true);
+    let upper = WallHeights {
+        strip_top: 6.0,
+        wall_top: 6.0,
+        floor: 3.0,
+        next_floor: 0.0,
+    };
+    let last = WallHeights {
+        strip_top: 3.0,
+        wall_top: 6.0,
+        floor: 0.0,
+        next_floor: 0.0,
+    };
+    assert!(wall_point_ships(&rule, upper), "the upper level");
+    assert!(wall_point_ships(&rule, last), "the last level of the wall");
+    // Rule 1 alone does not ship the last level: the claim needs rule 2.
+    assert!(!rule.over_limit(last.strip_top - last.next_floor));
+    let tread = WallHeights {
+        strip_top: 8.0,
+        wall_top: 8.0,
+        floor: 5.0,
+        next_floor: 5.0,
+    };
+    assert!(!wall_point_ships(&rule, tread), "a stair tread of one pass");
+    let shallow_pocket = WallHeights {
+        strip_top: 3.0,
+        wall_top: 3.0,
+        floor: 0.0,
+        next_floor: 0.0,
+    };
+    assert!(!wall_point_ships(&rule, shallow_pocket), "one pass deep");
+    // A strip one pass tall over a floor that the next level lowers by one
+    // pass more: rule 1.
+    let over_a_drop = WallHeights {
+        strip_top: 3.0,
+        wall_top: 3.0,
+        floor: 0.0,
+        next_floor: -3.0,
+    };
+    assert!(wall_point_ships(&rule, over_a_drop));
+}
+
 /// P41: the rule is a dial (`Adaptive3dLinking::one_pass_hold`). With the
 /// dial off the same fixture cuts the rib at its full height: the red state
 /// of the test above, and the proof that a caller who does not set the dial
@@ -3499,7 +3691,9 @@ fn the_one_pass_dial_off_keeps_the_plan_without_the_rule_p41() {
             .expect("not cancelled")
     };
     let off = run(OnePassHold::Off);
-    let on = run(OnePassHold::RemainingStock);
+    let on = run(OnePassHold::RemainingStock {
+        link_kinematics: None,
+    });
     assert!(
         off.left_stock.is_none_or(|l| l.held_off_centres == 0),
         "the dial is off: {:?}",

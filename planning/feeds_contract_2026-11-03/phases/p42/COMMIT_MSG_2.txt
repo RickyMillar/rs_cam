@@ -1,0 +1,84 @@
+core: P42: a level of a Geodesic rough on remaining stock cuts the margin strip at a wall deeper than one pass (`region_wall_pass`, `wall_point_ships`); the wood in the mech and slit pockets of the wanaka back falls from 1 631.5 to 1 004.0 mm2
+
+P41 is a guard: a level keeps its tool off stock that stands more than one
+Depth/Pass plus the stay-down clearance above the cutter. It does not cut
+that stock. Measured on the Wanaka back: the plan of each level keeps its
+centre 0.65 mm from the tool-centre limit of a wall, so a strip stands from
+the stock top; under the guard each lower level stands 0.4 to 0.7 mm
+further off.
+
+The wall pass (`adaptive3d/level_contour.rs`). After the plan of a level,
+one contour runs along the boundary of each region that the plan cut, where
+stock stands in the tool disc on cells where no centre of the level has
+material to plan (`wall_read`).
+- The line: the raw outline of the region, one planner cell plus the cut
+  tolerance inside (the least distance of a centre from the raw boundary,
+  `grown_outlines` D19), simplified and sampled as the C4 band line.
+- The ship rule (`wall_point_ships`, lead rulings D-1): a point ships only
+  at a wall deeper than one pass. Either the next level would meet the
+  strip more than the one-pass limit above its cutter
+  (`OnePass::over_limit` against the level floor at `LevelSlot::next_z`),
+  or the model wall top over the strip stands more than the limit above the
+  floor of this level. A wall deeper than one pass gets the pass at each
+  level that reaches it; a stair tread of a draped slope gets none.
+- The Z: the level floor, raised so that no cell whose centre is inside the
+  disc stands more than one Depth/Pass above the cutter. The read repeats
+  while a round lowers the strip.
+- Not cut: a point outside the boundary clip, a point that the one-pass
+  rule blocks, and a point within one planner cell of held stock taller
+  than the limit.
+- The runs, the gap merge, the load cap (`FeedCapStart`,
+  `FeedCapSource::LevelContour`) and the emission are those of the C4
+  contour: `run_feed_cap` and `emit_runs` are shared, so the planner stamps
+  the path that the emitter ships.
+- No dial of its own (ruling D-4): the pass is part of
+  `OnePassHold::RemainingStock`, which now carries the link timing of the
+  gap merge. A fresh rough and a Contour Parallel rough do not get it.
+- `OnePass::over_limit` is the one height test of the rule; `deep_cell`
+  reads it too.
+
+Measured, HEAD against this tree (note P42, section 11.3):
+- Wanaka back, "Back rest 6 mm": body, link and wall cleanup rows 6.0 mm,
+  deepest sample 6.0 mm, entry 1.91 mm; 0 pieces deeper than 6.3 mm on the
+  replay; 522 to 578 s. Wood at the end: mech and slit pockets 1 631.5 to
+  1 004.0 mm2 (1 155.6 before P41); the slit V-bit meets 7.44 mm of wood
+  over its tip (10.60). Below the target with one node lowered: 0.2 to
+  0.1 mm2 (raw 12.1 to 12.2). 0 collisions. The fresh 18 mm rough keeps its
+  G-code.
+- The wall cleanup depth row of that op goes from within to exceeds,
+  advisory: 6.0 mm against 4.54 mm, a ratio of 1.32. The body row of the
+  same op is 6.0 against 3.20, 1.88, at HEAD too (ruling D-10 of round 3:
+  the row may exceed, not more than the body row).
+- Wanaka front, "Front 3D rough": 868 to 914 s (885 more moves at the walls
+  deeper than one pass); its wall cleanup row 4.21 against 3.72 mm, 1.13
+  (body 1.41).
+- rivmap100: the stored file and the Geodesic scratch copy keep their
+  bytes.
+
+Not done: the wall line follows the planned region, so where the guard
+holds centres the pass does not reach the strip of the level above
+(`not_landed/w4_wall_line_before_the_hold.patch`). The slot, the step
+shelf, the cavity interior and the regions under the small-region bound are
+as before.
+
+Tests: `--lib each_level_cuts_to_the_wall_that_it_can_reach_p42` (0.6 mm of
+wood at the foot of a wall with the pass, 1.2 mm with the guard alone) and
+`--lib a_wall_deeper_than_one_pass_ships_the_pass_at_each_level_p42` (the
+ship rule: a wall two passes deep ships at both levels, a stair tread and a
+pocket one pass deep ship none).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/mod.rs
+crates/rs_cam_core/src/adaptive3d/one_pass.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/compute/execute/rough_3d.rs
+planning/feeds_contract_2026-11-03/phases/P42_WALL_PASS_PER_LEVEL_2026-11-18.md
+planning/feeds_contract_2026-11-03/phases/p42/COMMIT_MSG_2.txt
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/w6_wall_pass.patch
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/w6_wall_pass.COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p42/not_landed/r2_wall_pass_next_level_rule.patch

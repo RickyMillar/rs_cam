@@ -332,14 +332,27 @@ pub struct Adaptive3dLinking {
 /// (cell 1.5 mm) moved its second level and raised its deepest simulated
 /// cut from 10.0 to 14.5 mm. `initial_stock` is not the switch: a caller
 /// can seed a fresh block on a coarse cell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// P42 (lead ruling D-4: no dial of its own): the wall pass of each level
+/// (`level_contour::region_wall_pass`, Geodesic Adaptive) is part of this
+/// rule. After its plan a level cuts the margin strip of the plan at a
+/// wall, one Depth/Pass at most, only where the next level would meet that
+/// strip more than the limit above its cutter. So the guard and the cut
+/// that makes the guard idle at a wall are one switch, with one premise.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum OnePassHold {
-    /// No centre is held off: the plan of every level is the plan without
-    /// the rule.
+    /// No centre is held off and no wall pass runs: the plan of every level
+    /// is the plan without the rule.
     #[default]
     Off,
-    /// The rule is on: the planner stock is the remaining (simulated) stock.
-    RemainingStock,
+    /// The rule and the wall pass are on: the planner stock is the
+    /// remaining (simulated) stock.
+    RemainingStock {
+        /// The machine's link timing, for the one feed-or-retract rule
+        /// (`machine::kinematics::retract_saves_time`) that joins two runs
+        /// of a wall pass on one ring. `None`: the runs are not joined.
+        link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    },
 }
 
 /// The rest region filter ([`Adaptive3dLinking::rest_region_filter`]).

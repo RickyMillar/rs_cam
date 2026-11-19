@@ -203,7 +203,9 @@ impl Adaptive3dRough<'_> {
                 // P41: the one-pass rule acts only on remaining stock, where
                 // the planner stock is the simulated stock.
                 one_pass_hold: if inputs.seed_stock.is_some() {
-                    crate::adaptive3d::OnePassHold::RemainingStock
+                    crate::adaptive3d::OnePassHold::RemainingStock {
+                        link_kinematics: self.link_kinematics.clone(),
+                    }
                 } else {
                     crate::adaptive3d::OnePassHold::Off
                 },

@@ -748,6 +748,10 @@ struct LevelSlot<'r> {
     index: usize,
     total: usize,
     region: Option<&'r AreaMask>,
+    /// The Z of the next level of this plan (of the By Area job, or of the
+    /// op), or `None` at its last level. The wall pass of the level reads
+    /// it (`level_contour::region_wall_pass`, P42).
+    next_z: Option<f64>,
 }
 
 /// Clear one Z level. The ByArea and the Global branches both call this
@@ -839,6 +843,7 @@ fn clear_planned_level(
                 cursor,
                 region,
                 Some(level_event),
+                slot.next_z,
                 cancel,
             )?;
         }
@@ -1464,8 +1469,19 @@ fn adaptive_3d_segments_probed(
         one_pass: super::one_pass::OnePass::new(
             params.depth.depth_per_pass,
             params.linking.stay_down_clearance_mm,
-            params.linking.one_pass_hold == super::OnePassHold::RemainingStock,
+            matches!(
+                params.linking.one_pass_hold,
+                super::OnePassHold::RemainingStock { .. }
+            ),
         ),
+        wall_pass: match &params.linking.one_pass_hold {
+            super::OnePassHold::Off => None,
+            super::OnePassHold::RemainingStock { link_kinematics } => {
+                Some(super::level_contour::WallPass {
+                    link_kinematics: link_kinematics.clone(),
+                })
+            }
+        },
         region_openings: std::cell::RefCell::new(Vec::new()),
         level_probe: probe.then(|| std::cell::RefCell::new(LevelProbeBuffer::default())),
         // C4: the reach band, when the option is on and the rough meets
@@ -1568,6 +1584,7 @@ fn adaptive_3d_segments_probed(
                             index: li,
                             total: region_levels.len(),
                             region: Some(mask),
+                            next_z: region_levels.get(li + 1).copied(),
                         },
                         &mut segments,
                         &mut cursor,
@@ -1669,6 +1686,7 @@ fn adaptive_3d_segments_probed(
                         index: level_idx,
                         total: z_levels.len(),
                         region: None,
+                        next_z: z_levels.get(level_idx + 1).copied(),
                     },
                     &mut segments,
                     &mut cursor,
