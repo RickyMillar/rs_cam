@@ -1,0 +1,125 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index d48ba8f90..3b46463a0 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -3041,6 +3041,7 @@ fn plan_one_outline(
+         return Ok((Vec::new(), Vec::new()));
+     };
+     let (segs_2d_raw, turns) = (plan.segments, plan.turns);
++    p43_stage("plan", z_level, region_idx, &segs_2d_raw);
+     // The residue cleanup the 2D top-level entry point runs (boundary walks,
+     // contour-parallel offsets, mop patches). Research C22: a plan with
+     // clearing turns takes the cleanup whose replay admits them (the same
+@@ -3055,6 +3056,7 @@ fn plan_one_outline(
+             &turns,
+         )
+     };
++    p43_stage("cleanup", z_level, region_idx, &segs_2d_raw);
+     // Research C12, C22: under the 2D pass load the replay admits a link
+     // only within the load and stamps it on the planner grid, as a cut at
+     // depth. The links stay `Link`s here; `clear_one_region` emits each one
+@@ -3772,6 +3774,12 @@ fn clear_one_region(
+         Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
+         None => planner_outlines(region_polygon, params_2d),
+     };
++    if std::env::var("P43PROBE").is_ok() {
++        for (k, o) in outlines.iter().enumerate() {
++            let pts: Vec<String> = o.exterior.iter().filter(|p| p.x < 42.0 && p.y > 205.0 && p.y < 240.0).map(|p| format!("({:.2},{:.2})", p.x, p.y)).collect();
++            eprintln!("P43 z {z_level:.3} region {region_idx} outline {k} (2D material outline; centre = inset R {}) pts {}", ctx.tool_radius, pts.join(" "));
++        }
++    }
+     plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)
+ }
+ 
+@@ -4382,6 +4390,43 @@ fn coalesce_level_entries(
+     clippy::too_many_arguments,
+     reason = "each parameter is a separate input that the callers supply"
+ )]
++#[allow(clippy::all, clippy::pedantic, clippy::print_stderr, reason = "temporary probe")]
++fn p43_stage(tag: &str, z_level: f64, region_idx: usize, segs: &[crate::adaptive::AdaptiveSegment]) {
++    if std::env::var("P43PROBE").is_err() { return; }
++    // The least X of a cut point, a link point and a rapid point in the window y 205..240 (setup frame).
++    let (mut cut, mut link, mut rapid) = (f64::INFINITY, f64::INFINITY, f64::INFINITY);
++    let (mut ncut, mut on_edge) = (0usize, 0usize);
++    for s in segs {
++        match s {
++            crate::adaptive::AdaptiveSegment::Cut(path) => for p in path { if p.y > 205.0 && p.y < 240.0 { cut = cut.min(p.x); ncut += 1; if p.x < 34.9 { on_edge += 1; } } },
++            crate::adaptive::AdaptiveSegment::Link(p) => if p.y > 205.0 && p.y < 240.0 { link = link.min(p.x); },
++            crate::adaptive::AdaptiveSegment::Rapid(p) => if p.y > 205.0 && p.y < 240.0 { rapid = rapid.min(p.x); },
++            _ => {}
++        }
++    }
++    eprintln!("P43 stage {tag} z {z_level:.3} region {region_idx}: least x in window: cut {cut:.3} link {link:.3} rapid {rapid:.3}; cut points {ncut}, of them x < 34.9: {on_edge}");
++}
++
++#[allow(clippy::all, clippy::pedantic, clippy::print_stderr, reason = "temporary probe")]
++fn p43_probe(tag: &str, ctx: &ClearZLevelContext<'_>, stock: &TriDexelStock, surface_hm: &SurfaceHeightmap, z_level: f64, regions: &[crate::polygon::Polygon2]) {
++    if std::env::var("P43PROBE").is_err() { return; }
++    let g = &stock.z_grid;
++    eprintln!("P43 {tag} z {z_level:.3} grid origin ({:.3},{:.3}) cell {} rows {} cols {}", g.origin_u, g.origin_v, g.cell_size, g.rows, g.cols);
++    let row = ((221.5 - g.origin_v) / g.cell_size).round() as usize;
++    let mut line = String::new();
++    for col in 0..g.cols {
++        let (x, y) = g.cell_to_world(row, col);
++        if x > 22.0 && x < 42.0 {
++            line += &format!(" [x {:.2} y {:.2} top {:.3} surf {:.3} mat {}]", x, y, super::stock_top_z_at(stock, row, col), surface_hm.z_or_bbox_floor_at(row, col), cell_has_material(stock, surface_hm, row, col, z_level, ctx.stock_to_leave));
++        }
++    }
++    eprintln!("P43 {tag} z {z_level:.3} row:{line}");
++    for (k, r) in regions.iter().enumerate() {
++        let pts: Vec<String> = r.exterior.iter().filter(|p| p.x < 42.0 && p.y > 205.0 && p.y < 240.0).map(|p| format!("({:.2},{:.2})", p.x, p.y)).collect();
++        eprintln!("P43 {tag} z {z_level:.3} region {k} raw pts {}", pts.join(" "));
++    }
++}
++
+ pub(super) fn clear_z_level_slice(
+     ctx: &ClearZLevelContext<'_>,
+     material_stock: &mut TriDexelStock,
+@@ -4439,6 +4484,7 @@ pub(super) fn clear_z_level_slice(
+         return Ok(());
+     };
+ 
++    p43_probe("before", ctx, material_stock, surface_hm, z_level, &regions);
+     let level_marker_index = level_marker.map(|event| {
+         segments.push(Adaptive3dSegment::Marker(event));
+         segments.len().saturating_sub(1)
+@@ -4563,6 +4609,11 @@ pub(super) fn clear_z_level_slice(
+         replaced_entries,
+     );
+     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
++    p43_probe("after", ctx, material_stock, surface_hm, z_level, &[]);
++    if std::env::var("P43PROBE").is_ok() {
++        let held = ctx.one_pass.held.borrow();
++        eprintln!("P43 z {z_level:.3} one-pass on {} held centres so far {} cells {}", ctx.one_pass.on, held.centres, held.cells.len());
++    }
+     // P42: the wall pass of the level, after its plan (`region_wall_pass`):
+     // the strip that the margin of the plan leaves at each wall of a
+     // planned region goes down one pass at this level.
+@@ -4578,6 +4629,9 @@ pub(super) fn clear_z_level_slice(
+         segments,
+         cursor,
+     );
++    if std::env::var("P43PROBE").is_ok() {
++        eprintln!("P43 z {z_level:.3} wall pass runs {}", wall.runs);
++    }
+     if let Some(scope) = level_scope.as_ref() {
+         scope.set_counter("wall_pass_runs", wall.runs as f64);
+         scope.set_counter("cut_segments", cut_count as f64);
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index cf094940f..d95a86735 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1472,9 +1472,12 @@ fn adaptive_3d_segments_probed(
+             matches!(
+                 params.linking.one_pass_hold,
+                 super::OnePassHold::RemainingStock { .. }
+-            ),
++            ) || std::env::var("P43MODE").is_ok_and(|m| m == "guard" || m == "p42"),
+         ),
+         wall_pass: match &params.linking.one_pass_hold {
++            super::OnePassHold::Off if std::env::var("P43MODE").is_ok_and(|m| m == "p42") => {
++                Some(super::level_contour::WallPass { link_kinematics: None })
++            }
+             super::OnePassHold::Off => None,
+             super::OnePassHold::RemainingStock { link_kinematics } => {
+                 Some(super::level_contour::WallPass {

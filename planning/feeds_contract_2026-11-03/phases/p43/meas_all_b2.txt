@@ -1,0 +1,44 @@
+total_runtime_s 9682.9 collisions 0 rapid 0 failed 0
+1 Back bulk rough 18 mm moves 36079 | body 4.166/2.345=1.78 (exceeds) deepest 4.166; entry 1.969/2.345=0.84 (within) deepest 1.969; cleanup 4.166/2.523=1.65 (exceeds) deepest 4.233; link 4.166/2.369=1.76 (exceeds) deepest 4.166
+2 Back rest 6 mm (cavity, hollow, la moves 15239 | body 6.000/3.197=1.88 (exceeds) deepest 6.130; entry 1.885/3.001=0.63 (within) deepest 1.894; cleanup 6.000/4.620=1.30 (exceeds) deepest 6.001; link 6.000/3.412=1.76 (exceeds) deepest 6.000
+row states of the setup: {'exceeds': 7, 'no_number': 156, 'not_applicable': 44, 'within': 93}
+pieces 36033, cutting 17154, deeper than 4.966: 2 pieces, 576 mm of feed; deepest 8.62
+  of them descending pieces: 0; between 6.0 and 4.966: 0; nodes lowered > bar: 11
+strips (more than 5 nodes) 1; grazes (1 to 5 nodes) 1
+pieces 15163, cutting 13391, deeper than 6.3: 1 pieces, 1 mm of feed; deepest 8.86
+  of them descending pieces: 0; between 6.0 and 6.3: 1; nodes lowered > bar: 2
+below target after 'Face back to T1': raw 0.0 mm2; lowered one node 0.0 mm2 (0 nodes, to 0.00 mm)
+below target after 'Back bulk rough 18 mm': raw 5.4 mm2; lowered one node 0.1 mm2 (2 nodes, to 0.41 mm)
+below target after 'Back rest 6 mm [cavity, hollow, lakes, p': raw 16.4 mm2; lowered one node 0.1 mm2 (2 nodes, to 0.41 mm)
+below target after 'Cavity rest pocket 6 mm': raw 21.6 mm2; lowered one node 0.1 mm2 (2 nodes, to 0.41 mm)
+time of 'Back bulk rough 18 mm': 801 s, fed 89.16 m, rapids 2594 mm
+time of 'Back rest 6 mm [cavity, hollow, lakes, p': 580 s, fed 38.80 m, rapids 4326 mm
+time of 'Cavity rest pocket 6 mm': 183 s, fed 8.39 m, rapids 5097 mm
+== b2 after id 2: stock after 'Back rest 6 mm [cavity, hollow, lakes, pockets]' ; cell 0.2 mm ; bar 0.3 mm ; model area 158158 mm2
+above the target by > bar: 10961.0 mm2 ; of it by design (a 6 mm flat tool cannot reach: inside corners, narrow floors): 3848.5 mm2 ; above the 6 mm reach surface: 7112.4 mm2
+  cavity wall band (<= 5 mm inside the outline)        2070.2 mm2  tallest 12.27 mm at G-code (92.0, 425.2)  volume    13809 mm3
+  cavity interior (lakes, hollow, rivers)              3042.6 mm2  tallest  6.39 mm at G-code (240.0, 186.8)  volume     8721 mm3
+  step shelf (Y 104..118)                               670.6 mm2  tallest  5.00 mm at G-code (49.8, 104.0)  volume     2480 mm3
+  slot X 243..292 Y 53..64                              414.2 mm2  tallest 21.00 mm at G-code (246.6, 54.2)  volume     8668 mm3
+  mech and slit pockets (Y < 104)                       914.8 mm2  tallest 20.70 mm at G-code (141.6, 39.2)  volume     9965 mm3
+  other                                                   0.0 mm2
+== b2 end: stock after 'Day strip slit V60' ; cell 0.2 mm ; bar 0.3 mm ; model area 158158 mm2
+above the target by > bar: 4834.4 mm2 ; of it by design (a 6 mm flat tool cannot reach: inside corners, narrow floors): 2206.5 mm2 ; above the 6 mm reach surface: 2627.8 mm2
+  cavity wall band (<= 5 mm inside the outline)          62.0 mm2  tallest  5.00 mm at G-code (350.2, 118.0)  volume      213 mm3
+  cavity interior (lakes, hollow, rivers)               570.4 mm2  tallest  6.39 mm at G-code (240.0, 186.8)  volume     2193 mm3
+  step shelf (Y 104..118)                               670.6 mm2  tallest  5.00 mm at G-code (49.8, 104.0)  volume     2480 mm3
+  slot X 243..292 Y 53..64                              412.6 mm2  tallest 21.00 mm at G-code (246.6, 54.2)  volume     8637 mm3
+  mech and slit pockets (Y < 104)                       912.2 mm2  tallest 20.70 mm at G-code (141.6, 39.2)  volume     9944 mm3
+  other                                                   0.0 mm2
+ramp nodes under the target (lowered over one node) by > 0.3: 0 nodes in 0 entries, max 0.00 mm
+entries that the model clip touched: 3 of 124
+   the nodes under the lowered target, by the class of the piece: {}
+entries whose planner read is more than 0.5 mm above the replay disc top: 20 (max 18.00 mm); their ramp pieces that cut nothing: 1338.8 mm fed
+ramp pieces that cut nothing, all entries: 2663.6 mm fed
+entries with a ramp point outside the centre region: 0 (max -27.15 mm)
+nodes that <b2> leaves above <head> after 'Back rest 6 mm [cavity, hollow' by > 0.3: 2672 = 106.9 mm2; tallest 20.12 mm; volume 368 mm3
+   box G-code X 48.2..344.8 Y 39.6..120.0
+   'Cavity rest pocket 6 mm' lowers    20.2 mm2 of it; the tallest column that it takes there: 4.00 mm at G-code (321.8, 118.8) (stock 20.50 to 16.50)
+   'Day strip slit V60' lowers     1.1 mm2 of it; the tallest column that it takes there: 5.48 mm at G-code (50.0, 95.6) (stock 8.40 to 2.92)
+   still above the target by > 0.3 at the end: 85.6 mm2; tallest 20.70 mm
+24

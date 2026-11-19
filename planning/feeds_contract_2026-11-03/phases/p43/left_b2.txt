@@ -1,0 +1,5 @@
+nodes that <b2> leaves above <head> after 'Back rest 6 mm [cavity, hollow' by > 0.3: 2672 = 106.9 mm2; tallest 20.12 mm; volume 368 mm3
+   box G-code X 48.2..344.8 Y 39.6..120.0
+   'Cavity rest pocket 6 mm' lowers    20.2 mm2 of it; the tallest column that it takes there: 4.00 mm at G-code (321.8, 118.8) (stock 20.50 to 16.50)
+   'Day strip slit V60' lowers     1.1 mm2 of it; the tallest column that it takes there: 5.48 mm at G-code (50.0, 95.6) (stock 8.40 to 2.92)
+   still above the target by > 0.3 at the end: 85.6 mm2; tallest 20.70 mm

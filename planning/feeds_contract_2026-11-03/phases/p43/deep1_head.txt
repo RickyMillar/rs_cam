@@ -1,0 +1,15 @@
+pieces 31748, cutting 17581, deeper than 4.966: 36 pieces, 606 mm of feed; deepest 14.50
+  of them descending pieces: 0; between 6.0 and 4.966: 0; nodes lowered > bar: 6953
+   piece 25709: (341.0,414.5,16.50) -> (55.5,415.7,16.50) len 285.5 depth 8.57 nodes 5 worst node (54.0,424.6) top before 25.07
+   piece 24000: (53.3,131.6,16.50) -> (53.3,297.8,16.50) len 166.2 depth 9.00 nodes 2865 worst node (44.4,149.4) top before 25.50
+   piece 23543: (59.3,175.8,16.50) -> (53.4,184.8,16.50) len 10.7 depth 9.00 nodes 212 worst node (45.6,180.4) top before 25.50
+   piece 25679: (53.3,403.8,16.50) -> (53.3,412.8,16.50) len 9.0 depth 8.70 nodes 98 worst node (44.4,413.6) top before 25.20
+   piece 23984: (53.3,165.3,16.50) -> (53.3,156.4,16.50) len 9.0 depth 9.00 nodes 314 worst node (45.6,151.8) top before 25.50
+   piece 22764: (53.3,223.8,16.50) -> (56.3,215.6,16.50) len 8.7 depth 9.00 nodes 4 worst node (45.6,218.6) top before 25.50
+   piece 23995: (53.3,147.8,16.50) -> (53.3,139.6,16.50) len 8.2 depth 9.00 nodes 290 worst node (44.4,139.4) top before 25.50
+   piece 22971: (56.7,201.3,16.50) -> (53.3,208.6,16.50) len 8.1 depth 9.00 nodes 238 worst node (45.6,203.8) top before 25.50
+   piece 24401: (53.3,403.9,16.50) -> (53.3,411.9,16.50) len 8.0 depth 8.86 nodes 267 worst node (44.4,410.6) top before 25.36
+   piece 23982: (57.8,159.5,16.50) -> (53.3,165.3,16.50) len 7.2 depth 9.00 nodes 229 worst node (45.6,160.8) top before 25.50
+   piece 14279: (236.3,123.3,20.50) -> (230.3,121.7,20.50) len 6.2 depth 5.00 nodes 1 worst node (232.4,113.0) top before 25.50
+   piece 22390: (55.8,234.3,16.50) -> (54.4,240.3,16.50) len 6.2 depth 9.00 nodes 29 worst node (45.6,238.2) top before 25.50
+strips (more than 5 nodes) 30; grazes (1 to 5 nodes) 6

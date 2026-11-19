@@ -1,0 +1,8 @@
+P43 z 21.334 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 z 21.334 region 1 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 z 21.334 one-pass on true held centres so far 0 cells 0
+P43 z 21.334 wall pass runs 0
+P43 z 17.168 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 z 17.168 region 1 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 z 17.168 one-pass on true held centres so far 442 cells 344
+P43 z 17.168 wall pass runs 0

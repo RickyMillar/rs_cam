@@ -1,0 +1,54 @@
+planning: P43: the one-pass promise on a fresh rough: the cause, the design, the measures, and the patch that is not landed
+
+A record only. No code of P43 is in the tree.
+
+The defect: "Back bulk rough 18 mm" of the Wanaka back (fresh stock, Geodesic
+Adaptive, 4.166 mm per pass) cuts 9.0 mm deep on the shelf at the frame walls.
+
+The cause, measured: the 2D plan of a level does not always cut to the limit of
+its own tool-centre region. At levels 21.334 and 17.168 its last wrap stands
+one 2D cell (1.52 mm) inside the limit, and the 2D cleanup adds nothing there.
+Level 13.002 has another region shape, its plan runs on the limit, and the edge
+of its disc takes the strip that two levels left. The P41 guard and the P42
+wall pass make a fresh rough worse on its 1.5 mm planner cell (measured again
+at 4.166 mm per pass: body 9.0 to 10.33 and 10.57 mm).
+
+The patch (phases/p43/not_landed/p43_fresh_wall_pass.patch): a third variant of
+the dial, `OnePassHold::FreshStock`. Each level of a fresh Geodesic rough ends
+with a wall line one planner cell less three cut tolerances inside the raw
+region boundary, at each wall deeper than one pass, with no guard and no read
+of a strip.
+
+Measured with the patch, setup "1 Back": the body row and the deepest sample of
+id 1 fall from 9.0 to 4.166 mm; the replay pieces deeper than 4.966 mm fall
+from 36 (6 953 nodes) to 2 (11 nodes); id 1 takes 801 s (689 s). The patch is
+not landed because the replay bar is 0 pieces: 2 pieces stay at two corners of
+the frame (id 1), and 1 piece of 2 nodes appears in id 2. Setup "3 Front" keeps
+each row. rivmap100 keeps its G-code (no stored file has a fresh Geodesic
+rough).
+
+The note holds the decisions for the lead (section 8).
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+planning/feeds_contract_2026-11-03/phases/P43_ONE_PASS_FRESH_ROUGH_2026-11-20.md
+planning/feeds_contract_2026-11-03/phases/p43/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p43/classes.py
+planning/feeds_contract_2026-11-03/phases/p43/deep1_b2.txt
+planning/feeds_contract_2026-11-03/phases/p43/deep1_head.txt
+planning/feeds_contract_2026-11-03/phases/p43/deep2_b2.txt
+planning/feeds_contract_2026-11-03/phases/p43/left_b2.txt
+planning/feeds_contract_2026-11-03/phases/p43/meas43.sh
+planning/feeds_contract_2026-11-03/phases/p43/meas_all_b2.txt
+planning/feeds_contract_2026-11-03/phases/p43/meas_all_head.txt
+planning/feeds_contract_2026-11-03/phases/p43/not_landed/b1_line_on_the_grown_outline.patch
+planning/feeds_contract_2026-11-03/phases/p43/not_landed/p43_fresh_wall_pass.patch
+planning/feeds_contract_2026-11-03/phases/p43/probe1_output.txt
+planning/feeds_contract_2026-11-03/phases/p43/probe2.patch
+planning/feeds_contract_2026-11-03/phases/p43/probe2_guard_output.txt
+planning/feeds_contract_2026-11-03/phases/p43/probe2_p42_output.txt
+planning/feeds_contract_2026-11-03/phases/p43/probe2_stage_output.txt
+planning/feeds_contract_2026-11-03/phases/p43/rows.py
+planning/feeds_contract_2026-11-03/phases/p43/run_cli.sh
+planning/feeds_contract_2026-11-03/phases/p43/samples.py
+planning/feeds_contract_2026-11-03/phases/p43/strip.py

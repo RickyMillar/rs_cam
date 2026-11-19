@@ -1,0 +1,3 @@
+pieces 15163, cutting 13391, deeper than 6.3: 1 pieces, 1 mm of feed; deepest 8.86
+  of them descending pieces: 0; between 6.0 and 6.3: 1; nodes lowered > bar: 2
+   piece 2569: (98.5,100.4,16.55) -> (97.0,100.4,16.55) len 1.5 depth 8.86 nodes 2 worst node (98.2,103.4) top before 25.41

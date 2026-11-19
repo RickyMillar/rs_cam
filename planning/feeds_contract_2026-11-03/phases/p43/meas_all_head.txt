@@ -1,0 +1,39 @@
+total_runtime_s 9588.1 collisions 0 rapid 0 failed 0
+1 Back bulk rough 18 mm moves 31797 | body 9.000/2.397=3.76 (exceeds) deepest 9.000; entry 1.969/2.345=0.84 (within) deepest 1.969; cleanup 2.592/3.533=0.73 (within) deepest 2.592; link 4.166/2.369=1.76 (exceeds) deepest 4.166
+2 Back rest 6 mm (cavity, hollow, la moves 14982 | body 6.000/3.197=1.88 (exceeds) deepest 6.000; entry 1.908/3.001=0.64 (within) deepest 1.915; cleanup 6.000/4.540=1.32 (exceeds) deepest 6.000; link 6.000/3.423=1.75 (exceeds) deepest 6.000
+row states of the setup: {'exceeds': 6, 'no_number': 156, 'not_applicable': 44, 'within': 94}
+pieces 31748, cutting 17581, deeper than 4.966: 36 pieces, 606 mm of feed; deepest 14.50
+  of them descending pieces: 0; between 6.0 and 4.966: 0; nodes lowered > bar: 6953
+strips (more than 5 nodes) 30; grazes (1 to 5 nodes) 6
+pieces 14903, cutting 13331, deeper than 6.3: 0 pieces, 0 mm of feed; deepest 6.20
+  of them descending pieces: 0; between 6.0 and 6.3: 3; nodes lowered > bar: 0
+below target after 'Face back to T1': raw 0.0 mm2; lowered one node 0.0 mm2 (0 nodes, to 0.00 mm)
+below target after 'Back bulk rough 18 mm': raw 5.0 mm2; lowered one node 0.0 mm2 (0 nodes, to 0.00 mm)
+below target after 'Back rest 6 mm [cavity, hollow, lakes, p': raw 15.6 mm2; lowered one node 0.0 mm2 (0 nodes, to 0.00 mm)
+below target after 'Cavity rest pocket 6 mm': raw 20.8 mm2; lowered one node 0.0 mm2 (0 nodes, to 0.00 mm)
+time of 'Back bulk rough 18 mm': 689 s, fed 78.69 m, rapids 2581 mm
+time of 'Back rest 6 mm [cavity, hollow, lakes, p': 579 s, fed 38.89 m, rapids 4157 mm
+time of 'Cavity rest pocket 6 mm': 193 s, fed 8.83 m, rapids 5967 mm
+== head after id 2: stock after 'Back rest 6 mm [cavity, hollow, lakes, pockets]' ; cell 0.2 mm ; bar 0.3 mm ; model area 158158 mm2
+above the target by > bar: 11888.6 mm2 ; of it by design (a 6 mm flat tool cannot reach: inside corners, narrow floors): 3823.0 mm2 ; above the 6 mm reach surface: 8065.6 mm2
+  cavity wall band (<= 5 mm inside the outline)        2772.2 mm2  tallest 12.28 mm at G-code (87.8, 424.8)  volume    17244 mm3
+  cavity interior (lakes, hollow, rivers)              3042.9 mm2  tallest  8.62 mm at G-code (346.8, 421.4)  volume     8723 mm3
+  step shelf (Y 104..118)                               829.8 mm2  tallest  5.00 mm at G-code (49.8, 104.0)  volume     3687 mm3
+  slot X 243..292 Y 53..64                              414.2 mm2  tallest 21.00 mm at G-code (246.6, 54.2)  volume     8668 mm3
+  mech and slit pockets (Y < 104)                      1006.4 mm2  tallest 20.70 mm at G-code (141.6, 39.2)  volume    12463 mm3
+  other                                                   0.0 mm2
+== head end: stock after 'Day strip slit V60' ; cell 0.2 mm ; bar 0.3 mm ; model area 158158 mm2
+above the target by > bar: 5062.2 mm2 ; of it by design (a 6 mm flat tool cannot reach: inside corners, narrow floors): 2181.8 mm2 ; above the 6 mm reach surface: 2880.4 mm2
+  cavity wall band (<= 5 mm inside the outline)          63.7 mm2  tallest  5.00 mm at G-code (350.2, 118.0)  volume      220 mm3
+  cavity interior (lakes, hollow, rivers)               570.4 mm2  tallest  6.39 mm at G-code (240.0, 186.8)  volume     2193 mm3
+  step shelf (Y 104..118)                               829.8 mm2  tallest  5.00 mm at G-code (49.8, 104.0)  volume     3687 mm3
+  slot X 243..292 Y 53..64                              412.6 mm2  tallest 21.00 mm at G-code (246.6, 54.2)  volume     8637 mm3
+  mech and slit pockets (Y < 104)                      1003.9 mm2  tallest 20.70 mm at G-code (141.6, 39.2)  volume    12443 mm3
+  other                                                   0.0 mm2
+ramp nodes under the target (lowered over one node) by > 0.3: 0 nodes in 0 entries, max 0.00 mm
+entries that the model clip touched: 3 of 131
+   the nodes under the lowered target, by the class of the piece: {}
+entries whose planner read is more than 0.5 mm above the replay disc top: 25 (max 18.00 mm); their ramp pieces that cut nothing: 1348.7 mm fed
+ramp pieces that cut nothing, all entries: 2575.4 mm fed
+entries with a ramp point outside the centre region: 0 (max -27.15 mm)
+24

@@ -1,0 +1,5 @@
+pieces 36033, cutting 17154, deeper than 4.966: 2 pieces, 576 mm of feed; deepest 8.62
+  of them descending pieces: 0; between 6.0 and 4.966: 0; nodes lowered > bar: 11
+   piece 30829: (341.6,416.0,16.50) -> (53.0,416.1,16.50) len 288.6 depth 8.57 nodes 7 worst node (48.8,424.0) top before 25.07
+   piece 30828: (341.5,128.9,16.50) -> (341.6,416.0,16.50) len 287.1 depth 8.62 nodes 4 worst node (350.4,417.6) top before 25.12
+strips (more than 5 nodes) 1; grazes (1 to 5 nodes) 1

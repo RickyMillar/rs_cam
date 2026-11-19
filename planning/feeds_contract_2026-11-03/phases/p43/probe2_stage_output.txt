@@ -1,0 +1,32 @@
+P43 z 21.334 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 21.334 region 0: least x in window: cut 36.282 link 36.282 rapid inf; cut points 1350, of them x < 34.9: 0
+P43 stage cleanup z 21.334 region 0: least x in window: cut 36.282 link 321.282 rapid 36.282; cut points 1365, of them x < 34.9: 0
+P43 z 21.334 region 1 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 21.334 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 stage cleanup z 21.334 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 z 21.334 one-pass on false held centres so far 0 cells 0
+P43 z 21.334 wall pass runs 0
+P43 z 17.168 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 17.168 region 0: least x in window: cut 36.282 link 36.282 rapid inf; cut points 1350, of them x < 34.9: 0
+P43 stage cleanup z 17.168 region 0: least x in window: cut 36.282 link 321.282 rapid 36.282; cut points 1365, of them x < 34.9: 0
+P43 z 17.168 region 1 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 17.168 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 stage cleanup z 17.168 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 z 17.168 one-pass on false held centres so far 0 cells 0
+P43 z 17.168 wall pass runs 0
+P43 z 13.002 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 13.002 region 0: least x in window: cut 34.760 link 34.760 rapid inf; cut points 1204, of them x < 34.9: 2
+P43 stage cleanup z 13.002 region 0: least x in window: cut 34.760 link inf rapid 34.760; cut points 1220, of them x < 34.9: 2
+P43 z 13.002 region 1 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 13.002 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 stage cleanup z 13.002 region 1: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 z 13.002 one-pass on false held centres so far 0 cells 0
+P43 z 13.002 wall pass runs 0
+P43 z 11.000 region 0 outline 0 (2D material outline; centre = inset R 9) pts 
+P43 stage plan z 11.000 region 0: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 stage cleanup z 11.000 region 0: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 z 11.000 one-pass on false held centres so far 0 cells 0
+P43 z 11.000 wall pass runs 0
+P43 z 19.500 region 0 outline 0 (2D material outline; centre = inset R 3) pts 
+P43 stage plan z 19.500 region 0: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
+P43 stage cleanup z 19.500 region 0: least x in window: cut inf link inf rapid inf; cut points 0, of them x < 34.9: 0
