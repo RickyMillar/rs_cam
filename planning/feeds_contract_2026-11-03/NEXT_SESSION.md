@@ -30,6 +30,24 @@
   fix; the wall pass width at a corner (4.27 mm at one pass) has no force cap, the planner has
   no force model; narrow regions and Contour Parallel on remaining stock get no wall pass; the
   rule is off on fresh stock; sections 9 and 11.5 of the P42 note.
+- 2026-11-20, later. Operator ruling on the force budget: "Bring the back bulk rough in line".
+  Proposal `463be53ee`: "Back bulk rough 18 mm" cuts 4.166 mm per pass (was 10.0).
+- P43 (`4586e9bb7`; note `phases/P43_ONE_PASS_FRESH_ROUGH_2026-11-20.md`; records `9a513376f`,
+  `0b626b072`): a fresh Geodesic rough gets the wall pass with no guard
+  (`OnePassHold::FreshStock`, `WallRule::FreshStock`, the line of `fresh_line_shift`, on a
+  sweep region too). Back bulk rough deepest body 9.0 to 4.166 mm (689 to 801 s); front bulk
+  rough 5.73 to 4.166 mm; "1 Back" 9 683 s, "3 Front" 8 762 s; 0 collisions. Lead rulings: the
+  replay bar counts only a node 0.1 mm or more inside the disc edge (`phases/p43/deepc.py`);
+  the line 1.2 mm from the raw boundary stands; "Front 3D rough" body 4.31 to 4.70 mm is
+  accepted (its limit is 6.03 mm).
+- Open from P43 (clean-up list): a wall line beside stock that no level plans cuts 7.79 mm on a
+  lib fixture (throat 20.5 mm, 18 mm tool; trial fix `phases/p43/not_landed/
+  b3_trial_conservative_top.patch`, not measured on the job); a fed climb at a step edge cuts
+  up to 0.41 mm under the model inside the 0.1 mm guard tolerance (HEAD class; the fix is two
+  moves, up then over, in `plan_and_emit_region`); `emit_runs` does not split a step down of a
+  ring (D-3); the source (the 2D plan stops one 2D cell inside its region; the sweep on a fresh
+  rough); rivmap100 has no fresh Geodesic file; setup "3 Front" has no model frame in the
+  replay instruments (below target and wood left are not measured there).
 
 ## State on 2026-11-18
 
