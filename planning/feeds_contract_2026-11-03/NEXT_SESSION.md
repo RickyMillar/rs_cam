@@ -1,6 +1,37 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-18 (read this first)
+## State on 2026-11-20 (read this first)
+
+- Committed, not pushed: P41 (`03762ea4e`; note `phases/P41_ONE_PASS_REGION_GRID_2026-11-18.md`):
+  the one-pass rule in the region grid (`adaptive3d/one_pass.rs`, the dial
+  `linking.one_pass_hold`, set by the session only on remaining stock). Wanaka back id 2 body
+  row 20.7 to 6.0 mm. Operator ruling: "Guard now, wall passes next".
+- P42 step 0 (`1ef06d1fe`): a depth row states the deepest sample of its group on the wire
+  (`limit_rows[..].deepest`). No GUI face shows it yet.
+- P42 (`e2e10271f`; note `phases/P42_WALL_PASS_PER_LEVEL_2026-11-18.md`, rounds 1 and 2 are
+  records `1875dd3f8`, `b68262ebc`): a level of a Geodesic rough on remaining stock cuts the
+  margin strip at a wall deeper than one pass (`region_wall_pass`, `wall_point_ships`). Mech and
+  slit pockets 1 631.5 to 1 004.0 mm2 (1 155.6 before P41); slit V-bit wood over the tip back to
+  7.44 mm; id 2 578 s; id 21 868 to 914 s. The agent ran only clippy and a lib subset after its
+  last refactor; the lead gate is still owed.
+- The whole proposal ran on the `e2e10271f` build (2026-11-20): "1 Back" 9 185 s, "3 Front"
+  8 834 s, 0 collisions, 0 rapid collisions, 0 failed checks on each op. Each peck of the pin
+  drill lifts to Z 30.5, out of the hole (operator: the pecks make the 30 mm depth on a 25 mm
+  flute acceptable).
+- OPEN for the cut, the operator's ruling: the force budget (35.3 N). The depth rows that
+  exceed, advisory: "Back bulk rough 18 mm" 10.0 mm against 2.36 mm; "Back rest 6 mm" body 6.0
+  against 3.20, cleanup 6.0 against 4.54; "Front bulk rough 18 mm" 4.16 against 2.35; "Front
+  3D rough" 4.31 against 3.05; "Day strip slit V60" 4.60 against 4.51.
+- OPEN for the cut: "Day strip slit V60" has 8 moves with wood above its 5.5 mm flute (7.44 mm
+  over the tip); wood no toolpath cuts on the back (the 8.6 mm slot 412.6 mm2 at 21 mm, the step
+  shelf 773.8 mm2, the cavity interior 570 mm2, 1 004 mm2 in the pockets); tool sizes are
+  estimates; three Project Curve depths are negative (the export warns).
+- Open from P41 and P42: the D55 fixture changed with no proof that it is red without the D55
+  fix; the wall pass width at a corner (4.27 mm at one pass) has no force cap, the planner has
+  no force model; narrow regions and Contour Parallel on remaining stock get no wall pass; the
+  rule is off on fresh stock; sections 9 and 11.5 of the P42 note.
+
+## State on 2026-11-18
 
 - Committed, not pushed: P39 (`49f9420b3`, `0a1f60fe1`; note
   `phases/P39_RAMP_ENTRY_STOCK_2026-11-17.md`): the planner chooses, reads and stamps the ramp of
