@@ -314,9 +314,10 @@ pub struct Adaptive3dLinking {
     /// `rest_max_region_width_mm`). `None`: every region is cut. The
     /// session sets it only on remaining stock (a rest rough).
     pub rest_region_filter: Option<RestRegionFilter>,
-    /// P41: the one-pass rule of the level grid ([`OnePassHold`]). The
-    /// session sets it only on remaining stock (a rest rough); a caller
-    /// that builds the params directly states it.
+    /// P41, P43: the one-pass rule ([`OnePassHold`]). The session sets
+    /// `RemainingStock` on remaining stock (a rest rough) and `FreshStock`
+    /// on a fresh block; a caller that builds the params directly states
+    /// it.
     pub one_pass_hold: OnePassHold,
 }
 
@@ -339,6 +340,28 @@ pub struct Adaptive3dLinking {
 /// wall, one Depth/Pass at most, only where the next level would meet that
 /// strip more than the limit above its cutter. So the guard and the cut
 /// that makes the guard idle at a wall are one switch, with one premise.
+///
+/// P43: a fresh rough has the same promise and another read
+/// ([`OnePassHold::FreshStock`]). The 2D plan of a level does not always
+/// cut to the limit of its tool-centre region (its last wrap can stand one
+/// 2D cell inside), and a level with another region shape then cuts the
+/// strip of the levels above in one cut (measured on the Wanaka back:
+/// 9.0 mm at 4.166 mm per pass). No read of the coarse planner cell finds
+/// that strip, so the fresh variant does not read it: each level ends with
+/// the wall pass on one line that no plan passes, at each wall deeper than
+/// one pass.
+///
+/// What each variant reads:
+/// - `Off`: nothing.
+/// - `RemainingStock`: the guard reads the planner stock cell by cell
+///   (`one_pass.rs`); the wall pass reads the strip in the tool disc and
+///   runs one planner cell plus the cut tolerance inside the raw region
+///   boundary.
+/// - `FreshStock`: no guard. The wall pass reads the wall (the tool-centre
+///   surface beside the line, the stock top of the cells that the disc
+///   touches) and runs nearer to the wall than the plan of any level: one
+///   planner cell less the tolerance stack of the emitted lines inside the
+///   raw region boundary (`level_contour::fresh_line_shift`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum OnePassHold {
     /// No centre is held off and no wall pass runs: the plan of every level
@@ -351,6 +374,13 @@ pub enum OnePassHold {
         /// The machine's link timing, for the one feed-or-retract rule
         /// (`machine::kinematics::retract_saves_time`) that joins two runs
         /// of a wall pass on one ring. `None`: the runs are not joined.
+        link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    },
+    /// P43: the wall pass of a rough on a fresh block (Geodesic Adaptive).
+    /// No centre is held off: the planner cell of a fresh rough
+    /// (`tool radius / 6`) is not the simulation cell.
+    FreshStock {
+        /// The link timing of the gap merge, as in `RemainingStock`.
         link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     },
 }

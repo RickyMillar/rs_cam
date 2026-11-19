@@ -1,44 +1,59 @@
-planning: P43 round 2: four traces (the nodes under the target, the 5.73 mm sample of id 20, the wall line against the model, rivmap100) and the proposal for build 3
+core: P43: each level of a fresh Geodesic rough ends with a wall line that no plan passes, at each wall deeper than one pass (`OnePassHold::FreshStock`, `WallRule::FreshStock`); the deepest body cut of the Wanaka back bulk rough falls from 9.0 to 4.166 mm
 
-A record only. No code of P43 is in the tree, and no product code was built.
+The defect: "Back bulk rough 18 mm" (fresh stock, Geodesic Adaptive, 4.166 mm
+per pass) cut 9.0 mm deep at the frame walls. The 2D plan of a level does not
+always cut to the limit of its tool-centre region, and a level with another
+region shape then takes the strip of the levels above in one cut. On the front,
+a level that keeps the perimeter sweep leaves a band that the next level takes
+(5.73 mm).
 
-Trace 1: the two nodes 0.41 mm under the target are 0.095 mm inside the disc
-edge of a fed climb. Build 2 feeds the climb because `step_axial_depth` falls
-from 6.448 to 3.332 mm (the wall line cut the stock that made the step deep at
-HEAD). HEAD has the same chord at the same step edge (24 nodes 0.05 to 0.10 mm
-inside the edge, to 0.41 mm deep); no node is 0.1 mm or more inside in HEAD or
-in build 2. It is the radial tolerance of the model gouge guard.
+The rule: the dial `linking.one_pass_hold` has a third variant, `FreshStock`,
+which the session sets on a 3D Rough with no seed stock. It has no guard (a
+coarse planner cell cannot read a strip narrower than a cell). After the plan of
+a level, `region_wall_pass` runs one contour on each planned region, one planner
+cell less `fresh_line_shift` (three cut tolerances, at most what keeps half a
+cell) inside the RAW outline: nearer to the wall than the plan of any level, and
+the same line at each level of one wall. A point ships by the wall alone
+(`wall_point_ships` on the tool-centre surface beside the line and the stock top
+of the cells that the disc touches), once per level. A region on the perimeter
+sweep gets the line too, with the load cap of the run.
 
-Trace 2: the deepest body sample of "Front bulk rough 18 mm" (5.73 mm) is the
-perimeter sweep class. Level 17.168 keeps the sweep on both regions, stands a
-tool radius inside, and leaves a band that level 13.5 takes in one cut. The
-fresh rule gives no line to a sweep region.
+Measured (the proposal file, HEAD against this tree, one run each):
+- "Back bulk rough 18 mm": body row and deepest sample 9.0 to 4.166 mm; replay
+  pieces over the bar, a node 0.1 mm or more inside the disc edge: 31 to 0;
+  689 to 801 s.
+- "Front bulk rough 18 mm": deepest body sample 5.73 to 4.166 mm; 480 to 491 s.
+- "Back rest 6 mm": body 6.0 mm (deepest 6.13), entry 1.89 mm, 579 to 580 s.
+  "Front 3D rough": no row state changes; body 4.31 to 4.70 mm, 914 to 850 s.
+- 0 collisions, 0 rapid collisions, 0 failed checks on each op of both setups.
+- rivmap100 keeps its G-code (stored file and three scratch arms).
 
-Trace 3: the wall line of id 1 of build 2 is never nearer than 0.934 mm to the
-model wall; 2 of 9 717 samples are lifted, at the two crossings of the step
-shelf. The clearance of the one wall move of id 20 is not measured.
+Not held: a region that no level plans (a lib fixture with a throat 20.5 mm wide
+reads 7.79 mm with the rule; the job shows none), a closed gap of
+`grown_outlines`, Contour Parallel, a tool with a planner cell under ten cut
+tolerances. The rough on remaining stock keeps its code path and its bytes.
 
-Trace 4: on the two fresh Geodesic rivmap100 arms the dial is `FreshStock` at
-each level and the wall run count is 0: no wall deeper than one pass (the
-largest wall top less floor is 1.87 mm against 2.5 mm).
+Tests: `--lib _p43` (three tests; red without the wall line, and without the
+line on a sweep region). Gates: no new red; op golden keeps the 52 red cells of
+HEAD, not blessed.
 
-The corrected replay class (a node 0.1 mm or more inside the disc edge): id 1
-31 pieces at HEAD, 0 in build 2; id 2 0 and 0.
-
-The note (section 9) holds the proposal for build 3 and what it does not hold.
+Note: planning/feeds_contract_2026-11-03/phases/P43_ONE_PASS_FRESH_ROUGH_2026-11-20.md
+(section 10; the decisions D-8 and D-9 for the lead).
 
 Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
 --- paths to commit
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/mod.rs
+crates/rs_cam_core/src/adaptive3d/one_pass.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/compute/execute/rough_3d.rs
 planning/feeds_contract_2026-11-03/phases/P43_ONE_PASS_FRESH_ROUGH_2026-11-20.md
 planning/feeds_contract_2026-11-03/phases/p43/COMMIT_MSG.txt
 planning/feeds_contract_2026-11-03/phases/p43/deepc.py
-planning/feeds_contract_2026-11-03/phases/p43/deepc_all.txt
-planning/feeds_contract_2026-11-03/phases/p43/front_trace.py
-planning/feeds_contract_2026-11-03/phases/p43/front_trace.txt
-planning/feeds_contract_2026-11-03/phases/p43/gouge.py
-planning/feeds_contract_2026-11-03/phases/p43/gouge_b2.txt
-planning/feeds_contract_2026-11-03/phases/p43/gouge_head.txt
-planning/feeds_contract_2026-11-03/phases/p43/probe4_on_build2.patch
-planning/feeds_contract_2026-11-03/phases/p43/probe_round2_output.txt
-planning/feeds_contract_2026-11-03/phases/p43/wall_line.py
-planning/feeds_contract_2026-11-03/phases/p43/wall_line_b2.txt
+planning/feeds_contract_2026-11-03/phases/p43/deepc_round3.txt
+planning/feeds_contract_2026-11-03/phases/p43/not_landed/b3_trial_conservative_top.patch
+planning/feeds_contract_2026-11-03/phases/p43/rows.py
+planning/feeds_contract_2026-11-03/phases/p43/rows_round3.txt

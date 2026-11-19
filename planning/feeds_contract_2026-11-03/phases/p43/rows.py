@@ -13,7 +13,7 @@ for tp in d["per_toolpath"]:
     out = []
     for r in tp["limit_rows"]:
         c = r["check"]
-        if c["limit"] != "force_budget" or r["subject"]["kind"] != "group" or c["value"] is None: continue
+        if c["limit"] != "force_budget" or r["subject"]["kind"] != "group" or c["value"] is None or not c["bound"]: continue
         dp = (r.get("deepest") or {}).get("depth_mm")
         out.append("%s %.3f/%.3f=%.2f (%s) deepest %s" % (r["subject"]["group"], c["value"], c["bound"], c["value"] / c["bound"], c["state"]["state"], "-" if dp is None else "%.3f" % dp))
     print(tp["id"], tp["name"][:34], "moves", tp["move_count"], "| " + "; ".join(out))

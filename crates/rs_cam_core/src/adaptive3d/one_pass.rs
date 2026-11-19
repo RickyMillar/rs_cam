@@ -32,7 +32,10 @@
 //! the level grid, inside the boundary clip where one applies.
 //!
 //! The switch is `Adaptive3dLinking::one_pass_hold` (`OnePassHold`): the
-//! session sets it only on remaining stock, and its text says why.
+//! session sets `RemainingStock` only on remaining stock, and its text says
+//! why. P43: with `FreshStock` this guard does not act (`OnePass::on` is
+//! false); a fresh rough keeps the promise with the wall pass of each level
+//! alone (`level_contour::WallRule::FreshStock`).
 //!
 //! `clearing.rs::build_material_bool_grid` calls [`OnePass::hold_off`] on
 //! each grid it builds. `waterline_cleanup` masks its contour points with
@@ -76,8 +79,8 @@ pub(super) struct OnePass {
     /// One Depth/Pass plus the stay-down clearance (mm): the bound of the
     /// deep step (`StepSplit::StockDepth`) and of the held links.
     pub limit_mm: f64,
-    /// `Adaptive3dLinking::one_pass_hold` is `RemainingStock`. Off: no
-    /// centre and no contour point is held.
+    /// `Adaptive3dLinking::one_pass_hold` is `RemainingStock`. Off (the
+    /// dial `Off` or `FreshStock`): no centre and no contour point is held.
     pub on: bool,
     pub held: RefCell<HeldOff>,
 }

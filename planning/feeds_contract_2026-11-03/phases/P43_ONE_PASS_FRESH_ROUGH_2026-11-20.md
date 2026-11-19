@@ -773,3 +773,152 @@ What build 3 still does not hold:
 - The load of the band of a sweep region is held by the feed cap only, not by a pass width.
 - A wall that is not on a grid axis: two rings can differ by the cut tolerance. The corrected
   replay class then reads 0, and the simulation rows are the judge.
+
+## 10. Round 3: build 3 (2026-11-20, after `0b626b072`)
+
+The lead authorised build 3 as proposed in 9.6 and gave nine bars. One build was made
+(`cli_b3`, md5 `84b58f181f27e003ed8c4ce5aaad67d6`). No second build.
+
+Build 3 is build 2 with one change: the wall line of a fresh rough runs on each region whose
+plan cut a segment (a region on the perimeter sweep too). `WallRegions` and
+`LevelEmission::opened_on_grown` are gone; `region_wall_pass` takes the planned regions. The
+comment at `fresh_line_shift` holds the derivation and the measure of ruling D-1.
+
+### 10.0 What failed, what is a judgement, and what is not verified
+
+- BAR 5, a judgement for the lead. Id 21 ("Front 3D rough", remaining stock) keeps each row
+  state, and three of its values rise: body 4.308 to 4.701 mm (ratio to its cap 1.41 to 1.57),
+  entry 1.590 to 1.996 mm (within), cleanup ratio 1.13 to 1.40. Its one-pass limit is
+  6.032 mm; its D-10 bar holds (cleanup 1.40 against body 1.57). The first brief said "rows
+  not worse"; P42 read that as "no row changes its state". By state the bar holds; by value
+  it does not. Id 21 moves because the stock that id 20 leaves moves; its time falls by 64 s.
+- A failure mode found on a lib fixture, NOT on the job. `sweep_wall_fixture_p43` with a
+  throat 20.5 mm wide (18 mm tool): with the rule one sample of the last level reads 7.79 mm
+  (3.0 mm with the dial off; the limit is 3.5 mm). The wall line passes the mouth of a throat
+  whose stock no level plans, and the Z rule of the line reads the plain top of a coarse
+  cell, which a part stamp has lowered under the sliver that stands in it. The lib test uses
+  the throat of 19.5 mm (3.0 mm). A trial that reads the conservative top of a cell
+  (`DexelGrid::conservative_top_at`) in the fresh read gives 3.75 mm at both throats, over
+  the limit by 0.25 mm; it is not in the tree
+  (`not_landed/b3_trial_conservative_top.patch`). This is the class "a region that no level
+  plans" of 9.6; the wall line makes it reachable at a sweep region.
+- Predictions of 9.6 that were false: 3 (the cleanup ratio of id 20 is 1.55, UNDER the body
+  ratio 1.78), 4 (id 20 takes 11 s more, not 60 to 200; 172 more moves; id 21 takes 64 s
+  less).
+- Not measured on setup "3 Front": the cut below the target, the wood left by class, and the
+  clearance of a wall line from the model. The instruments hold no model in that frame. The
+  stock replay works there now (`deepc.py` with `P43_SHIFT`); it starts from a flat block
+  and reproduces the 5.73 mm piece of HEAD.
+- One run of each setup. The times are simulated times. The GUI and MCP surfaces were not
+  run.
+
+### 10.1 The bars
+
+| Bar | Result |
+|---|---|
+| 1. Id 1: the G-code of build 2; body row and deepest body sample at most 4.666 mm | HOLDS. The G-code of setup "1 Back" is the build 2 file, byte for byte (`cmp`). Body 4.166, deepest 4.166 mm |
+| 2. Id 20: body row and deepest body sample at most 4.666 mm | HOLDS. 4.164 and 4.166 mm (the deepest was 5.732) |
+| 3. Corrected replay class: 0 pieces for ids 1, 2, 20, 21 | HOLDS. 0, 0, 0, 0 (HEAD: 31, 0, 1, 0) |
+| 4. Nodes under the target 0.1 mm or more inside the disc edge: 0 on "1 Back" | HOLDS. 0 (the build 2 G-code, 9.2) |
+| 5. Ids 2 and 21: body and entry rows; D-10 | Id 2 HOLDS (body 6.000, deepest 6.130; entry 1.885; cleanup 1.30 against body 1.88). Id 21: no state changes, D-10 holds, values rise (10.0) |
+| 6. 0 collisions, 0 rapid collisions, 0 failed checks | HOLDS on each op of both setups |
+| 7. rivmap100 | HOLDS. The stored file and the three scratch arms keep their bytes |
+| 8. Gates | HOLDS. No new red (10.5) |
+| 9. A lib test red without the sweep-region line | `--lib a_fresh_level_cuts_the_band_of_a_sweep_region_p43` |
+
+### 10.2 HEAD against build 3, setup "1 Back" (the build 2 G-code; the measures of 6.1)
+
+| | HEAD | Build 3 |
+|---|---|---|
+| id 1 body row (ratio); deepest sample | 9.000 (3.76); 9.000 mm | 4.166 (1.78); 4.166 mm |
+| id 1 entry; cleanup (ratio, deepest); link | 1.969; 2.592 (0.73; 2.592); 4.166 mm | 1.969; 4.166 (1.65; 4.233); 4.166 mm |
+| id 1 replay, corrected class (all pieces) | 31 pieces, 6 310 nodes (36) | 0 (2 pieces, 11 nodes) |
+| id 1 time; fed; rapids; moves; wall runs per level | 689 s; 78.69 m; 2 581 mm; 31 797; none | 801 s; 89.16 m; 2 594 mm; 36 079; 2, 3, 3, 2 |
+| id 2 body (ratio); deepest | 6.000 (1.88); 6.000 mm | 6.000 (1.88); 6.130 mm |
+| id 2 entry; cleanup (ratio); link | 1.908; 6.000 (1.32); 6.000 mm | 1.885; 6.000 (1.30); 6.000 mm |
+| id 2 replay, corrected class (all pieces) | 0 (0) | 0 (1 piece, 2 nodes) |
+| id 2 time; fed; rapids; moves | 579 s; 38.89 m; 4 157 mm; 14 982 | 580 s; 38.80 m; 4 326 mm; 15 239 |
+| Nodes under the target, 0.1 mm or more inside the disc edge; all nodes over 0.3 mm (id 1) | 0; 125 | 0; 136 |
+| Wood left at the end: wall band; cavity interior; slot | 63.7; 570.4; 412.6 mm2 | 62.0; 570.4; 412.6 mm2 |
+| Wood left: step shelf; mech and slit pockets | 829.8; 1 003.9 mm2 | 670.6; 912.2 mm2 |
+| Collisions, rapid collisions, failed checks | 0, 0, 0 | 0, 0, 0 |
+| Setup `total_runtime_s`; export warning lines | 9 588.1; 24 | 9 682.9; 24 |
+
+### 10.3 HEAD against build 3, setup "3 Front"
+
+| | HEAD | Build 3 |
+|---|---|---|
+| id 20 body row (ratio); deepest sample | 4.164 / 2.345 (1.78); 5.732 mm | 4.164 / 2.345 (1.78); 4.166 mm |
+| id 20 entry; link | 1.941; 3.666 mm | 1.941; 3.666 mm |
+| id 20 cleanup row (ratio); deepest | 4.166 / 2.345 (1.78); 4.166 mm | 3.667 / 2.367 (1.55); 3.792 mm |
+| id 20 replay, corrected class | 1 piece, 15 nodes, 5.73 mm | 0 |
+| id 20 wall runs per level | none | 0, 2, 1 |
+| id 20 time; fed; rapids; moves | 480 s; 54.75 m; 3 635 mm; 22 670 | 491 s; 55.29 m; 3 937 mm; 22 842 |
+| id 21 body row (ratio); deepest | 4.308 / 3.048 (1.41); 4.308 mm | 4.701 / 3.001 (1.57); 4.701 mm |
+| id 21 entry (deepest); link | 1.590 (1.881); 0.480 mm | 1.996 (1.996); 0.480 mm |
+| id 21 cleanup row (ratio); deepest | 4.210 / 3.719 (1.13); 5.176 mm | 4.393 / 3.138 (1.40); 5.176 mm |
+| id 21 replay, corrected class (bar 6.332 mm) | 0 | 0 |
+| id 21 time; fed; rapids; moves | 914 s; 58.69 m; 15 512 mm; 39 788 | 850 s; 53.97 m; 15 060 mm; 36 882 |
+| Row states of the setup (exceeds; within) | 5; 58 | 5; 58 |
+| Collisions, rapid collisions, failed checks (each op) | 0, 0, 0 | 0, 0, 0 |
+| Setup `total_runtime_s`; export warning lines | 8 833.9; 20 | 8 762.4; 20 |
+| Wood left by class; cut below the target | not measured | not measured |
+
+The sweep-region line of id 20 (the ruling asks for the cap and the row):
+
+- Level 17.168 ships 2 runs, one per region. Each has the load cap of `run_feed_cap`
+  (`FeedCapSource::LevelContour`): factor 0.424 on 13.3 mm of cut (3 415 mm/min of 8 060)
+  and factor 0.310 on 398.9 mm of cut (2 499 mm/min).
+- The cleanup row of id 20: value 3.667 mm, limit 2.367 mm, ratio 1.55 (exceeds, advisory).
+  The judged sample has a width of 8.20 mm at 0.180 mm per tooth. Chip, power and deflection
+  of the cleanup group are within. The ratio is under the body ratio (1.78).
+- The sample of trace 2 is gone: no sample of id 20 is over 4.166 mm in the body.
+
+### 10.4 rivmap100 (HEAD against build 3)
+
+| Arm | Bytes | Moves | Rough time | Deepest body sample | Wall runs |
+|---|---|---|---|---|---|
+| Stored `rivmap100_live_0925.toml` (Contour Parallel, remaining stock) | the same | 9 108 | 546 s | 8.000 mm | none (not Geodesic) |
+| Scratch, fresh Geodesic, Depth/Pass 8 | the same | 7 530 | 406 s | 6.000 mm | 0, 0 |
+| Scratch, fresh Geodesic, Depth/Pass 2 | the same | 15 766 | 1 068 s | 2.838 mm | 0 at each of 7 levels |
+| Scratch, Geodesic on remaining stock | the same | 6 780 | 310 s | 8.000 mm | 0, 0 |
+
+Level 6.0 of the Depth/Pass 2 arm has rings now (two sweep regions) and ships no run: no wall
+deeper than one pass.
+
+### 10.5 Gates on the tree as left (HEAD plus build 3)
+
+Run after the last code edit (the tree diff is the build 3 diff, `cmp`). Logs: the scratch dir,
+`gate_b3_*.log`. The baseline is the P42 round 3 logs (the build of `e2e10271f`, which is
+HEAD code). No red is new.
+
+| Gate | Result |
+|---|---|
+| core `--lib` | 2 857 passed, 1 failed, 13 ignored: the known red `feeds::envelope::tests::the_envelope_meets_its_time_budget`. The three `_p43` tests pass (HEAD: 2 854 passed). |
+| adaptive3d sentries (37 binaries) | 75 passed, 0 failed, 7 ignored |
+| dressup sentries (19 binaries) | 119 passed, 5 ignored |
+| other core sentries (20 binaries, with `folder_maps_name_real_files_f140`) | 141 passed |
+| op golden | red with the 52 cells of HEAD, cell for cell and value for value (`diff` against the P42 log: empty). No cell moves. Not blessed. |
+| FM1 | 2 passed |
+| `rs_cam_cli` (17 binaries); `rs_cam_mcp` | 113 passed; 39 passed |
+| viz `--lib` (`--test-threads 2`, no `rs_cam_gui` process) | 705 passed, 2 ignored |
+| full clippy | clean |
+| `rustfmt --check` on the 7 changed `.rs` files | clean |
+
+### 10.6 The tree as left
+
+The patch is applied. `git diff -- crates` is the build 3 diff (8 files: 7 `.rs` files and
+`adaptive3d/CLAUDE.md`, 40 lines). `target/release/rs_cam_cli` is the release CLI of that
+tree. `not_landed/` keeps the records: `b1_line_on_the_grown_outline.patch`,
+`p43_fresh_wall_pass.patch` (build 2; build 3 replaces it as the code) and
+`b3_trial_conservative_top.patch` (the trial of 10.0, on top of build 3 without its final
+tests).
+
+### 10.7 Decisions for the lead after round 3
+
+- D-8: bar 5 for id 21 (10.0): accept the values with no state change, or not.
+- D-9: the throat fixture (10.0). The wall line beside stock that no level plans can cut
+  deeper than one pass on the coarse cell. The job shows none. A read of the conservative top
+  lowers the fixture from 7.79 to 3.75 mm and is not enough for the limit of 3.5 mm.
+- Open as before: D-3 (the descent clamp on a ring), D-5 less the sweep class, D-7 (a fresh
+  Geodesic benchmark file).

@@ -3767,3 +3767,280 @@ fn the_wall_contour_mask_holds_a_point_off_tall_stock_p41() {
     );
     assert_eq!(off.held.borrow().centres, 0);
 }
+
+/// P43 fixture: a fresh block 12 mm tall over a floor at Z 0, with a
+/// vertical wall at X 30 that stands to Z 12 (the stock top). Tool 18 mm
+/// flat (planner cell 1.5 mm), Depth/Pass 3 mm, no stock to leave,
+/// stay-down clearance 0.5 mm, tolerance 0.1 mm: the levels are 9, 6, 3 and
+/// 0, and the wall is four passes deep.
+///
+/// The toolpath is simulated on a stock with a cell of 0.25 mm, a sixth of
+/// the planner cell: a strip narrower than a planner cell is whole cells
+/// there. Returns the deepest sample (`axial_engagement_mm`) and the width
+/// (mm) of the wood on the line Y -20 that stands more than 1 mm above the
+/// floor in front of the wall.
+fn wall_fixture_p43(hold: OnePassHold) -> (f64, f64) {
+    let (wall_x, top) = (30.0, 12.0);
+    let vertices = vec![
+        P3::new(-60.0, -60.0, 0.0),
+        P3::new(wall_x, -60.0, 0.0),
+        P3::new(wall_x, 60.0, 0.0),
+        P3::new(-60.0, 60.0, 0.0),
+        P3::new(wall_x, -60.0, top),
+        P3::new(wall_x, 60.0, top),
+        P3::new(60.0, -60.0, top),
+        P3::new(60.0, 60.0, top),
+    ];
+    let triangles = vec![
+        [0, 1, 2],
+        [0, 2, 3],
+        [1, 4, 5],
+        [1, 5, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+    ];
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = FlatEndmill::new(18.0, 25.0);
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.geometry.tool_radius = 9.0;
+    params.geometry.envelope_radius = 9.0;
+    params.geometry.stepover = 5.5;
+    params.depth.stock_to_leave = 0.0;
+    params.depth.stock_top_z = top;
+    params.linking.one_pass_hold = hold;
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    let cell = 0.25;
+    let mut sim_stock = make_stock(-69.0, -69.0, 69.0, 69.0, top, cell);
+    let samples = sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &out.toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId::from_raw(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            false,
+            &|| false,
+        )
+        .expect("the simulation is not cancelled");
+    let deepest = samples
+        .iter()
+        .map(|s| s.axial_engagement_mm)
+        .fold(0.0, f64::max);
+    let grid = &sim_stock.z_grid;
+    let row = ((-20.0 - grid.origin_v) / cell).round() as usize;
+    let standing = (0..grid.cols)
+        .filter(|&col| {
+            let x = grid.origin_u + col as f64 * cell;
+            (0.0..wall_x).contains(&x) && stock_top_z_at(&sim_stock, row, col) > 1.0
+        })
+        .count();
+    (deepest, standing as f64 * cell)
+}
+
+/// P43: each level of a fresh Geodesic rough cuts to one line at a wall
+/// deeper than one pass (`level_contour::region_wall_pass`,
+/// `WallRule::FreshStock`). The line is one planner cell less
+/// `fresh_line_shift` inside the raw region boundary: nearer to the wall
+/// than the plan of any level, which stands one planner cell or more inside
+/// it. So no later level cuts, with the edge of its disc, a strip that the
+/// levels above left.
+///
+/// Measured on a 0.25 mm cell (the planner cell is 1.5 mm): the wood at the
+/// foot of the wall is 1.75 mm wide with the rule and 2.25 mm with the dial
+/// off, and no sample is deeper than one Depth/Pass plus the clearance.
+/// The second assert is the red state: without the wall pass the two widths
+/// are the same.
+///
+/// What this fixture does not show: the 9.0 mm cut of the Wanaka back.
+/// There a level with another region shape ran its plan on the limit that
+/// two levels above did not reach; where the last wrap of a 2D plan stands
+/// depends on the region, and this fixture has one region shape.
+#[test]
+fn a_fresh_level_cuts_to_the_wall_line_that_no_plan_passes_p43() {
+    let sim_cell = 0.25;
+    let (deepest, strip_mm) = wall_fixture_p43(OnePassHold::FreshStock {
+        link_kinematics: None,
+    });
+    let limit = 3.0 + 0.5;
+    assert!(
+        deepest <= limit + 1e-6,
+        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
+    );
+    let (deepest_off, strip_off_mm) = wall_fixture_p43(OnePassHold::Off);
+    assert!(deepest_off <= limit + 1e-6, "{deepest_off}");
+    let shift = super::level_contour::fresh_line_shift(9.0 / 6.0, 0.1);
+    assert!(shift > sim_cell, "the fixture can show the shift: {shift}");
+    assert!(
+        strip_mm <= strip_off_mm - sim_cell + 1e-9,
+        "the wall line is nearer to the wall than the plan by {shift} mm, so the wood at the \
+         foot of the wall is narrower by one simulation cell or more: {strip_mm} mm with the \
+         rule, {strip_off_mm} mm with the dial off"
+    );
+}
+
+/// P43: the shift of the wall line of a fresh rough
+/// (`level_contour::fresh_line_shift`). It is three cut tolerances, it
+/// leaves the line half a planner cell after the two tolerances of the
+/// line, and it is never negative.
+#[test]
+fn the_fresh_wall_line_keeps_half_a_cell_from_the_raw_boundary_p43() {
+    use super::level_contour::fresh_line_shift;
+    // The 18 mm tool of the Wanaka back: cell 1.5 mm, tolerance 0.1 mm.
+    let shift = fresh_line_shift(1.5, 0.1);
+    assert!((shift - 0.3).abs() < 1e-12, "{shift}");
+    assert!(1.5 - shift - 2.0 * 0.1 >= 1.5 / 2.0);
+    // A 6 mm tool (cell 0.5 mm): the half cell binds.
+    let small = fresh_line_shift(0.5, 0.1);
+    assert!((small - 0.05).abs() < 1e-12, "{small}");
+    assert!(0.5 - small - 2.0 * 0.1 >= 0.5 / 2.0 - 1e-12);
+    // A cell under four tolerances: no shift, never a negative one.
+    assert_eq!(fresh_line_shift(0.2, 0.1), 0.0);
+    assert_eq!(fresh_line_shift(1.5, 0.0), 0.0);
+}
+
+/// P43 fixture (the perimeter sweep class): a fresh block 12 mm tall over a
+/// floor at Z 0. Two rooms are joined by a throat 30 mm long and
+/// `throat_mm` wide between two wall blocks that stand to Z 12 (X 10 to
+/// 40). The tool-centre region of the throat is narrower than twice the
+/// shortfall inset of `grown_outlines`, so the inset splits the outline and
+/// the region keeps the perimeter sweep at each level. Tool 18 mm flat
+/// (planner cell 1.5 mm), Depth/Pass 3 mm, no stock to leave: the levels
+/// are 9, 6, 3 and 0.
+///
+/// Returns, after a simulation on a 0.25 mm cell: the deepest sample, the
+/// width (mm) of the wood on the line Y 35 that stands more than 1 mm above
+/// the floor in front of the wall block (X under 10), and the number of
+/// region-levels that kept the sweep.
+fn sweep_wall_fixture_p43(hold: OnePassHold, throat_mm: f64) -> (f64, f64, usize) {
+    let top = 12.0;
+    let half = throat_mm / 2.0;
+    let mut vertices: Vec<P3> = Vec::new();
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    let mut quad = |x0: f64, y0: f64, x1: f64, y1: f64, z: f64| {
+        let i = vertices.len() as u32;
+        vertices.extend([
+            P3::new(x0, y0, z),
+            P3::new(x1, y0, z),
+            P3::new(x1, y1, z),
+            P3::new(x0, y1, z),
+        ]);
+        triangles.extend([[i, i + 1, i + 2], [i, i + 2, i + 3]]);
+    };
+    quad(-60.0, -60.0, 90.0, 60.0, 0.0);
+    quad(10.0, half, 40.0, 60.0, top);
+    quad(10.0, -60.0, 40.0, -half, top);
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = FlatEndmill::new(18.0, 25.0);
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.geometry.tool_radius = 9.0;
+    params.geometry.envelope_radius = 9.0;
+    params.geometry.stepover = 5.5;
+    params.depth.stock_to_leave = 0.0;
+    params.depth.stock_top_z = top;
+    params.linking.one_pass_hold = hold;
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    let sweeps = out
+        .produced
+        .region_openings
+        .iter()
+        .filter(|o| o.cuts_sweep())
+        .count();
+    let cell = 0.25;
+    let mut sim_stock = make_stock(-69.0, -69.0, 99.0, 69.0, top, cell);
+    let samples = sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &out.toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId::from_raw(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            false,
+            &|| false,
+        )
+        .expect("the simulation is not cancelled");
+    let deepest = samples
+        .iter()
+        .map(|s| s.axial_engagement_mm)
+        .fold(0.0, f64::max);
+    let grid = &sim_stock.z_grid;
+    let row = ((35.0 - grid.origin_v) / cell).round() as usize;
+    let standing = (0..grid.cols)
+        .filter(|&col| {
+            let x = grid.origin_u + col as f64 * cell;
+            (-20.0..10.0).contains(&x) && stock_top_z_at(&sim_stock, row, col) > 1.0
+        })
+        .count();
+    (deepest, standing as f64 * cell, sweeps)
+}
+
+/// P43 (round 3, the perimeter sweep class): the wall line of a fresh
+/// rough runs on a region that keeps the perimeter sweep too. On the sweep
+/// path the plan stands a tool radius inside the region, so each level
+/// leaves a band at the wall, and a lower level that opens on its grown
+/// outline takes that band in one cut (measured on the Wanaka front: 5.73 mm
+/// at 4.166 mm per pass). With the line each level cuts its band, one pass.
+///
+/// The fixture (a throat 19.5 mm wide for an 18 mm tool) keeps the sweep at
+/// each of its four levels. Measured on a 0.25 mm cell: the wood at the
+/// foot of the wall block is 1.25 mm wide with the rule and 9.5 mm with the
+/// dial off, and no sample is deeper than one Depth/Pass plus the
+/// clearance. The bound of the wood is the line (one planner cell less the
+/// shift inside the raw boundary), half a planner cell (the raw boundary
+/// against the true limit) and one simulation cell. Red without the line on
+/// a sweep region: the band stays.
+///
+/// What it does not show: a throat 20.5 mm wide. There the wall line meets
+/// stock in the throat that no level plans, and one sample of the last
+/// level reads 7.79 mm (3.0 mm with the dial off). The fixture is in the
+/// P43 note, section 10.
+#[test]
+fn a_fresh_level_cuts_the_band_of_a_sweep_region_p43() {
+    let (cell, sim_cell) = (9.0 / 6.0, 0.25);
+    let (deepest, wood_mm, sweeps) = sweep_wall_fixture_p43(
+        OnePassHold::FreshStock {
+            link_kinematics: None,
+        },
+        19.5,
+    );
+    assert!(
+        sweeps >= 1,
+        "the fixture holds a region that keeps the perimeter sweep"
+    );
+    let limit = 3.0 + 0.5;
+    assert!(
+        deepest <= limit + 1e-6,
+        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
+    );
+    let bound = cell - super::level_contour::fresh_line_shift(cell, 0.1) + cell / 2.0 + sim_cell;
+    let (_, wood_off_mm, sweeps_off) = sweep_wall_fixture_p43(OnePassHold::Off, 19.5);
+    assert!(sweeps_off >= 1);
+    assert!(
+        wood_mm <= bound + 1e-9,
+        "{wood_mm} mm of wood stands at the foot of the wall with the rule ({wood_off_mm} mm \
+         with the dial off); the bound is {bound} mm"
+    );
+    assert!(
+        wood_off_mm > bound,
+        "the control: with no line the band of the sweep stays: {wood_off_mm} mm"
+    );
+}

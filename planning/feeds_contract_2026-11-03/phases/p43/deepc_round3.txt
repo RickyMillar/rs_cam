@@ -1,0 +1,10 @@
+outF_head.nc 'Front bulk' bar 4.966 tol 0.1: pieces with a node over the bar 1 (23 nodes); of them with a node 0.1 mm or more inside the disc edge: 1 pieces, 15 nodes, deepest 5.73 mm
+   piece 22590: (338.35, 44.34, 15.6) -> (340.58, 44.56, 15.6): 15 of 23 nodes count, deepest 5.73, the deepest node inside the edge 0.360 mm
+outF_head.nc 'Front 3D rough' bar 6.332 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_head.nc 'Back bulk' bar 4.966 tol 0.1: pieces with a node over the bar 36 (6953 nodes); of them with a node 0.1 mm or more inside the disc edge: 31 pieces, 6310 nodes, deepest 9.00 mm
+out_head.nc 'Back rest' bar 6.3 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+--- build 3
+outF_b3.nc 'Front bulk' bar 4.966 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+outF_b3.nc 'Front 3D rough' bar 6.332 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_b3.nc 'Back bulk' bar 4.966 tol 0.1: pieces with a node over the bar 2 (11 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_b3.nc 'Back rest' bar 6.3 tol 0.1: pieces with a node over the bar 1 (2 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm

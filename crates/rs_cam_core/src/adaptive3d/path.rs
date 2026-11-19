@@ -1479,6 +1479,13 @@ fn adaptive_3d_segments_probed(
             super::OnePassHold::RemainingStock { link_kinematics } => {
                 Some(super::level_contour::WallPass {
                     link_kinematics: link_kinematics.clone(),
+                    rule: super::level_contour::WallRule::RemainingStock,
+                })
+            }
+            super::OnePassHold::FreshStock { link_kinematics } => {
+                Some(super::level_contour::WallPass {
+                    link_kinematics: link_kinematics.clone(),
+                    rule: super::level_contour::WallRule::FreshStock,
                 })
             }
         },

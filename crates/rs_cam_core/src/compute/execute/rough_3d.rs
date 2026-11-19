@@ -200,14 +200,18 @@ impl Adaptive3dRough<'_> {
                 // The rest region filter acts only on remaining stock (a
                 // rest rough), and only when a bound is set.
                 rest_region_filter: inputs.seed_stock.and(cfg.rest_region_filter()),
-                // P41: the one-pass rule acts only on remaining stock, where
-                // the planner stock is the simulated stock.
+                // P41: the guard of the one-pass rule acts only on remaining
+                // stock, where the planner stock is the simulated stock.
+                // P43: a fresh block gets the wall pass on the limit of each
+                // level's plan, with no guard.
                 one_pass_hold: if inputs.seed_stock.is_some() {
                     crate::adaptive3d::OnePassHold::RemainingStock {
                         link_kinematics: self.link_kinematics.clone(),
                     }
                 } else {
-                    crate::adaptive3d::OnePassHold::Off
+                    crate::adaptive3d::OnePassHold::FreshStock {
+                        link_kinematics: self.link_kinematics.clone(),
+                    }
                 },
             },
             feed_rate: self.feed_rate,

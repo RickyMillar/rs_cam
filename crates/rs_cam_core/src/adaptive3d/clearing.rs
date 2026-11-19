@@ -454,7 +454,8 @@ pub(super) struct ClearZLevelContext<'a> {
     /// `waterline_cleanup` to each contour point.
     pub(super) one_pass: super::one_pass::OnePass,
     /// P42: the wall pass of each level (`level_contour::region_wall_pass`),
-    /// on with the one-pass rule. `None`: no wall pass.
+    /// on with the one-pass rule (`OnePassHold`; P43: its `rule` says which
+    /// read and which line). `None`: no wall pass.
     pub(super) wall_pass: Option<super::level_contour::WallPass>,
 }
 
@@ -4565,7 +4566,9 @@ pub(super) fn clear_z_level_slice(
     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
     // P42: the wall pass of the level, after its plan (`region_wall_pass`):
     // the strip that the margin of the plan leaves at each wall of a
-    // planned region goes down one pass at this level.
+    // planned region goes down one pass at this level. P43: a fresh rough
+    // runs it nearer to the wall than the limit of each plan, on a region
+    // that keeps the perimeter sweep too.
     let wall = super::level_contour::region_wall_pass(
         ctx,
         material_stock,

@@ -12,9 +12,17 @@ tol = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1
 show = {int(v) for v in sys.argv[5:]}
 top = np.full((NY, NX), STOCK_TOP)
 k = 0; res = []
-for op, tool, p0, p1 in moves(nc):
+# Round 3: setup "3 Front" writes its G-code in the setup frame (X from -18.5, Y from -8.5).
+# P43_SHIFT="18.5,8.5" moves it to the node frame of gapmap. The printed points are in the
+# G-code frame of the file. The stock starts as a flat block at STOCK_TOP (the cuts of the
+# other side are not in it).
+SH = tuple(float(v) for v in os.environ.get("P43_SHIFT", "0,0").split(","))
+def shifted(nc):
+    for op, tool, p0, p1 in moves(nc):
+        yield op, tool, (p0[0] + SH[0], p0[1] + SH[1], p0[2]), (p1[0] + SH[0], p1[1] + SH[1], p1[2])
+for op, tool, p0, p1 in shifted(nc):
     if op is None or not op.startswith(pref):
-        if res: break
+        if k: break                      # the op is over
         stamp(top, tool, p0, p1); continue
     kind, R, half = TOOLS[tool]
     ia = max(0, int(math.ceil((min(p0[0], p1[0]) - R) / CELL))); ib = min(NX - 1, int(math.floor((max(p0[0], p1[0]) + R) / CELL)))
@@ -30,12 +38,12 @@ for op, tool, p0, p1 in moves(nc):
         dist = np.hypot(X - (p0[0] + t * dx), Y - (p0[1] + t * dy))
         inside = R - dist                      # how far inside the disc edge the node stands
         real = deep & (inside >= tol)
-        res.append((k, p0, p1, int(deep.sum()), int(real.sum()), float(d[deep].max()), float(d[real].max()) if real.any() else 0.0, float(inside[deep].max())))
+        res.append((k, (p0[0] - SH[0], p0[1] - SH[1], p0[2]), (p1[0] - SH[0], p1[1] - SH[1], p1[2]), int(deep.sum()), int(real.sum()), float(d[deep].max()), float(d[real].max()) if real.any() else 0.0, float(inside[deep].max())))
         if k in show:
             jj, ii = np.nonzero(deep)
-            print(f"piece {k}: {tuple(round(v,3) for v in p0)} -> {tuple(round(v,3) for v in p1)}; tool radius {R}")
+            print(f"piece {k}: {(round(p0[0]-SH[0],3), round(p0[1]-SH[1],3), round(p0[2],3))} -> {(round(p1[0]-SH[0],3), round(p1[1]-SH[1],3), round(p1[2],3))}; tool radius {R}")
             for j, i in zip(jj, ii):
-                print(f"   node ({(ia+i)*CELL:.1f},{(ja+j)*CELL:.1f}) top before {before[j,i]:.2f} lowered {d[j,i]:.2f} mm; distance to the piece {dist[j,i]:.4f}; inside the disc edge by {inside[j,i]:.4f} mm; counts {bool(real[j,i])}")
+                print(f"   node ({(ia+i)*CELL-SH[0]:.1f},{(ja+j)*CELL-SH[1]:.1f}) top before {before[j,i]:.2f} lowered {d[j,i]:.2f} mm; distance to the piece {dist[j,i]:.4f}; inside the disc edge by {inside[j,i]:.4f} mm; counts {bool(real[j,i])}")
     k += 1
 allp = len(res); realp = [r for r in res if r[4] > 0]
 print(f"{nc} '{pref}' bar {bar} tol {tol}: pieces with a node over the bar {allp} ({sum(r[3] for r in res)} nodes); of them with a node {tol} mm or more inside the disc edge: {len(realp)} pieces, {sum(r[4] for r in realp)} nodes, deepest {max([r[6] for r in realp], default=0):.2f} mm")

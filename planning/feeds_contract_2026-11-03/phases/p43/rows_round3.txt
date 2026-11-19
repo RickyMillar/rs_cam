@@ -1,0 +1,14 @@
+== HEAD
+total_runtime_s 8833.9 collisions 0 rapid 0 failed 0
+20 Front bulk rough 18 mm moves 22670 | body 4.164/2.345=1.78 (exceeds) deepest 5.732; entry 1.941/2.345=0.83 (within) deepest 1.993; cleanup 4.166/2.345=1.78 (exceeds) deepest 4.166; link 3.666/2.402=1.53 (exceeds) deepest 3.666
+21 Front 3D rough moves 39788 | body 4.308/3.048=1.41 (exceeds) deepest 4.308; entry 1.590/3.001=0.53 (within) deepest 1.881; cleanup 4.210/3.719=1.13 (exceeds) deepest 5.176; link 0.480/3.001=0.16 (within) deepest 0.497
+row states of the setup: {'exceeds': 5, 'no_number': 45, 'not_applicable': 18, 'within': 58}
+== build 3
+total_runtime_s 8762.4 collisions 0 rapid 0 failed 0
+20 Front bulk rough 18 mm moves 22842 | body 4.164/2.345=1.78 (exceeds) deepest 4.166; entry 1.941/2.345=0.83 (within) deepest 1.993; cleanup 3.667/2.367=1.55 (exceeds) deepest 3.792; link 3.666/2.402=1.53 (exceeds) deepest 3.666
+21 Front 3D rough moves 36882 | body 4.701/3.001=1.57 (exceeds) deepest 4.701; entry 1.996/3.001=0.67 (within) deepest 1.996; cleanup 4.393/3.138=1.40 (exceeds) deepest 5.176; link 0.480/3.001=0.16 (within) deepest 0.480
+row states of the setup: {'exceeds': 5, 'no_number': 45, 'not_applicable': 18, 'within': 58}
+total_runtime_s 9682.9 collisions 0 rapid 0 failed 0
+1 Back bulk rough 18 mm moves 36079 | body 4.166/2.345=1.78 (exceeds) deepest 4.166; entry 1.969/2.345=0.84 (within) deepest 1.969; cleanup 4.166/2.523=1.65 (exceeds) deepest 4.233; link 4.166/2.369=1.76 (exceeds) deepest 4.166
+2 Back rest 6 mm (cavity, hollow, la moves 15239 | body 6.000/3.197=1.88 (exceeds) deepest 6.130; entry 1.885/3.001=0.63 (within) deepest 1.894; cleanup 6.000/4.620=1.30 (exceeds) deepest 6.001; link 6.000/3.412=1.76 (exceeds) deepest 6.000
+row states of the setup: {'exceeds': 7, 'no_number': 156, 'not_applicable': 44, 'within': 93}
