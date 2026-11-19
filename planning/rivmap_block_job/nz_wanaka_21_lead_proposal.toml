@@ -1557,6 +1557,84 @@ offset = 0.0
 enabled = false
 
 [[setups.toolpaths]]
+id = 41
+name = "Slit slot rest pocket 6 mm"
+enabled = true
+tool_id = 0
+model_id = 11
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.5
+depth_per_pass = 2.25
+feed_rate = 3165.0
+plunge_rate = 1347.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 10610
+region_ordering = "global"
+open_paths = "skip"
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 4.83
+
+[[setups.toolpaths.operation.params.selection.rules]]
+source = "toolpath_model"
+
+[setups.toolpaths.operation.params.selection.rules.filter]
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
 id = 3
 name = "Pin drill, flip pins"
 enabled = true
