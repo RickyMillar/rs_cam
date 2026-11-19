@@ -1,0 +1,8 @@
+motion lines 36080, moves 36079 (offset 1)
+Global Z 21.33: wall item moves 7713..8924, 2 entries, 1.50 m of cut, 3050 samples, lifted 0, least clearance 0.934 mm
+Global Z 17.17: wall item moves 16518..19336, 3 entries, 1.49 m of cut, 3038 samples, lifted 2, least clearance 0.934 mm
+Global Z 13.00: wall item moves 27229..30867, 3 entries, 1.47 m of cut, 2974 samples, lifted 0, least clearance 0.934 mm
+Global Z 11.00: wall item moves 32574..36061, 2 entries, 0.31 m of cut, 655 samples, lifted 0, least clearance 0.934 mm
+all levels: samples 9717; lifted onto the model by the nearer line: 2, the largest lift 3.33 mm; least clearance 0.934 mm at (224.55, 88.497, 21.334, 8328)
+   lifted (341.55, 126.98, 20.5, 20.5, 16.5, 19327)
+   lifted (52.95, 126.99, 20.5, 20.5, 16.5, 19333)

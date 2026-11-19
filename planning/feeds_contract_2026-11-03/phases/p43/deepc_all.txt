@@ -1,0 +1,28 @@
+out_head.nc 'Back bulk' bar 4.966 tol 0.1: pieces with a node over the bar 36 (6953 nodes); of them with a node 0.1 mm or more inside the disc edge: 31 pieces, 6310 nodes, deepest 9.00 mm
+   piece 24000: (53.26, 131.62, 16.5) -> (53.26, 297.83, 16.5): 2865 of 2865 nodes count, deepest 9.00, the deepest node inside the edge 1.340 mm
+   piece 23984: (53.26, 165.31, 16.5) -> (53.26, 156.36, 16.5): 302 of 314 nodes count, deepest 9.00, the deepest node inside the edge 1.340 mm
+   piece 23995: (53.26, 147.81, 16.5) -> (53.26, 139.58, 16.5): 276 of 290 nodes count, deepest 9.00, the deepest node inside the edge 1.340 mm
+   piece 24401: (53.26, 403.94, 16.5) -> (53.26, 411.9, 16.5): 244 of 267 nodes count, deepest 8.86, the deepest node inside the edge 1.369 mm
+   piece 25708: (341.11, 412.27, 16.5) -> (340.99, 414.51, 16.5): 244 of 277 nodes count, deepest 8.62, the deepest node inside the edge 1.437 mm
+   piece 22391: (54.36, 240.26, 16.5) -> (53.26, 245.69, 16.5): 222 of 251 nodes count, deepest 9.00, the deepest node inside the edge 1.339 mm
+   piece 25681: (56.68, 415.69, 16.5) -> (54.43, 415.57, 16.5): 219 of 253 nodes count, deepest 8.57, the deepest node inside the edge 1.317 mm
+   piece 25704: (340.47, 411.71, 16.5) -> (337.82, 415.35, 16.5): 217 of 246 nodes count, deepest 8.84, the deepest node inside the edge 1.166 mm
+out_head.nc 'Back rest' bar 6.3 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+piece 30828: (341.503, 128.95, 16.5) -> (341.55, 416.003, 16.5); tool radius 9.0
+   node (350.4,417.6) top before 25.12 lowered 8.62 mm; distance to the piece 8.9929; inside the disc edge by 0.0071 mm; counts False
+   node (350.2,418.4) top before 25.12 lowered 8.62 mm; distance to the piece 8.9760; inside the disc edge by 0.0240 mm; counts False
+   node (349.6,420.0) top before 25.12 lowered 8.62 mm; distance to the piece 8.9877; inside the disc edge by 0.0123 mm; counts False
+   node (349.4,420.4) top before 25.12 lowered 8.62 mm; distance to the piece 8.9976; inside the disc edge by 0.0024 mm; counts False
+piece 30829: (341.55, 416.003, 16.5) -> (52.997, 416.05, 16.5); tool radius 9.0
+   node (48.8,424.0) top before 25.07 lowered 8.57 mm; distance to the piece 8.9898; inside the disc edge by 0.0102 mm; counts False
+   node (49.2,424.2) top before 25.07 lowered 8.57 mm; distance to the piece 8.9911; inside the disc edge by 0.0089 mm; counts False
+   node (50.2,424.6) top before 25.07 lowered 8.57 mm; distance to the piece 8.9959; inside the disc edge by 0.0041 mm; counts False
+   node (51.0,424.8) top before 25.07 lowered 8.57 mm; distance to the piece 8.9750; inside the disc edge by 0.0250 mm; counts False
+   node (52.2,425.0) top before 25.07 lowered 8.57 mm; distance to the piece 8.9854; inside the disc edge by 0.0146 mm; counts False
+   node (52.4,425.0) top before 25.07 lowered 8.57 mm; distance to the piece 8.9699; inside the disc edge by 0.0301 mm; counts False
+   node (52.6,425.0) top before 25.07 lowered 8.57 mm; distance to the piece 8.9588; inside the disc edge by 0.0412 mm; counts False
+out_b2.nc 'Back bulk' bar 4.966 tol 0.1: pieces with a node over the bar 2 (11 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+piece 2569: (98.476, 100.4, 16.55) -> (97.0, 100.4, 16.55); tool radius 3.0
+   node (98.2,103.4) top before 25.41 lowered 8.86 mm; distance to the piece 3.0000; inside the disc edge by 0.0000 mm; counts False
+   node (98.4,103.4) top before 25.41 lowered 8.86 mm; distance to the piece 3.0000; inside the disc edge by 0.0000 mm; counts False
+out_b2.nc 'Back rest' bar 6.3 tol 0.1: pieces with a node over the bar 1 (2 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm

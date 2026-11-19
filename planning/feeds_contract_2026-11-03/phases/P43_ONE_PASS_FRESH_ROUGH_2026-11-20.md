@@ -542,3 +542,234 @@ HEAD file, byte for byte (`cmp`, one run).
   not change it. The cause is not known.
 - D-7 (the brief). rivmap100 has no fresh Geodesic rough. If the benchmark must hold this
   rule, it needs such a file in `planning/fixtures/`.
+
+## 9. Round 2: four traces and a proposal for build 3 (2026-11-20, after `9a513376f`)
+
+The lead ruled: build 2 does not land as it is; the replay bar of the first brief was wrong;
+four traces before a ruling on a third build. No product code was built in this round. The
+tree is HEAD in `crates/` (`git status --short -- crates` is empty). The release CLI was
+built again from it at the end (md5 `16c3ac2cb14cd4cae1a06285b9ff7e6a`); the binary holds no
+probe text (`strings`). Its G-code was not compared with HEAD on the job again.
+
+Three probe builds were made, and this is said first, as the ruling asks. Two questions had no
+answer in a file or in a run of an existing binary:
+- trace 1, "which read changed": the reads of the step split are not in any output. `cli_p3h`
+  is HEAD plus one print; `cli_p3b` is build 2 plus the same print.
+- trace 4, "which term of the ship rule refuses": `cli_p4` is build 2 plus the step print and
+  one print of the ship terms per level.
+The probes print only. The motion of id 1 of each probe run is the motion of its build, line
+for line (feeds aside). `phases/p43/probe4_on_build2.patch` is the whole diff of the `cli_p4`
+tree against HEAD (the not-landed patch plus the two prints); `probe_round2_output.txt` holds
+the lines.
+
+### 9.0 What failed, and what is not verified
+
+- Trace 3 for id 20 is partial. The instruments hold no model in the frame of setup "3 Front",
+  so the clearance of its wall line from the model wall is NOT measured. Its one wall move
+  was read against the plan points beside it.
+- Trace 2 gives the class from the opening record and the reach of each level. It was not
+  shown that a wall line on that region would ship at the place of the sample (9.2).
+- Trace 1: the value 6.448 mm of the HEAD read is measured; which planner cell holds it was
+  not read.
+- The proposal for build 3 (9.6) is not built. One of its own predictions is that it breaks
+  the D-10 bar of P42 on id 20.
+- One run of each probe.
+
+### 9.1 The corrected replay class
+
+`deepc.py` (the replay of `p41/deep.py`): a node counts for a piece when the piece lowers it
+by more than the bar AND the node stands the cut tolerance (0.1 mm) or more inside the disc
+edge of that piece (tool radius less the XY distance from the node to the piece). The class is
+geometry, not a node count. File `deepc_all.txt`.
+
+| Pieces over the bar | HEAD: all | HEAD: corrected class | Build 2: all | Build 2: corrected class |
+|---|---|---|---|---|
+| id 1 (bar 4.966 mm) | 36 (6 953 nodes) | 31 (6 310 nodes, deepest 9.00 mm) | 2 (11 nodes) | 0 |
+| id 2 (bar 6.3 mm) | 0 | 0 | 1 (2 nodes) | 0 |
+
+One piece by path, piece 30 828 of id 1 of build 2, (341.503, 128.950, 16.5) to
+(341.550, 416.003, 16.5), tool radius 9.0: it lowers 4 nodes by 8.62 mm, (350.4, 417.6),
+(350.2, 418.4), (349.6, 420.0), (349.4, 420.4). They stand 0.0071, 0.0240, 0.0123 and
+0.0024 mm inside the disc edge. None counts. Piece 30 829: 7 nodes, 0.0041 to 0.0412 mm
+inside. Piece 2 569 of id 2: 2 nodes, 0.0000 mm inside (on the edge).
+
+### 9.2 Trace 1: the two nodes under the target
+
+- What id 1 must leave. The target of the instrument is `back_target_s1.stl`, and that file
+  is the model of id 1 (`model_id = 0`). Id 1 has `stock_to_leave_axial = 0.0`. So 20.5 is
+  the finished surface and the leave is 0: the cut is 0.41 mm under the model plus the leave.
+  While the tool is under the target, the two nodes stand at most 0.093 and 0.095 mm inside
+  the disc edge.
+- Why build 2 feeds the climb. The function is `clearing.rs::plan_and_emit_region`, the arm
+  `StepSplit::StockDepth if shape_split`. The step is (36.282, 119.282, 17.168) to
+  (36.282, 117.782, 20.5) in the setup frame, level 17.168. The read that changed is
+  `step_axial_depth` (the conservative stock top over the disc less the tool Z):
+
+  | | `step_axial_depth` | limit | load; ceiling | `large_z` |
+  |---|---|---|---|---|
+  | HEAD (`cli_p3h`) | 6.448 mm | 4.666 mm | 0.000; 0.333 | true: retract and entry |
+  | Build 2 (`cli_p3b`) | 3.332 mm | 4.666 mm | 0.134; 0.333 | false: fed |
+
+  At HEAD the disc holds stock that level 21.334 left at the wall, so the step is deep and is
+  split. In build 2 the wall line of level 21.334 cut that stock; the read is the step itself
+  (20.5 - 17.168), and the step is fed. It is not a D65 capped step (no cap marker).
+- The same chord exists at HEAD. `gouge.py` reads each fed piece against the target:
+
+  | Nodes that a fed piece of id 1 passes more than 0.3 mm under the target | HEAD | Build 2 |
+  |---|---|---|
+  | All | 125 (5.00 mm2), deepest 2.57 mm | 136 (5.44 mm2), deepest 2.57 mm |
+  | 0.1 mm or more inside the disc edge | 0 | 0 |
+  | 0.05 to 0.10 mm inside | 24 | 31 |
+  | Under 0.01 mm inside | 101 | 105 |
+
+  At HEAD, at the same step edge (Y 118.0): node (110.2, 118.0), 0.41 mm under, 0.094 mm
+  inside, piece 11 041, (108.883, 127.782, 17.168) to (110.260, 126.891, 20.5); node
+  (334.0, 118.0), 0.33 mm under, 0.100 mm inside, piece 15 421. The HEAD replay stock reads
+  20.09 and 20.17 mm at these nodes.
+- Why the measure of the first round read 0.0 at HEAD. Its rule lowers the target over one
+  node. At X 110.2 and 334.0 the next node (Y 118.2) has the target 16.5, so the rule hides
+  the node. At X 54.6 and 54.8 the next node has no target (no triangle over it), so the
+  rule cannot lower, and the node shows. The two nodes are not a new class.
+- The class and its size. The chord lift tests each chord with the reduced tool of the model
+  gouge guard (`surface/chord_lift.rs::lift_chords_to_leave`, the probe of
+  `compute/model_gouge.rs::allowance_probe_radial_tolerance_mm`: the cutter less the chord
+  tolerance, 0.1 mm for id 1, on its radius). So a chord can pass with the full tool up to
+  0.1 mm over a vertical edge, at any depth under it. Measured: no node 0.1 mm or more inside
+  the edge at HEAD or in build 2. It is the stated tolerance of the guard, not a gap of the
+  pipeline beyond it. The "wall chord gap that P40 left open" was not found as a larger cut.
+- The smallest change, if the lead wants this class gone: in the same arm of
+  `plan_and_emit_region`, a shape-split step that is NOT split and that climbs goes out as two
+  moves (up at the first XY, then over at the upper Z). Then the full tool is never under the
+  upper floor inside its disc. Not built, not measured, and not in the proposal of 9.6.
+
+### 9.3 Trace 2: the 5.73 mm sample of id 20
+
+`cli_head` with `--sim-artifact`, setup "3 Front", ids 18 to 20. One sample of 233 341 is over
+4.666 mm:
+
+- Sample 232 512, move 22 635, (340.461, 44.550, 15.602) in the setup frame, depth 5.732 mm,
+  arc 1.211 rad, 3 127 mm/min, a clearing cut, not in a transit span. It is the first cut
+  move after a ramp entry of level 13.5, draped at Z 15.602. 5.732 = 21.334 - 15.602: the
+  tool meets stock that stands at the floor of level 21.334.
+- The reach of each level at this place (`front_trace.py`, fed points with X over 300, Y 20
+  to 70): level 21.334 to X 344.15; level 17.168 to X 335.00; level 13.5 to X 341.15.
+- The class: the perimeter sweep (D-5). The opening record of level 17.168 is, for both of
+  its regions, "the shortfall inset split the outline: shipped sweep" (the levels 21.334 and
+  13.5 are "grown, no sweep"). On the sweep path the plan stands a tool radius plus 0.25 mm
+  inside the region (`clear_one_region`, the perimeter sweep). So level 17.168 leaves a band
+  at the limit of its regions, at 21.334: its fed points end 9.15 mm short of level 21.334
+  here. Level 13.5 opens on its grown outline, reaches 6.15 mm farther than level 17.168, and
+  takes the band in one cut (width 5.83 mm).
+- It is not the strip of 2.1 (one 2D cell), and not a region that no level plans.
+- Why R-43 ships no line there: the fresh rule gives a line only to a region that the plan
+  opened on its grown outline. The ship-term probe states it: level 17.168, "planned regions
+  2, opened 0, rings 0". (Level 21.334: 844 points, each a tread, largest wall top less floor
+  2.40 mm. Level 13.5: 483 points, 2 over the limit at 4.71 mm, 1 run.)
+- What the promise needs there: the level that keeps the sweep must cut its own band. Two
+  ways. (a) The wall line on a sweep region too: one contour 8.05 mm wide for this tool
+  (the sweep reaches 0.25 mm inside the raw boundary, the line 7.8 mm beyond it), at one pass,
+  with the load cap of `run_feed_cap`. (b) No sweep on a fresh rough: `grown_outlines` plans
+  the pieces of a split outline on their grown outlines. (b) is the source and changes the
+  plan of each such level; (a) is one line.
+- Not shown: that the ship rule is true at this place at level 17.168. By reading it is rule
+  1: the next floor (15.602) is under the floor (17.168), and the strip top (21.334) less the
+  next floor is 5.73 mm.
+
+### 9.4 Trace 3: D-1, the wall line against the model
+
+`wall_line.py`, build 2. The wall-line moves are the fed moves of the first cleanup item of
+each level, less its entries, sampled each 0.5 mm. File `wall_line_b2.txt`.
+
+| id 1 | Cut length | Samples | Lifted | Least clearance |
+|---|---|---|---|---|
+| Level 21.334 | 1.50 m | 3 050 | 0 | 0.934 mm |
+| Level 17.168 | 1.49 m | 3 038 | 2 | 0.934 mm |
+| Level 13.002 | 1.47 m | 2 974 | 0 | 0.934 mm |
+| Level 11.0 | 0.31 m | 655 | 0 | 0.934 mm |
+
+- Clearance: the least XY distance from a sample to a target node that stands more than
+  0.05 mm above the tool tip, less the tool radius. The least is 0.934 mm, at
+  (224.550, 88.497, 21.334). So the tool on the line is never nearer than 0.93 mm to the
+  model wall at its own height.
+- Lifted: a sample that rides the model where a point 0.3 mm farther from every wall would
+  not (the highest target within R is over the level and over the highest target within
+  R - 0.3 by more than 0.1 mm, and the Z is on it). 2 of 9 717 samples: (341.55, 126.98) and
+  (52.95, 126.99), Z 20.5, lift 3.33 mm. Both are the place where the ring crosses the edge
+  of the step shelf and climbs onto it. No sample along a wall is lifted.
+- Id 20 has one wall move in build 2: (341.539, 138.187, 14.978) to (341.539, 139.682,
+  14.944), level 13.5, 1.5 mm long. Its Z is the Z of the plan points beside it
+  ((341.15, 138.35, 14.944), 0.39 mm away). Its clearance from the model is not measured
+  (9.0).
+- So 1.2 mm inside the raw boundary holds on this job with 0.93 mm to spare. D-1 stays as
+  written; the measure speaks for 1.2 mm.
+
+### 9.5 Trace 4: rivmap100, the dial and the ship terms
+
+`cli_p4` on the two fresh Geodesic scratch arms; the G-code is the build 2 file, byte for
+byte. The probe prints the rule of each level, and each level says `FreshStock`. A second
+proof needs no probe: `cli_b2` with `RUST_LOG=rs_cam_core::adaptive3d=debug` prints "P42 wall
+pass of the level ... runs=0" at each level (the line is after the test of the dial);
+`cli_head` prints none.
+
+| Arm | Level | Opened of planned | Ring points | Rule 2 true (largest wall top less floor) | Rule 1 read | Runs |
+|---|---|---|---|---|---|---|
+| Depth/Pass 8 (limit 8.5) | 6.0 | 1 of 1 | 814 | 0 (0.00 mm) | 0 | 0 |
+| | 0.5 | 2 of 2 | 942 | 0 (1.79 mm) | 0 | 0 |
+| Depth/Pass 2 (limit 2.5) | 12.0 | 1 of 1 | 814 | 0 (0.00 mm) | 0 | 0 |
+| | 10.0 | 1 of 1 | 806 | 0 (1.87 mm) | 0 | 0 |
+| | 8.0 | 1 of 1 | 1 188 | 0 (1.82 mm) | 0 | 0 |
+| | 6.0 | 0 of 2 | 0 | | | 0 |
+| | 4.0 | 2 of 2 | 1 100 | 0 (1.79 mm) | 0 | 0 |
+| | 2.0 | 1 of 1 | 214 | 0 (1.44 mm) | 0 | 0 |
+| | 0.5 | 0 of 0 | 0 | | | 0 |
+
+- The term that refuses: no wall deeper than one pass. Rule 2 is false at each point (the
+  tool-centre surface within two cells stands at most 1.87 mm above the floor). Rule 1 is
+  read at no point: each ring point is a tread (its next floor is its floor).
+- Level 6.0 of the Depth/Pass 2 arm has two regions on the perimeter sweep and so no ring:
+  the class of trace 2 exists on the benchmark too.
+- For comparison, id 1: 1 016, 1 016, 1 003 and 233 points; rule 1 true at 1 016 points of
+  level 21.334 (8.33 mm), rule 2 true at each point of level 17.168 (8.33 mm).
+
+### 9.6 Proposal for build 3 (not built)
+
+The change, on top of build 2: ONE line of the rule. The wall line of a fresh rough runs on
+each region whose plan cut a segment, not only on a region opened on its grown outline
+(`WallRegions::opened` and `LevelEmission::opened_on_grown` go away). The line, the reads,
+the ship rule and the single round stay.
+
+- Why a contour at the limit of a sweep region is not the full slot that 3.2 refused: the
+  band is the tool radius plus 0.25 mm less the inset of the line (9.25 - 1.2 = 8.05 mm for
+  the 18 mm tool), 45 % of the diameter, and the run has the load cap of `run_feed_cap`.
+- No change for the corner (6.2): its nodes are 0.002 to 0.041 mm inside the disc edge, the
+  graze class of the corrected bar.
+- No change for trace 1: the class is at HEAD and inside the stated tolerance of the guard.
+
+Predictions (written before any code of build 3):
+
+1. Id 1: the G-code of build 2, byte for byte (each of its regions opens on the grown
+   outline). So each number of 6.1 holds, and the corrected replay class reads 0 pieces for
+   id 1 and id 2.
+2. Id 20: wall runs at level 17.168 on both regions; its deepest body sample falls from 5.73
+   to 4.17 mm (at most 4.666).
+3. Id 20 cleanup row: depth 4.17 mm at a width near 8 mm. Its ratio to its own cap is OVER
+   the ratio of the body row (1.78). This breaks the D-10 bar of P42 round 3. The lead must
+   rule on it before the build: allow it for a sweep region, or choose way (b) of 9.3.
+4. Id 20: 60 to 200 s more, 300 to 1 500 more moves. Id 21: under 30 s of change.
+5. rivmap100, the fresh Depth/Pass 2 arm: level 6.0 gets rings; rule 2 stays false (the
+   terrain rise is 1.9 mm against 2.5), so the same bytes. The stored file: the same bytes.
+6. Golden: a cell of a fresh Geodesic rough moves only if it has a sweep region at a wall
+   deeper than one pass. I expect none (build 2 moved none), but I did not read the cells.
+7. Cut below the target for id 20: not predicted (no instrument in that frame).
+
+What build 3 still does not hold:
+
+- A region that no level plans (the small-region bound, an F-038 drop, a left piece with no
+  field): id 20 has 116 such areas at HEAD. A later level beside one can cut it deeper than
+  one pass. On this job the tallest stands 2.96 mm above its floor.
+- A closed gap of `grown_outlines` (5.2), Contour Parallel, a tool with a planner cell under
+  ten cut tolerances.
+- A step down of a ring is spread along the line by the descent clamp (6.5, D-3).
+- The load of the band of a sweep region is held by the feed cap only, not by a pass width.
+- A wall that is not on a grid axis: two rings can differ by the cut tolerance. The corrected
+  replay class then reads 0, and the simulation rows are the judge.
