@@ -933,7 +933,7 @@ kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
 stepover = 5.5
-depth_per_pass = 10.0
+depth_per_pass = 4.166
 stock_to_leave_axial = 0.0
 feed_rate = 8475.0
 plunge_rate = 2162.0
