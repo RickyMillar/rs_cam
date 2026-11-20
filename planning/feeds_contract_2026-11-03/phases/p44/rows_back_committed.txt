@@ -1,0 +1,22 @@
+before total_runtime_s 9715.8 collisions 0 rapid 0 failed checks 0 []
+after  total_runtime_s 10037.2 collisions 0 rapid 0 failed checks 0 []
+2 Back rest 6 mm (cavity, hollow, lakes, pocke: moves 15239 -> 18737
+   ('force_budget', 'group', 'cleanup'): (6.0, 4.619841553637298, 'exceeds', 6.000986099243164) -> (5.0, 3.429466148708105, 'exceeds', 6.320318222045898)
+   ('force_budget', 'group', 'link'): (6.0, 3.412174080525536, 'exceeds', 6.0) -> (6.0, 3.412870073072552, 'exceeds', 6.0)
+40 Cavity rest pocket 6 mm: moves 756 -> 155
+   ('force_budget', 'group', 'entry'): (2.25, 4.441183703838333, 'within', 2.25) -> (2.25, 16.436929105184383, 'within', 2.25)
+41 Slit slot rest pocket 6 mm: moves 26 -> 44
+   ('force_budget', 'group', 'body'): (2.066999912261963, 3.0005161332908408, 'within', 2.066999912261963) -> (2.066999912261963, 3.0005161332908408, 'within', 3.5699996948242188)
+   ('force_budget', 'group', 'entry'): (2.066999912261963, 4.441183703838333, 'within', 2.066999912261963) -> (2.066999912261963, 4.470968298255083, 'within', 2.066999912261963)
+11 River channel 6 mm, pass 7 of 7: moves 46994 -> 46958
+
+28 Lake outline channel 6 mm: moves 8061 -> 4663
+   ('force_budget', 'group', 'body'): (1.5902957916259766, 2.697396078255304, 'within', 1.5913152694702148) -> (1.5913152694702148, 2.774461053796923, 'within', 1.5913152694702148)
+   ('force_budget', 'group', 'entry'): (0.0, 3.284097720924306, 'within', None) -> (0.0, None, 'no_number', None)  STATE CHANGED
+25 Lake relief band 6 mm, 11 lakes to Z 13.5: moves 7206 -> 7206
+   ('force_budget', 'group', 'body'): (0.7031040191650391, 18.7615902299059, 'within', 0.7206020355224609) -> (0.0, None, 'no_number', None)  STATE CHANGED
+   ('force_budget', 'group', 'entry'): (1.1769790649414062, 16.426521470994825, 'within', 1.1769790649414062) -> (None, None, 'no_number', None)  STATE CHANGED
+14 ANTENNA_D5.00 pocket 2 mm: moves 640 -> 640
+   ('force_budget', 'group', 'entry'): (0.5, 8.0, 'within', 0.5) -> (0.42708587646484375, 8.0, 'within', 0.42708587646484375)
+16 Day strip slit V60: moves 19 -> 19
+   ('force_budget', 'group', 'body'): (1.8299999237060547, 5.222474645762743, 'within', 1.830000400543213) -> (1.8300000429153442, 5.222474645762743, 'within', 1.8300001621246338)

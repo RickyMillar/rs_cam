@@ -1,0 +1,184 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index bf9304b5e..3accac695 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -513,9 +513,17 @@ fn build_material_bool_grid(
+     let padded_rows = rows + 2;
+     let padded_cols = cols + 2;
+     let mut padded_grid = vec![false; padded_rows * padded_cols];
++    let p44_on = p44::on();
++    let mut p44_bits: Vec<u8> = if p44_on { vec![0u8; rows * cols] } else { Vec::new() };
+ 
+     for row in 0..rows {
+         for col in 0..cols {
++            if p44_on {
++                let mut b = 0u8;
++                if cell_has_material(material_stock, surface_hm, row, col, z_level, stock_to_leave) { b |= 1; }
++                if mask.is_none_or(|m| m.owns(row, col)) { b |= 2; }
++                p44_bits[row * cols + col] = b;
++            }
+             // Skip the cells that the job does not own.
+             if let Some(m) = mask
+                 && !m.owns(row, col)
+@@ -558,6 +566,11 @@ fn build_material_bool_grid(
+             held, "One-pass rule: centres held off stock more than one pass above the cutter"
+         );
+     }
++    if p44_on {
++        for row in 0..rows { for col in 0..cols {
++            if padded_grid[(row + 1) * padded_cols + (col + 1)] { p44_bits[row * cols + col] |= 4; }
++        } }
++    }
+ 
+     // The rest region filter: ONE place for every strategy and the
+     // Contour Parallel cleanup. A region that is too large is skipped at
+@@ -578,6 +591,12 @@ fn build_material_bool_grid(
+         }
+     }
+ 
++    if p44_on {
++        for row in 0..rows { for col in 0..cols {
++            if padded_grid[(row + 1) * padded_cols + (col + 1)] { p44_bits[row * cols + col] |= 8; }
++        } }
++        p44::BITS.with(|b| *b.borrow_mut() = p44_bits);
++    }
+     (
+         padded_grid,
+         padded_rows,
+@@ -588,6 +607,49 @@ fn build_material_bool_grid(
+     )
+ }
+ 
++/// P44 probe (prints only; not for the product): env `P44PROBE` = an output folder.
++#[allow(clippy::all, clippy::pedantic, clippy::restriction, reason = "temporary probe")]
++pub(super) mod p44 {
++    use std::io::Write;
++    thread_local! {
++        pub static BITS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
++        pub static SEQ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
++    }
++    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
++    pub fn dir() -> Option<String> { std::env::var("P44PROBE").ok() }
++    pub fn on() -> bool { dir().is_some() }
++    pub fn next_seq() -> usize { let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst); SEQ.with(|s| s.set(n)); n }
++    pub fn seq() -> usize { SEQ.with(|s| s.get()) }
++    pub fn line(text: String) {
++        let Some(d) = dir() else { return };
++        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{d}/probe.log")) {
++            let _ = writeln!(f, "{text}");
++        }
++    }
++    pub fn bytes(name: &str, data: &[u8]) {
++        let Some(d) = dir() else { return };
++        let _ = std::fs::write(format!("{d}/{name}"), data);
++    }
++    pub fn bbox(poly: &crate::polygon::Polygon2) -> String {
++        let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
++        for p in &poly.exterior { x0 = x0.min(p.x); y0 = y0.min(p.y); x1 = x1.max(p.x); y1 = y1.max(p.y); }
++        format!("{x0:.2} {y0:.2} {x1:.2} {y1:.2}")
++    }
++    pub fn stock(radius: f64, stock: &crate::dexel_stock::TriDexelStock, hm: &crate::surface::slope::SurfaceHeightmap) {
++        if !on() { return; }
++        let g = &stock.z_grid;
++        let mut top = Vec::with_capacity(g.rows * g.cols * 4);
++        let mut floor = Vec::with_capacity(g.rows * g.cols * 4);
++        for row in 0..g.rows { for col in 0..g.cols {
++            top.extend_from_slice(&(super::super::stock_top_z_at(stock, row, col) as f32).to_le_bytes());
++            floor.extend_from_slice(&(hm.z_or_bbox_floor_at(row, col) as f32).to_le_bytes());
++        } }
++        bytes(&format!("r{radius:.1}_stocktop.f32"), &top);
++        bytes(&format!("r{radius:.1}_floor.f32"), &floor);
++        line(format!("final r {radius:.3} rows {} cols {} origin {:.4} {:.4} cell {:.5}", g.rows, g.cols, g.origin_u, g.origin_v, g.cell_size));
++    }
++}
++
+ /// Stamp dexel stock along a 3D cutting path with **swept** segment
+ /// stamps between consecutive points.
+ ///
+@@ -2559,6 +2621,20 @@ fn detect_and_order_regions(
+         }
+         grid
+     };
++    let p44_seq = if p44::on() {
++        let seq = p44::next_seq();
++        let mut bits = p44::BITS.with(|b| std::mem::take(&mut *b.borrow_mut()));
++        let (r0, c0) = (rows - 2, cols - 2);
++        if bits.len() == r0 * c0 {
++            for row in 0..r0 { for col in 0..c0 {
++                if material_grid.get((row + 1) * cols + (col + 1)).copied().unwrap_or(false) { bits[row * c0 + col] |= 16; }
++            } }
++            p44::bytes(&format!("r{:.1}_n{seq:04}.bin", ctx.tool_radius), &bits);
++        }
++        p44::line(format!("level seq {seq} r {:.3} z {z_level:.4} job {} rows {r0} cols {c0} origin {:.4} {:.4} cell {cell_size:.5} dpp {:.3} any {}",
++            ctx.tool_radius, area_mask.map_or(-1, |m| m.job as i64), origin_x + cell_size, origin_y + cell_size, ctx.depth_per_pass, material_grid.iter().any(|&b| b)));
++        seq
++    } else { 0 };
+     if !material_grid.iter().any(|&b| b) {
+         return None;
+     }
+@@ -2644,6 +2720,10 @@ fn detect_and_order_regions(
+     let (kept, small): (Vec<_>, Vec<_>) = regions
+         .into_iter()
+         .partition(|r| r.area().abs() >= min_region_area_mm2);
++    if p44::on() {
++        for r in &kept { p44::line(format!("region seq {p44_seq} kept area {:.2} bound {min_region_area_mm2:.2} bbox {}", r.area().abs(), p44::bbox(r))); }
++        for r in &small { p44::line(format!("region seq {p44_seq} small area {:.2} bound {min_region_area_mm2:.2} bbox {}", r.area().abs(), p44::bbox(r))); }
++    }
+     let mut regions = kept;
+     ctx.unplanned
+         .borrow_mut()
+@@ -3032,6 +3112,7 @@ fn plan_one_outline(
+     let Some(plan) =
+         crate::adaptive::geodesic::slice_segments(polygon_for_adaptive, params_2d, cancel)?
+     else {
++        p44::line(format!("nofield seq {} region {} area {:.2} bbox {}", p44::seq(), region_idx + 1, polygon_for_adaptive.area().abs(), p44::bbox(polygon_for_adaptive)));
+         leave_piece(
+             ctx,
+             z_level,
+@@ -3093,6 +3174,7 @@ fn plan_one_outline(
+         }
+         let dropped_groups = dropped_first + dropped_more;
+         if dropped_groups > 0 {
++            p44::line(format!("groups seq {} region {} dropped {dropped_groups} of {group_total} bbox {}", p44::seq(), region_idx + 1, p44::bbox(polygon_for_adaptive)));
+             debug!(
+                 z = z_level,
+                 region = region_idx + 1,
+@@ -3636,6 +3718,7 @@ fn clear_one_region(
+                 }
+             }
+         }
++        p44::line(format!("forecast seq {} region {} area {:.2} forecast {forecast_mm:.2} bound {:.2} drop {} bbox {}", p44::seq(), region_idx + 1, region_polygon.area().abs(), ctx.min_region_cut_length_mm, forecast_mm < ctx.min_region_cut_length_mm, p44::bbox(region_polygon)));
+         if forecast_mm < ctx.min_region_cut_length_mm {
+             debug!(
+                 z = z_level,
+@@ -3769,11 +3852,17 @@ fn clear_one_region(
+     // G-ADAPT3DPIECES (D2): the 2D plan of the region and its emission.
+     // The outlines are the region's own (`planner_outlines`), or (research
+     // arm C31) the grown region split into its pieces.
++    let p44_grown = grown.is_some();
+     let outlines = match grown {
+         Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
+         None => planner_outlines(region_polygon, params_2d),
+     };
+-    plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)
++    let p44_cuts = *emission.cut_count;
++    let p44_sweep = emission.level_metrics.perimeter_sweep_length_mm;
++    let p44_walk = emission.level_metrics.agent_walk_cut_length_mm;
++    let out = plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel);
++    p44::line(format!("planned seq {} region {} area {:.2} grown {p44_grown} outlines {} cuts_after_sweep {} walk_mm {:.1} sweep_total_mm {p44_sweep:.1} bbox {}", p44::seq(), region_idx + 1, region_polygon.area().abs(), outlines.len(), *emission.cut_count - p44_cuts, emission.level_metrics.agent_walk_cut_length_mm - p44_walk, p44::bbox(region_polygon)));
++    out
+ }
+ 
+ /// The region body after the perimeter sweep: the geodesic plan of each of
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index d531572d6..eeb8c249f 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1734,6 +1734,7 @@ fn adaptive_3d_segments_probed(
+         }
+     }
+ 
++    super::clearing::p44::stock(tool_radius, &material_stock, &surface_hm);
+     let left_stock = super::left_stock::left_stock(
+         &ctx.unplanned.take(),
+         ctx.dropped_cut_groups.get(),

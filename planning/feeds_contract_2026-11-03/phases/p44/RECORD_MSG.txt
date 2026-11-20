@@ -1,0 +1,73 @@
+planning: P44 record: a 3D Rough that cuts each place where its tool fits (not landed); the cause per place, two measured builds, the patch
+
+The operator ruled on 2026-11-20 that a 3D Rough must cut a place that it is told to cut, or
+name the place and the reason. P44 measured the cause of each of the seven places of the
+Wanaka back, wrote a design and measured two builds. The product code is NOT changed: bar 2
+fails, so the tree is at HEAD and the patch is in phases/p44/not_landed/.
+
+The cause (id 2 "Back rest 6 mm", 9 193.9 mm2 of wood where the 6 mm tool fits):
+- the small-region bound of `detect_and_order_regions` (144 mm2, an area in the material
+  frame applied to a tool-centre region): 1 782.6 mm2, and 1 053.3 mm2 more that the one-pass
+  hold then keeps (the antenna slot, the control relief);
+- the F-038 forecast, which insets a tool-centre region by the tool radius again: 2 827.7 mm2
+  (the slit slot reads 0.0 mm against 15 mm);
+- strips at the walls that make no region, because the level grid reads the stock only at
+  the centre cell: 3 430.8 mm2.
+
+Build 2 of the patch: wood after id 2 where the tool fits 9 193.9 to 1 475.8 mm2 (antenna slot
+412.8 to 59.8, control relief 158.2 to 13.6, slit slot 1 781.7 to 121.8, ESP relief 59.4 to
+23.8, step shelf 795.1 to 124.6, board pocket 957.4 to 364.2, cavity 5 016.1 to 762.0); id 2
+15 239 to 18 737 moves and 579.7 to 902.4 s of feed time; "1 Back" 9 682.9 to 10 003.2 s;
+"3 Front" 8 762.4 to 9 183.4 s; 0 collisions; the depth rows of ids 1 and 2 hold.
+
+Build 3 (no strip pass): wood 9 193.9 to 4 463.2 mm2, id 2 579.7 to 676.9 s of feed time, the
+replay class 0 pieces. It is a measure form, not a product form.
+
+Why build 2 is not landed: the corrected replay class of id 2 has 4 pieces (11 nodes, deepest
+8.50 mm, at most 0.199 mm inside the disc edge); HEAD has 0. Places 1 to 4 keep the rim of the
+plan margin (0.2 to 0.4 mm at each wall), so they are not under 10 mm2.
+
+Not verified: the gates of the brief except `--lib adaptive3d:: _p37 _p44` (93 pass), full
+clippy (clean) and rustfmt (clean); rivmap100 was not run. The disk had 4.1 GB free.
+
+Note: phases/P44_REST_ROUGH_CUTS_WHAT_IT_IS_TOLD_2026-11-20.md (section 0 first; the
+decisions for the lead are section 8).
+--- paths to commit
+planning/feeds_contract_2026-11-03/phases/P44_REST_ROUGH_CUTS_WHAT_IT_IS_TOLD_2026-11-20.md
+planning/feeds_contract_2026-11-03/phases/p44/RECORD_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p44/not_landed/p44_build2.patch
+planning/feeds_contract_2026-11-03/phases/p44/not_landed/p44_build3_no_strip_pass.patch
+planning/feeds_contract_2026-11-03/phases/p44/meas_b3.txt
+planning/feeds_contract_2026-11-03/phases/p44/deepc2_b3.txt
+planning/feeds_contract_2026-11-03/phases/p44/build1.patch
+planning/feeds_contract_2026-11-03/phases/p44/probe1.patch
+planning/feeds_contract_2026-11-03/phases/p44/probe1_log.txt
+planning/feeds_contract_2026-11-03/phases/p44/probe_read.py
+planning/feeds_contract_2026-11-03/phases/p44/cause_nodes.py
+planning/feeds_contract_2026-11-03/phases/p44/strip_cells.py
+planning/feeds_contract_2026-11-03/phases/p44/places.py
+planning/feeds_contract_2026-11-03/phases/p44/rows_diff.py
+planning/feeds_contract_2026-11-03/phases/p44/meas44.sh
+planning/feeds_contract_2026-11-03/phases/p44/run_cli.sh
+planning/feeds_contract_2026-11-03/phases/p44/job_no41.toml
+planning/feeds_contract_2026-11-03/phases/p44/probe_r3.txt
+planning/feeds_contract_2026-11-03/phases/p44/probe_r9.txt
+planning/feeds_contract_2026-11-03/phases/p44/cause_r3.txt
+planning/feeds_contract_2026-11-03/phases/p44/cause_r9.txt
+planning/feeds_contract_2026-11-03/phases/p44/strip_r3.txt
+planning/feeds_contract_2026-11-03/phases/p44/places_head.txt
+planning/feeds_contract_2026-11-03/phases/p44/places_headc.txt
+planning/feeds_contract_2026-11-03/phases/p44/places_b2c.txt
+planning/feeds_contract_2026-11-03/phases/p44/meas_b1.txt
+planning/feeds_contract_2026-11-03/phases/p44/meas_b2.txt
+planning/feeds_contract_2026-11-03/phases/p44/deepc1_b2.txt
+planning/feeds_contract_2026-11-03/phases/p44/deepc2_b2.txt
+planning/feeds_contract_2026-11-03/phases/p44/gouge2_head.txt
+planning/feeds_contract_2026-11-03/phases/p44/gouge2_b2.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_scratch_job.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_back_committed.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_front.txt
+planning/feeds_contract_2026-11-03/phases/p44/finding_text_b1.txt
+planning/feeds_contract_2026-11-03/phases/p44/finding_text_b2.txt
+planning/feeds_contract_2026-11-03/phases/p44/gate_clippy.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_lib_adaptive3d.log

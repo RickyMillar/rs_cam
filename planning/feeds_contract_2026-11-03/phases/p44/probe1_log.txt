@@ -1,0 +1,238 @@
+level seq 1 r 9.000 z 21.3340 job -1 rows 309 cols 265 origin -18.5000 -9.0000 cell 1.50000 dpp 4.166 any true
+region seq 1 kept area 86851.12 bound 599.90 bbox 33.25 110.25 324.25 408.75
+region seq 1 kept area 5695.88 bound 599.90 bbox 36.25 39.75 322.75 86.25
+forecast seq 1 region 1 area 86851.12 forecast 1104.50 bound 15.00 drop false bbox 33.25 110.25 324.25 408.75
+groups seq 1 region 1 dropped 1 of 23 bbox 25.78 102.78 331.72 416.22
+planned seq 1 region 1 area 86851.12 grown true outlines 1 cuts_after_sweep 203 walk_mm 18088.5 sweep_total_mm 0.0 bbox 33.25 110.25 324.25 408.75
+forecast seq 1 region 2 area 5695.88 forecast 255.82 bound 15.00 drop false bbox 36.25 39.75 322.75 86.25
+planned seq 1 region 2 area 5695.88 grown true outlines 1 cuts_after_sweep 71 walk_mm 1430.1 sweep_total_mm 0.0 bbox 36.25 39.75 322.75 86.25
+level seq 2 r 9.000 z 17.1680 job -1 rows 309 cols 265 origin -18.5000 -9.0000 cell 1.50000 dpp 4.166 any true
+region seq 2 kept area 86851.12 bound 599.90 bbox 33.25 110.25 324.25 408.75
+region seq 2 kept area 5695.88 bound 599.90 bbox 36.25 39.75 322.75 86.25
+forecast seq 2 region 1 area 86851.12 forecast 1104.50 bound 15.00 drop false bbox 33.25 110.25 324.25 408.75
+groups seq 2 region 1 dropped 1 of 23 bbox 25.78 102.78 331.72 416.22
+planned seq 2 region 1 area 86851.12 grown true outlines 1 cuts_after_sweep 292 walk_mm 18335.7 sweep_total_mm 0.0 bbox 33.25 110.25 324.25 408.75
+forecast seq 2 region 2 area 5695.88 forecast 255.82 bound 15.00 drop false bbox 36.25 39.75 322.75 86.25
+planned seq 2 region 2 area 5695.88 grown true outlines 1 cuts_after_sweep 65 walk_mm 1430.1 sweep_total_mm 0.0 bbox 36.25 39.75 322.75 86.25
+level seq 3 r 9.000 z 13.0020 job -1 rows 309 cols 265 origin -18.5000 -9.0000 cell 1.50000 dpp 4.166 any true
+region seq 3 kept area 84243.38 bound 599.90 bbox 33.25 119.25 324.25 408.75
+region seq 3 kept area 5695.88 bound 599.90 bbox 36.25 39.75 322.75 86.25
+forecast seq 3 region 1 area 84243.38 forecast 1086.50 bound 15.00 drop false bbox 33.25 119.25 324.25 408.75
+planned seq 3 region 1 area 84243.38 grown true outlines 1 cuts_after_sweep 196 walk_mm 19208.8 sweep_total_mm 0.0 bbox 33.25 119.25 324.25 408.75
+forecast seq 3 region 2 area 5695.88 forecast 255.82 bound 15.00 drop false bbox 36.25 39.75 322.75 86.25
+planned seq 3 region 2 area 5695.88 grown true outlines 1 cuts_after_sweep 65 walk_mm 1430.1 sweep_total_mm 0.0 bbox 36.25 39.75 322.75 86.25
+level seq 4 r 9.000 z 11.0000 job -1 rows 309 cols 265 origin -18.5000 -9.0000 cell 1.50000 dpp 4.166 any true
+region seq 4 kept area 5695.88 bound 599.90 bbox 36.25 39.75 322.75 86.25
+region seq 4 small area 156.38 bound 599.90 bbox 124.75 165.75 141.25 188.25
+region seq 4 small area 28.12 bound 599.90 bbox 118.75 219.75 121.75 233.25
+region seq 4 small area 23.62 bound 599.90 bbox 93.25 188.25 97.75 198.75
+region seq 4 small area 16.88 bound 599.90 bbox 91.75 207.75 96.25 218.25
+region seq 4 small area 7.88 bound 599.90 bbox 130.75 191.25 133.75 195.75
+forecast seq 4 region 1 area 5695.88 forecast 255.82 bound 15.00 drop false bbox 36.25 39.75 322.75 86.25
+planned seq 4 region 1 area 5695.88 grown true outlines 1 cuts_after_sweep 45 walk_mm 1430.1 sweep_total_mm 0.0 bbox 36.25 39.75 322.75 86.25
+final r 9.000 rows 309 cols 265 origin -18.5000 -9.0000 cell 1.50000
+level seq 5 r 3.000 z 19.5000 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 5 kept area 1503.50 bound 144.00 bbox 209.60 79.00 328.40 92.40
+region seq 5 kept area 623.98 bound 144.00 bbox 29.60 78.80 79.40 92.60
+region seq 5 small area 0.42 bound 144.00 bbox 204.60 92.00 206.40 92.40
+forecast seq 5 region 1 area 1503.50 forecast 223.80 bound 15.00 drop false bbox 209.60 79.00 328.40 92.40
+groups seq 5 region 1 dropped 9 of 14 bbox 208.48 76.55 330.85 94.85
+planned seq 5 region 1 area 1503.50 grown true outlines 1 cuts_after_sweep 342 walk_mm 1229.3 sweep_total_mm 0.0 bbox 209.60 79.00 328.40 92.40
+forecast seq 5 region 2 area 623.98 forecast 92.75 bound 15.00 drop false bbox 29.60 78.80 79.40 92.60
+groups seq 5 region 2 dropped 6 of 13 bbox 27.15 76.55 81.32 95.05
+planned seq 5 region 2 area 623.98 grown true outlines 1 cuts_after_sweep 142 walk_mm 570.0 sweep_total_mm 0.0 bbox 29.60 78.80 79.40 92.60
+level seq 6 r 3.000 z 16.5500 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 6 kept area 1533.38 bound 144.00 bbox 206.20 79.00 328.40 92.40
+region seq 6 kept area 640.82 bound 144.00 bbox 29.60 79.00 80.60 92.40
+forecast seq 6 region 1 area 1533.38 forecast 228.37 bound 15.00 drop false bbox 206.20 79.00 328.40 92.40
+groups seq 6 region 1 dropped 9 of 14 bbox 204.68 76.55 330.85 94.85
+planned seq 6 region 1 area 1533.38 grown true outlines 1 cuts_after_sweep 266 walk_mm 1249.8 sweep_total_mm 0.0 bbox 206.20 79.00 328.40 92.40
+forecast seq 6 region 2 area 640.82 forecast 95.36 bound 15.00 drop false bbox 29.60 79.00 80.60 92.40
+groups seq 6 region 2 dropped 10 of 14 bbox 27.15 76.55 82.72 94.85
+planned seq 6 region 2 area 640.82 grown true outlines 1 cuts_after_sweep 105 walk_mm 575.8 sweep_total_mm 0.0 bbox 29.60 79.00 80.60 92.40
+level seq 7 r 3.000 z 13.5000 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 7 kept area 1532.10 bound 144.00 bbox 207.20 79.00 328.40 92.40
+region seq 7 kept area 639.98 bound 144.00 bbox 29.60 79.00 80.40 92.40
+region seq 7 small area 2.26 bound 144.00 bbox 125.80 34.60 128.80 36.00
+forecast seq 7 region 1 area 1532.10 forecast 228.26 bound 15.00 drop false bbox 207.20 79.00 328.40 92.40
+groups seq 7 region 1 dropped 5 of 11 bbox 204.88 76.55 330.85 94.85
+planned seq 7 region 1 area 1532.10 grown true outlines 1 cuts_after_sweep 269 walk_mm 1319.2 sweep_total_mm 0.0 bbox 207.20 79.00 328.40 92.40
+forecast seq 7 region 2 area 639.98 forecast 95.12 bound 15.00 drop false bbox 29.60 79.00 80.40 92.40
+groups seq 7 region 2 dropped 8 of 14 bbox 27.15 76.55 82.54 94.85
+planned seq 7 region 2 area 639.98 grown true outlines 1 cuts_after_sweep 108 walk_mm 578.3 sweep_total_mm 0.0 bbox 29.60 79.00 80.40 92.40
+level seq 8 r 3.000 z 8.5500 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 8 kept area 7812.02 bound 144.00 bbox 29.80 34.80 328.20 92.40
+forecast seq 8 region 1 area 7812.02 forecast 685.44 bound 15.00 drop false bbox 29.80 34.80 328.20 92.40
+groups seq 8 region 1 dropped 17 of 38 bbox 27.35 32.35 330.65 94.85
+planned seq 8 region 1 area 7812.02 grown true outlines 1 cuts_after_sweep 1037 walk_mm 6985.2 sweep_total_mm 0.0 bbox 29.80 34.80 328.20 92.40
+level seq 9 r 3.000 z 7.5000 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 9 kept area 6841.38 bound 144.00 bbox 29.80 34.80 328.20 90.00
+forecast seq 9 region 1 area 6841.38 forecast 670.25 bound 15.00 drop false bbox 29.80 34.80 328.20 90.00
+groups seq 9 region 1 dropped 11 of 31 bbox 27.35 32.35 330.65 92.45
+planned seq 9 region 1 area 6841.38 grown true outlines 1 cuts_after_sweep 638 walk_mm 5994.1 sweep_total_mm 0.0 bbox 29.80 34.80 328.20 90.00
+level seq 10 r 3.000 z 1.5000 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 10 kept area 291.58 bound 144.00 bbox 33.20 86.00 324.80 87.00
+region seq 10 kept area 272.02 bound 144.00 bbox 123.00 34.80 138.00 53.20
+region seq 10 kept area 268.14 bound 144.00 bbox 186.20 41.40 201.80 58.60
+region seq 10 small area 77.26 bound 144.00 bbox 159.40 45.80 168.60 54.20
+forecast seq 10 region 1 area 272.02 forecast 40.35 bound 15.00 drop false bbox 123.00 34.80 138.00 53.20
+groups seq 10 region 1 dropped 15 of 10 bbox 120.55 32.35 140.45 55.65
+planned seq 10 region 1 area 272.02 grown true outlines 1 cuts_after_sweep 31 walk_mm 287.5 sweep_total_mm 0.0 bbox 123.00 34.80 138.00 53.20
+forecast seq 10 region 2 area 268.14 forecast 39.55 bound 15.00 drop false bbox 186.20 41.40 201.80 58.60
+groups seq 10 region 2 dropped 12 of 15 bbox 183.75 39.13 204.25 61.05
+planned seq 10 region 2 area 268.14 grown true outlines 1 cuts_after_sweep 32 walk_mm 281.1 sweep_total_mm 0.0 bbox 186.20 41.40 201.80 58.60
+forecast seq 10 region 3 area 291.58 forecast 0.00 bound 15.00 drop true bbox 33.20 86.00 324.80 87.00
+level seq 11 r 3.000 z 0.5000 job 0 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 11 kept area 291.58 bound 144.00 bbox 33.20 86.00 324.80 87.00
+region seq 11 small area 12.62 bound 144.00 bbox 192.00 48.00 196.00 52.00
+forecast seq 11 region 1 area 291.58 forecast 0.00 bound 15.00 drop true bbox 33.20 86.00 324.80 87.00
+level seq 12 r 3.000 z 13.5000 job 1 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 12 kept area 2601.66 bound 144.00 bbox 60.80 152.40 150.80 268.20
+forecast seq 12 region 1 area 2601.66 forecast 398.90 bound 15.00 drop false bbox 60.80 152.40 150.80 268.20
+groups seq 12 region 1 dropped 41 of 59 bbox 58.35 150.08 153.25 270.45
+planned seq 12 region 1 area 2601.66 grown true outlines 1 cuts_after_sweep 582 walk_mm 2386.9 sweep_total_mm 0.0 bbox 60.80 152.40 150.80 268.20
+level seq 13 r 3.000 z 8.5500 job 1 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 13 kept area 2601.66 bound 144.00 bbox 60.80 152.40 150.80 268.20
+forecast seq 13 region 1 area 2601.66 forecast 398.90 bound 15.00 drop false bbox 60.80 152.40 150.80 268.20
+groups seq 13 region 1 dropped 41 of 59 bbox 58.35 150.08 153.25 270.45
+planned seq 13 region 1 area 2601.66 grown true outlines 1 cuts_after_sweep 1008 walk_mm 3257.0 sweep_total_mm 0.0 bbox 60.80 152.40 150.80 268.20
+level seq 14 r 3.000 z 7.5000 job 1 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 14 kept area 251.54 bound 144.00 bbox 84.00 182.80 100.00 225.40
+region seq 14 kept area 244.58 bound 144.00 bbox 115.60 188.60 136.60 246.40
+region seq 14 small area 48.70 bound 144.00 bbox 126.20 161.00 142.60 182.60
+region seq 14 small area 4.98 bound 144.00 bbox 72.60 231.00 77.00 239.20
+region seq 14 small area 1.30 bound 144.00 bbox 122.80 152.40 126.20 154.80
+region seq 14 small area 1.26 bound 144.00 bbox 148.40 163.80 150.00 165.20
+region seq 14 small area 0.62 bound 144.00 bbox 127.80 182.60 128.40 184.00
+region seq 14 small area 0.58 bound 144.00 bbox 126.00 176.40 126.80 177.60
+region seq 14 small area 0.34 bound 144.00 bbox 126.20 174.20 126.60 175.60
+region seq 14 small area 0.30 bound 144.00 bbox 143.00 161.60 144.00 162.20
+region seq 14 small area 0.30 bound 144.00 bbox 78.40 229.00 79.20 230.00
+region seq 14 small area 0.18 bound 144.00 bbox 94.80 178.00 95.40 178.40
+region seq 14 small area 0.10 bound 144.00 bbox 117.80 249.00 118.20 249.40
+region seq 14 small area 0.10 bound 144.00 bbox 69.40 250.20 69.80 250.60
+region seq 14 small area 0.06 bound 144.00 bbox 106.00 223.80 106.40 224.00
+region seq 14 small area 0.06 bound 144.00 bbox 70.60 246.60 71.00 246.80
+region seq 14 small area 0.06 bound 144.00 bbox 79.40 228.20 79.60 228.60
+forecast seq 14 region 1 area 251.54 forecast 20.10 bound 15.00 drop false bbox 84.00 182.80 100.00 225.40
+groups seq 14 region 1 dropped 19 of 23 bbox 81.55 180.35 102.25 227.52
+planned seq 14 region 1 area 251.54 grown true outlines 1 cuts_after_sweep 99 walk_mm 218.1 sweep_total_mm 0.0 bbox 84.00 182.80 100.00 225.40
+forecast seq 14 region 2 area 244.58 forecast 3.43 bound 15.00 drop true bbox 115.60 188.60 136.60 246.40
+level seq 15 r 3.000 z 1.5000 job 1 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 15 kept area 251.54 bound 144.00 bbox 84.00 182.80 100.00 225.40
+region seq 15 kept area 244.58 bound 144.00 bbox 115.60 188.60 136.60 246.40
+region seq 15 small area 48.70 bound 144.00 bbox 126.20 161.00 142.60 182.60
+region seq 15 small area 4.98 bound 144.00 bbox 72.60 231.00 77.00 239.20
+region seq 15 small area 1.30 bound 144.00 bbox 122.80 152.40 126.20 154.80
+region seq 15 small area 1.26 bound 144.00 bbox 148.40 163.80 150.00 165.20
+region seq 15 small area 0.62 bound 144.00 bbox 127.80 182.60 128.40 184.00
+region seq 15 small area 0.58 bound 144.00 bbox 126.00 176.40 126.80 177.60
+region seq 15 small area 0.34 bound 144.00 bbox 126.20 174.20 126.60 175.60
+region seq 15 small area 0.30 bound 144.00 bbox 143.00 161.60 144.00 162.20
+region seq 15 small area 0.30 bound 144.00 bbox 78.40 229.00 79.20 230.00
+region seq 15 small area 0.18 bound 144.00 bbox 94.80 178.00 95.40 178.40
+region seq 15 small area 0.10 bound 144.00 bbox 117.80 249.00 118.20 249.40
+region seq 15 small area 0.10 bound 144.00 bbox 69.40 250.20 69.80 250.60
+region seq 15 small area 0.06 bound 144.00 bbox 106.00 223.80 106.40 224.00
+region seq 15 small area 0.06 bound 144.00 bbox 70.60 246.60 71.00 246.80
+region seq 15 small area 0.06 bound 144.00 bbox 79.40 228.20 79.60 228.60
+forecast seq 15 region 1 area 251.54 forecast 20.10 bound 15.00 drop false bbox 84.00 182.80 100.00 225.40
+groups seq 15 region 1 dropped 19 of 23 bbox 81.55 180.35 102.25 227.52
+planned seq 15 region 1 area 251.54 grown true outlines 1 cuts_after_sweep 99 walk_mm 218.1 sweep_total_mm 0.0 bbox 84.00 182.80 100.00 225.40
+forecast seq 15 region 2 area 244.58 forecast 3.43 bound 15.00 drop true bbox 115.60 188.60 136.60 246.40
+level seq 16 r 3.000 z 13.5000 job 2 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 16 kept area 183.90 bound 144.00 bbox 319.00 202.40 329.20 239.00
+forecast seq 16 region 1 area 183.90 forecast 0.00 bound 15.00 drop true bbox 319.00 202.40 329.20 239.00
+level seq 17 r 3.000 z 8.5500 job 2 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 17 kept area 183.90 bound 144.00 bbox 319.00 202.40 329.20 239.00
+forecast seq 17 region 1 area 183.90 forecast 0.00 bound 15.00 drop true bbox 319.00 202.40 329.20 239.00
+level seq 18 r 3.000 z 19.5000 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 18 small area 118.30 bound 144.00 bbox 227.40 48.60 270.00 51.40
+level seq 19 r 3.000 z 16.5500 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 20 r 3.000 z 13.5000 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 21 r 3.000 z 8.5500 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 22 r 3.000 z 7.5000 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 23 r 3.000 z 1.5000 job 3 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 24 r 3.000 z 19.5000 job 4 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 24 small area 72.02 bound 144.00 bbox 158.20 104.60 199.40 107.20
+level seq 25 r 3.000 z 13.5000 job 5 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 25 small area 57.90 bound 144.00 bbox 300.40 193.20 311.20 209.60
+level seq 26 r 3.000 z 8.5500 job 5 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 26 small area 57.90 bound 144.00 bbox 300.40 193.20 311.20 209.60
+level seq 27 r 3.000 z 19.5000 job 6 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 27 small area 39.06 bound 144.00 bbox 79.80 35.60 87.40 44.40
+level seq 28 r 3.000 z 16.5500 job 6 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 28 small area 20.42 bound 144.00 bbox 80.80 36.20 87.80 43.20
+level seq 29 r 3.000 z 13.5000 job 6 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 29 small area 20.46 bound 144.00 bbox 80.80 36.20 88.00 43.20
+level seq 30 r 3.000 z 8.5500 job 6 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 31 r 3.000 z 13.5000 job 7 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 31 small area 38.14 bound 144.00 bbox 68.80 407.80 78.80 413.80
+level seq 32 r 3.000 z 8.5500 job 7 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 32 small area 38.14 bound 144.00 bbox 68.80 407.80 78.80 413.80
+level seq 33 r 3.000 z 13.5000 job 8 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 33 small area 39.18 bound 144.00 bbox 207.40 319.80 216.20 329.80
+level seq 34 r 3.000 z 8.5500 job 8 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 34 small area 39.18 bound 144.00 bbox 207.40 319.80 216.20 329.80
+level seq 35 r 3.000 z 13.5000 job 9 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 35 small area 23.34 bound 144.00 bbox 262.40 114.20 270.00 118.60
+level seq 36 r 3.000 z 8.5500 job 9 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 36 small area 23.34 bound 144.00 bbox 262.40 114.20 270.00 118.60
+level seq 37 r 3.000 z 13.5000 job 10 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 37 small area 32.74 bound 144.00 bbox 218.40 180.80 226.60 187.20
+level seq 38 r 3.000 z 8.5500 job 10 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 38 small area 32.74 bound 144.00 bbox 218.40 180.80 226.60 187.20
+level seq 39 r 3.000 z 13.5000 job 11 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 39 small area 29.38 bound 144.00 bbox 90.60 406.00 98.60 412.00
+level seq 40 r 3.000 z 8.5500 job 11 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 40 small area 29.38 bound 144.00 bbox 90.60 406.00 98.60 412.00
+level seq 41 r 3.000 z 13.5000 job 12 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 41 small area 25.38 bound 144.00 bbox 291.80 235.40 297.00 242.20
+level seq 42 r 3.000 z 8.5500 job 12 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 42 small area 25.38 bound 144.00 bbox 291.80 235.40 297.00 242.20
+level seq 43 r 3.000 z 19.5000 job 13 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 43 small area 24.98 bound 144.00 bbox 27.20 95.20 30.60 107.40
+level seq 44 r 3.000 z 13.5000 job 14 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 44 small area 19.38 bound 144.00 bbox 261.40 142.20 267.60 147.80
+level seq 45 r 3.000 z 8.5500 job 14 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 45 small area 19.38 bound 144.00 bbox 261.40 142.20 267.60 147.80
+level seq 46 r 3.000 z 19.5000 job 15 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 46 small area 5.42 bound 144.00 bbox 136.20 104.60 143.20 106.00
+level seq 47 r 3.000 z 19.5000 job 16 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 47 small area 5.38 bound 144.00 bbox 214.40 104.60 221.40 106.00
+level seq 48 r 3.000 z 19.5000 job 17 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 48 small area 5.14 bound 144.00 bbox 327.40 104.60 330.40 107.60
+level seq 49 r 3.000 z 19.5000 job 18 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 49 small area 3.22 bound 144.00 bbox 327.60 112.60 330.40 115.00
+level seq 50 r 3.000 z 16.5500 job 18 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 50 small area 1.10 bound 144.00 bbox 327.40 112.60 329.20 114.00
+level seq 51 r 3.000 z 13.5000 job 18 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 51 small area 1.14 bound 144.00 bbox 327.40 112.60 329.20 114.00
+level seq 52 r 3.000 z 19.5000 job 19 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 52 small area 3.26 bound 144.00 bbox 327.60 413.00 330.40 415.40
+level seq 53 r 3.000 z 16.5500 job 19 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 54 r 3.000 z 13.5000 job 19 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 55 r 3.000 z 19.5000 job 20 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 55 small area 1.98 bound 144.00 bbox 27.60 112.60 29.80 114.40
+level seq 56 r 3.000 z 16.5500 job 20 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 56 small area 0.42 bound 144.00 bbox 28.80 112.60 30.00 113.40
+level seq 57 r 3.000 z 13.5000 job 20 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 57 small area 0.50 bound 144.00 bbox 28.80 112.60 30.20 113.60
+level seq 58 r 3.000 z 19.5000 job 21 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 58 small area 2.06 bound 144.00 bbox 27.60 413.60 29.80 415.40
+level seq 59 r 3.000 z 16.5500 job 21 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 60 r 3.000 z 13.5000 job 21 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 61 r 3.000 z 19.5000 job 22 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 61 small area 1.58 bound 144.00 bbox 121.20 104.60 124.20 105.60
+level seq 62 r 3.000 z 19.5000 job 23 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 62 small area 1.18 bound 144.00 bbox 210.60 35.60 212.00 37.20
+level seq 63 r 3.000 z 16.5500 job 23 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 64 r 3.000 z 13.5000 job 23 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 65 r 3.000 z 8.5500 job 23 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any false
+level seq 66 r 3.000 z 19.5000 job 24 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 66 small area 1.50 bound 144.00 bbox 233.40 104.60 236.40 105.40
+level seq 67 r 3.000 z 19.5000 job 25 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 67 small area 0.38 bound 144.00 bbox 108.40 104.60 109.80 105.00
+level seq 68 r 3.000 z 19.5000 job 26 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000 dpp 6.000 any true
+region seq 68 small area 0.34 bound 144.00 bbox 247.80 104.60 249.00 105.00
+final r 3.000 rows 2301 cols 1976 origin -18.5000 -8.5000 cell 0.20000

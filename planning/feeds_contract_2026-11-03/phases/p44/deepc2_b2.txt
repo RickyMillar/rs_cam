@@ -1,0 +1,5 @@
+out_b2.nc 'Back rest' bar 6.5 tol 0.1: pieces with a node over the bar 28 (77 nodes); of them with a node 0.1 mm or more inside the disc edge: 4 pieces, 11 nodes, deepest 8.50 mm
+   piece 17459: (50.8, 100.6, 11.0) -> (50.48, 100.8, 11.0): 8 of 11 nodes count, deepest 8.50, the deepest node inside the edge 0.199 mm
+   piece 17425: (346.6, 97.48, 8.4) -> (346.6, 98.08, 13.88): 1 of 4 nodes count, deepest 7.77, the deepest node inside the edge 0.152 mm
+   piece 17440: (230.2, 100.6, 11.19) -> (229.8, 100.6, 17.75): 1 of 1 nodes count, deepest 6.61, the deepest node inside the edge 0.136 mm
+   piece 17475: (48.4, 92.52, 8.4) -> (48.4, 91.92, 13.88): 1 of 4 nodes count, deepest 7.77, the deepest node inside the edge 0.152 mm

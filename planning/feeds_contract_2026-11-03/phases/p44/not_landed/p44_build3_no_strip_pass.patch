@@ -1,0 +1,2228 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+index c1e6674e5..088c59d08 100644
+--- a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
++++ b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+@@ -9,7 +9,7 @@
+   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
+   facade, `ClearingStrategy3d`; `outer_band.rs` the arm's boundary reach and
+   region clip (G-CLIPAIR); `rest_regions.rs` the regions left to a rest op and their top (D44, D48, D50); `level_contour.rs` C4 "Contour each level" (`linking.level_contour`, off: today's plan): the reach band of a rest rough, its contour per level on the containment (read and lowered along the line the emitter ships; closed rings start at a fixed point), the `retract_saves_time` merge and the `FeedCapStart` load cap; C4b `keeps_to_region`, the By Area per-region-level wall mask (F9); P42 `region_wall_pass`, the wall pass of a level (Geodesic Adaptive, on with `one_pass_hold`; `clear_z_level_slice` calls it after the regions of the level): one contour along each planned region, one planner cell plus the cut tolerance inside its raw outline (D19), only at a wall deeper than one pass (`wall_point_ships`: the NEXT level would meet the strip over the one-pass limit, `OnePass::over_limit` against the level floor at `LevelSlot::next_z`, or the model wall top over the strip stands over the limit above this level's floor; a stair tread ships none), where stock stands in the disc on cells that are not material cells of the level (`wall_read`); Z is the level floor raised to one Depth/Pass under the stock inside the disc; rounds repeat while a round lowers the strip; a point within one planner cell of held stock taller than the one-pass limit is not cut; the runs, the gap merge, the load cap and the emission are those of C4 (`run_feed_cap`, `emit_runs`); `keep_down.rs` the ONE 3D keep-down read
+-  (`corridor_ceiling_z`, `keep_down_excess`) and the router; `rest_region_filter.rs` the ONE rest region filter (`linking.rest_region_filter`; `build_material_bool_grid` calls it, so both strategies and the CP cleanup skip a region over the area or width bound, whole; the session sets it only on remaining stock); `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it); `left_stock.rs` P37: the record of each region or piece the plan holds as material and does not plan (`LeftWhy`: the small-region bound, the F-038 forecast, no geodesic field) and its read on the planner stock at the end of the plan (`LeftStock`, the finding `geom.rough_left_stock`). A new drop site records there. It is evidence only: the rest regions and the wall-contour skip do not read it. `one_pass.rs` P41: the ONE one-pass rule (`OnePass::hold_off`, called by `build_material_bool_grid`; `blocks` masks the wall contour points): a centre that would take more than Depth/Pass plus the stay-down clearance from one stock cell is not a region cell; the read is the stamp coverage times the stock above the lowest cutter that a centre of the level can have over the cell, so the held centres are discs that the closing of `grown_outlines` cannot fill. The switch is the dial `linking.one_pass_hold` (`OnePassHold`, default `Off`; P42, ruling D-4: the wall pass is part of this rule, no dial of its own; the variant carries the link timing of its gap merge): the session sets `RemainingStock` only on remaining stock (the 3D Rough adapter in `compute/execute/`, beside the rest region filter), where the planner cell is the simulation cell; never derive it from `initial_stock`. P43: on a fresh block the session sets `FreshStock`: no guard (a coarse planner cell cannot read a strip narrower than a cell), and the wall pass with `WallRule::FreshStock`: the line is one planner cell less `fresh_line_shift` (three cut tolerances, at most what keeps half a cell) inside the RAW outline of each planned region (a region on the perimeter sweep too: round 3), so it is nearer to the wall than the plan of any level and the same line at each level of one wall (never build it from the grown outline: the shortfall inset moves from level to level); a point ships by the wall alone (`wall_read`: the tool-centre surface within two cells, the stock top of the cells that the disc touches; rule 1 only where the next level floor is under this floor), once per level. Never add a depth rule at a segment door (P38, P40 B).
++  (`corridor_ceiling_z`, `keep_down_excess`) and the router; `rest_region_filter.rs` the ONE rest region filter (`linking.rest_region_filter`; `build_material_bool_grid` calls it, so both strategies and the CP cleanup skip a region over the area or width bound, whole; the session sets it only on remaining stock); `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it); `left_stock.rs` P37: the record of each region or piece the plan holds as material and does not plan (`LeftWhy`: the F-038 forecast, no geodesic field, no contour line) and its read on the planner stock at the end of the plan (`LeftStock`, the finding `geom.rough_left_stock`). A new drop site records there. It is evidence only: the rest regions and the wall-contour skip do not read it. P44 (operator ruling 2026-11-20: a rough cuts each place where its tool fits, or names it): NO area bound on a region (a region is a set of tool centres; the one drop rule is the F-038 forecast against the operator dial `min_region_cut_length_mm`, read in the tool-centre frame: the length of the contour line, `level_contour::contour_line_inset` = one planner cell plus the cut tolerance inside the raw outline; never inset a region by the tool radius to judge it); `level_contour::region_contour_pass` (only with `OnePass::on`, as the strip pass: a coarse fresh cell cannot read a sliver beside the line, measured 10.3 mm deep) cuts a region whose plan ships no cut (no room for the field) along that line, before the wall pass (`contour_rounds`, `ContourRule::Region`: the Z, the rounds, the guard, the cap and the emission of the wall pass; a run under the dial is recorded, not cut); `strip_pass` (after the last level, both orders): the bands of `standing.rs` cells (the dial is read on each band before it grows) grown three cells on the open side get the same contour, one Depth/Pass per round. OPEN: the `emit_runs` door has a planner and simulation gap (`planner_sim_dexel_parity_geodesic_adaptive*` with a wall pass on: the simulation removes more), so no lib parity test runs with `one_pass_hold` on. `standing.rs` is the ONE read of the stock that stands where the tool fits (a material cell, or a strip cell: the disc covers in full a cell more than one planner cell above the cutter; the level grid reads only the centre cell, so a strip narrower than the tool radius makes no region). `left_stock` names each place of that read (`LeftPlace`, `PlaceWhy`, at most `PLACES_LISTED`). `one_pass.rs` P41: the ONE one-pass rule (`OnePass::hold_off`, called by `build_material_bool_grid`; `blocks` masks the wall contour points): a centre that would take more than Depth/Pass plus the stay-down clearance from one stock cell is not a region cell; the read is the stamp coverage times the stock above the lowest cutter that a centre of the level can have over the cell, so the held centres are discs that the closing of `grown_outlines` cannot fill. The switch is the dial `linking.one_pass_hold` (`OnePassHold`, default `Off`; P42, ruling D-4: the wall pass is part of this rule, no dial of its own; the variant carries the link timing of its gap merge): the session sets `RemainingStock` only on remaining stock (the 3D Rough adapter in `compute/execute/`, beside the rest region filter), where the planner cell is the simulation cell; never derive it from `initial_stock`. P43: on a fresh block the session sets `FreshStock`: no guard (a coarse planner cell cannot read a strip narrower than a cell), and the wall pass with `WallRule::FreshStock`: the line is one planner cell less `fresh_line_shift` (three cut tolerances, at most what keeps half a cell) inside the RAW outline of each planned region (a region on the perimeter sweep too: round 3), so it is nearer to the wall than the plan of any level and the same line at each level of one wall (never build it from the grown outline: the shortfall inset moves from level to level); a point ships by the wall alone (`wall_read`: the tool-centre surface within two cells, the stock top of the cells that the disc touches; rule 1 only where the next level floor is under this floor), once per level. Never add a depth rule at a segment door (P38, P40 B).
+ 
+ ## Invariants
+ 
+@@ -37,4 +37,4 @@
+ `adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`, `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
+ `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`, `--lib a_chord_beside_a_peak_holds_the_leave_g_drapegap` (the chord lift; red without it), `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `geodesic_adaptive_holds_the_pass_load_c12` (the judge; `--ignored` heavy, about 9 min); rest regions: `a_rough_publishes_the_regions_it_leaves_d44`,
+ `a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`, `by_area_walls_cut_each_region_level_c4b`, `--lib _c4`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `..._starts_at_the_left_stock_top_d50`; D55 (G-AIRPECK) `a_rest_entry_does_not_peck_through_cleared_air_d55` and `--lib _d55` (the peck ladder starts at the contact read, as the helix and the ramp do; real stock still pecks); By Area:
+-`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; rest filter: `--lib rest_filter` (red without the filter); left stock: `--lib _p37`; one pass: `--lib _p41` (red without the rule); wall pass: `--lib _p42` (red without `region_wall_pass`; the ship rule `wall_point_ships`); fresh wall pass: `--lib _p43` (red without it, and without the line on a sweep region; measured on a cell a sixth of the planner cell); `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.
++`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; rest filter: `--lib rest_filter` (red without the filter); left stock: `--lib _p37`; P44: `--lib _p44` (the slot, the forecast frame, the strip; each has a control with `REGION_CONTOUR_OFF_FOR_CONTROL`); one pass: `--lib _p41` (red without the rule); wall pass: `--lib _p42` (red without `region_wall_pass`; the ship rule `wall_point_ships`); fresh wall pass: `--lib _p43` (red without it, and without the line on a sweep region; measured on a cell a sixth of the planner cell); `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index bf9304b5e..5954c33cb 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -2610,65 +2610,18 @@ fn detect_and_order_regions(
+     region_areas_mm2.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+     region_areas_mm2.truncate(10);
+ 
+-    // Fusion-style "ignore stock smaller than X" filter. Heightmap-style
+-    // models (e.g. terrain.stl) emit many micro-peaks at top Z levels
+-    // — each becomes its own region with its own perimeter sweep + 2D
+-    // adaptive entry/exit. The cutter spends most of its in-cut time
+-    // travelling between them, technically at feed_rate but barely
+-    // engaging material. On wanaka this drove 81% air-cut at every Z.
+-    //
+-    // Nominal threshold = (2 × tool_diameter)² ≈ "the tool footprint plus
+-    // an offset ring fits". Anything smaller is sub-tool noise the cutter
+-    // can't address efficiently anyway.
+-    //
+-    // DPP scaling: the threshold has to scale with depth-per-pass because
+-    // at small DPP the same real island gets sliced into many thin layers,
+-    // and the perimeter sweep erodes its area progressively at each level
+-    // until it drops below the threshold — at which point the unmilled
+-    // core is never addressed (the level skips it, and the next level sees
+-    // an even smaller region). Without DPP scaling, small-DPP roughing
+-    // leaves visible unmilled islands. We scale linearly with
+-    // DPP / baseline_dpp where baseline = tool_radius (a reasonable max
+-    // aggressive rough), with a floor of (tool_diameter/2)² so even very
+-    // small DPP still drops obvious sub-tool noise.
+-    let tool_diameter = ctx.tool_radius * 2.0;
+-    let baseline_dpp = ctx.tool_radius.max(0.5);
+-    let nominal_min_area = (tool_diameter * 2.0).powi(2);
+-    let dpp_factor = (ctx.depth_per_pass / baseline_dpp).clamp(0.0, 1.0);
+-    let area_floor = tool_diameter.powi(2) * 0.25;
+-    let min_region_area_mm2 = (nominal_min_area * dpp_factor).max(area_floor);
++    // P44: no small-region bound. A region is a set of tool centres (the
++    // grid reads the drop-cutter floor), so every region is a place where
++    // the tool fits and stock stands. The bound that stood here,
++    // `(2 D)^2 x min(DPP / R, 1)` with a floor of `D^2 / 4`, was an area in
++    // the material frame with no derivation: it dropped a slot nine
++    // millimetres wide under a six millimetre tool, at each level, with no
++    // cut (Wanaka back, the antenna slot). The one rule that drops a region
++    // is the F-038 forecast against the operator dial
++    // `min_region_cut_length_mm` (`clear_one_region`).
+     let region_count_before = regions.len();
+-    // P37: a dropped region is recorded with its level, so the op can state
+-    // the stock it held and did not plan (`left_stock`). It is not a left
+-    // piece: the rest regions and the wall-contour skip do not read it.
+-    let (kept, small): (Vec<_>, Vec<_>) = regions
+-        .into_iter()
+-        .partition(|r| r.area().abs() >= min_region_area_mm2);
+-    let mut regions = kept;
+-    ctx.unplanned
+-        .borrow_mut()
+-        .extend(
+-            small
+-                .into_iter()
+-                .map(|outline| super::left_stock::Unplanned {
+-                    z_level,
+-                    outline,
+-                    why: super::LeftWhy::SmallRegion,
+-                }),
+-        );
+-    let dropped_micro = region_count_before - regions.len();
+-    if dropped_micro > 0 {
+-        debug!(
+-            z = z_level,
+-            dropped = dropped_micro,
+-            kept = regions.len(),
+-            threshold_mm2 = min_region_area_mm2,
+-            "Dropped sub-tool regions (Fusion-style ignore-features filter)"
+-        );
+-    }
+-    if regions.is_empty() {
+-        return None;
+-    }
++    let mut regions = regions;
++    let dropped_micro = 0usize;
+ 
+     // Nearest-neighbor region ordering. Marching squares yields regions
+     // in scan order (row-major), so the cutter can rapid back and forth
+@@ -2989,9 +2942,9 @@ fn leave_piece(
+             why,
+         });
+     let why = match why {
+-        super::LeftWhy::SmallRegion => "small region",
+         super::LeftWhy::ShortForecast => "F-038 forecast",
+         super::LeftWhy::NoField => "no field",
++        super::LeftWhy::NoLine => "no contour line",
+     };
+     tracing::info!(
+         z = z_level,
+@@ -3543,7 +3496,7 @@ fn clear_one_region(
+     region_polygon: &crate::polygon::Polygon2,
+     region_idx: usize,
+     cancel: &dyn CancelCheck,
+-) -> Result<(), Cancelled> {
++) -> Result<RegionPlan, Cancelled> {
+     let sink = &mut emission.sink;
+     let level_metrics = &mut *emission.level_metrics;
+     let cut_count = &mut *emission.cut_count;
+@@ -3585,11 +3538,21 @@ fn clear_one_region(
+     // C38 §16: Geodesic Adaptive takes this forecast too. It clears the
+     // body only, and the strips the forecast reads as 0 go to the job's
+     // edge contour pass.
++    //
++    // P44: the forecast reads the region in its own frame. The region is
++    // the set of tool centres, so the least cut of its plan is its contour
++    // line (`level_contour::contour_line_inset`: one planner cell plus the
++    // cut tolerance inside the raw outline), the line that the region
++    // contour ships when the field has no room. The forecast before P44
++    // moved the outline inside by the tool radius plus 0.25 mm: a second
++    // inset by the tool radius, which read a slot region of any length as 0.
+     if ctx.min_region_cut_length_mm > 0.0 {
+-        const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
+         let inset_polygons_forecast = crate::polygon::offset_polygon(
+             region_polygon,
+-            ctx.tool_radius + PERIMETER_INSET_MARGIN_MM_FORECAST,
++            super::level_contour::contour_line_inset(
++                sink.material_stock.z_grid.cell_size,
++                ctx.cut_tolerance,
++            ),
+         );
+         let mut forecast_mm: f64 = 0.0;
+         for inset in &inset_polygons_forecast {
+@@ -3660,7 +3623,7 @@ fn clear_one_region(
+                 scope.set_counter("skipped_f038", 1.0);
+                 scope.set_counter("forecast_cut_length_mm", forecast_mm);
+             }
+-            return Ok(());
++            return Ok(RegionPlan::DroppedByForecast);
+         }
+     }
+ 
+@@ -3773,7 +3736,17 @@ fn clear_one_region(
+         Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
+         None => planner_outlines(region_polygon, params_2d),
+     };
+-    plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)
++    plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)?;
++    Ok(RegionPlan::Planned)
++}
++
++/// What `clear_one_region` did with a region.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++enum RegionPlan {
++    /// The region went to the plan (the plan can still ship no cut).
++    Planned,
++    /// The F-038 forecast is under `min_region_cut_length_mm`: no cut.
++    DroppedByForecast,
+ }
+ 
+ /// The region body after the perimeter sweep: the geodesic plan of each of
+@@ -4493,6 +4466,9 @@ pub(super) fn clear_z_level_slice(
+     let region_total = regions.len();
+     // P42: the regions whose plan cut a segment; the wall pass runs on them.
+     let mut planned_regions: Vec<&crate::polygon::Polygon2> = Vec::new();
++    // P44: the regions that passed the forecast and whose plan shipped no
++    // cut; the region contour runs on them.
++    let mut uncut_regions: Vec<&crate::polygon::Polygon2> = Vec::new();
+     let mut emission = LevelEmission {
+         sink: LevelSink {
+             segments,
+@@ -4516,7 +4492,7 @@ pub(super) fn clear_z_level_slice(
+     };
+     for (region_idx, region_polygon) in regions.iter().enumerate() {
+         let cuts_before = *emission.cut_count;
+-        clear_one_region(
++        let outcome = clear_one_region(
+             ctx,
+             &plan,
+             &mut emission,
+@@ -4526,6 +4502,8 @@ pub(super) fn clear_z_level_slice(
+         )?;
+         if *emission.cut_count > cuts_before {
+             planned_regions.push(region_polygon);
++        } else if outcome == RegionPlan::Planned {
++            uncut_regions.push(region_polygon);
+         }
+     }
+ 
+@@ -4564,6 +4542,21 @@ pub(super) fn clear_z_level_slice(
+         replaced_entries,
+     );
+     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
++    // P44: the region contour of the level (`region_contour_pass`): a
++    // region that the 2D plan cannot take (the field has no room in a slot
++    // region) is cut along its contour line, one Depth/Pass at most.
++    let contour = super::level_contour::region_contour_pass(
++        ctx,
++        material_stock,
++        surface_hm,
++        super::level_contour::WallLevel {
++            z_level,
++            next_level_z,
++        },
++        &uncut_regions,
++        segments,
++        cursor,
++    );
+     // P42: the wall pass of the level, after its plan (`region_wall_pass`):
+     // the strip that the margin of the plan leaves at each wall of a
+     // planned region goes down one pass at this level. P43: a fresh rough
+@@ -4583,6 +4576,7 @@ pub(super) fn clear_z_level_slice(
+     );
+     if let Some(scope) = level_scope.as_ref() {
+         scope.set_counter("wall_pass_runs", wall.runs as f64);
++        scope.set_counter("region_contour_runs", contour.runs as f64);
+         scope.set_counter("cut_segments", cut_count as f64);
+         scope.set_counter(
+             "perimeter_sweep_length_mm",
+diff --git a/crates/rs_cam_core/src/adaptive3d/left_stock.rs b/crates/rs_cam_core/src/adaptive3d/left_stock.rs
+index eec73c5bf..d19e61c54 100644
+--- a/crates/rs_cam_core/src/adaptive3d/left_stock.rs
++++ b/crates/rs_cam_core/src/adaptive3d/left_stock.rs
+@@ -14,6 +14,14 @@
+ //! outline, so it has no [`LeftWhy`].
+ //! [`left_stock`] reads those cells too ([`LeftStock::held_off_area_mm2`]).
+ //!
++//! P44: the small-region bound is gone, and the record has one more read.
++//! At the end of the plan [`left_stock`] takes the stock that stands where
++//! the tool fits (`standing::standing_cells`: the material cells of the
++//! bottom level and, on remaining stock, the strip cells beside a wall) and
++//! names each connected place: its box, its area, its height and the reason
++//! ([`LeftPlace`], [`PlaceWhy`]). A place needs no drop record: stock that
++//! no rule dropped is named too (`PlaceWhy::NoRecord`).
++//!
+ //! The record is evidence only. It does not feed `Produced::rest_regions`
+ //! or the wall-contour skip (`ClearZLevelContext::left_pieces`), so it
+ //! moves no tool.
+@@ -29,17 +37,58 @@ use super::stock_top_z_at;
+ /// Why the level plan did not plan a region or a piece that holds material.
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub enum LeftWhy {
+-    /// The region is under the small-region bound of its level
+-    /// (`detect_and_order_regions`).
+-    SmallRegion,
+     /// The F-038 forecast of the region is under
+-    /// `min_region_cut_length_mm`.
++    /// `min_region_cut_length_mm`, or (P44) a run of a region contour or
++    /// the line of a strip band is.
+     ShortForecast,
+     /// Geodesic Adaptive: the field does not fit in the piece (research
+-    /// C38 section 16).
++    /// C38 section 16). P44: a region where no piece gets a plan is cut by
++    /// the region contour; the record stays for the pieces.
+     NoField,
++    /// P44: a strip band has no room for a contour line one planner cell
++    /// plus the cut tolerance inside its boundary
++    /// (`level_contour::strip_pass`).
++    NoLine,
++}
++
++/// P44: why a place still holds stock at the end of the plan.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum PlaceWhy {
++    /// A cut there is shorter than `min_region_cut_length_mm` (the operator
++    /// dial).
++    ShortForecast,
++    /// The Geodesic Adaptive field does not fit in the piece.
++    NoField,
++    /// The place is narrower than the planner can put a contour line in.
++    NoLine,
++    /// The one-pass rule kept the tool off stock that stands more than one
++    /// Depth/Pass above the cutter.
++    OnePassHold,
++    /// No rule of the plan dropped it: the margin of a plan or of a contour
++    /// at a wall, or stock that only the simulation cell can read.
++    NoRecord,
++}
++
++/// P44: one place where the tool fits and stock stands at the end of the
++/// plan. Positions are in the emission frame (mm).
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub struct LeftPlace {
++    /// The XY box of the tool-centre cells of the place.
++    pub lo: [f64; 2],
++    pub hi: [f64; 2],
++    /// The XY area of those cells (mm²).
++    pub area_mm2: f64,
++    /// The tallest stock above the cutter in the place (mm), and the
++    /// tool-centre position that reads it.
++    pub tallest_mm: f64,
++    pub at: [f64; 2],
++    pub why: PlaceWhy,
+ }
+ 
++/// The number of places that [`LeftStock::places`] carries (the largest
++/// first). `LeftStock::places_total` and `places_area_mm2` count them all.
++pub const PLACES_LISTED: usize = 12;
++
+ /// One region or piece that the plan held as material and did not plan, at
+ /// its level.
+ #[derive(Debug, Clone)]
+@@ -51,10 +100,19 @@ pub(super) struct Unplanned {
+ 
+ /// What a 3D Rough held as material and did not plan, read on the planner
+ /// stock at the end of the plan. Positions are in the emission frame.
+-#[derive(Debug, Clone, Copy, PartialEq)]
++#[derive(Debug, Clone, PartialEq)]
+ pub struct LeftStock {
+-    /// The regions under the small-region bound, summed over the levels.
+-    pub small_regions: usize,
++    /// P44: the places where the tool fits and stock stands at the end of
++    /// the plan, the largest first, at most [`PLACES_LISTED`].
++    pub places: Vec<LeftPlace>,
++    /// The count and the tool-centre area (mm²) of all such places.
++    pub places_total: usize,
++    pub places_area_mm2: f64,
++    /// P44: the strip bands with no room for a contour line.
++    pub no_line: usize,
++    /// P44: the places include the strip cells beside the walls (remaining
++    /// stock, where the planner cell is the simulation cell).
++    pub strips_read: bool,
+     /// The regions the F-038 forecast skipped, summed over the levels.
+     pub short_forecast: usize,
+     /// The pieces where the geodesic field does not fit, summed over the
+@@ -93,13 +151,17 @@ impl LeftStock {
+     /// still stands. The ONE rule of the finding and of the export gate.
+     #[must_use]
+     pub fn stands(&self) -> bool {
+-        self.standing_pieces > 0 || self.held_off_area_mm2 > 0.0
++        self.standing_pieces > 0 || self.held_off_area_mm2 > 0.0 || self.places_total > 0
+     }
+ }
+ 
+ /// Read the recorded outlines on the planner stock at the end of the plan.
+ /// `None`: the plan recorded nothing, dropped no cut group and held no
+ /// centre off.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of the read"
++)]
+ pub(super) fn left_stock(
+     unplanned: &[Unplanned],
+     dropped_cut_groups: usize,
+@@ -107,17 +169,29 @@ pub(super) fn left_stock(
+     stock: &TriDexelStock,
+     surface_hm: &SurfaceHeightmap,
+     stock_to_leave: f64,
++    standing: Option<&super::standing::Standing>,
++    tool_radius: f64,
+ ) -> Option<LeftStock> {
+     let held = one_pass.held.borrow();
+-    if unplanned.is_empty() && dropped_cut_groups == 0 && held.centres == 0 {
++    if unplanned.is_empty()
++        && dropped_cut_groups == 0
++        && held.centres == 0
++        && standing.is_none_or(|s| s.count == 0)
++    {
+         return None;
+     }
+     let count = |why: LeftWhy| unplanned.iter().filter(|u| u.why == why).count();
+     let grid = &stock.z_grid;
+     let cell = grid.cell_size;
+     let mut seen = vec![false; grid.rows * grid.cols];
++    // P44: the reason of each standing cell that lies in a recorded outline.
++    let mut cell_why: Vec<Option<LeftWhy>> = vec![None; grid.rows * grid.cols];
+     let mut out = LeftStock {
+-        small_regions: count(LeftWhy::SmallRegion),
++        places: Vec::new(),
++        places_total: 0,
++        places_area_mm2: 0.0,
++        no_line: count(LeftWhy::NoLine),
++        strips_read: one_pass.on && standing.is_some(),
+         short_forecast: count(LeftWhy::ShortForecast),
+         no_field: count(LeftWhy::NoField),
+         dropped_cut_groups,
+@@ -143,6 +217,11 @@ pub(super) fn left_stock(
+                 if !piece.outline.contains_point(&P2::new(x, y)) {
+                     continue;
+                 }
++                if standing.is_some_and(|s| s.at(row, col))
++                    && let Some(why) = cell_why.get_mut(row * grid.cols + col)
++                {
++                    *why = Some(piece.why);
++                }
+                 let floor = level_floor_z(
+                     surface_hm.z_or_bbox_floor_at(row, col),
+                     stock_to_leave,
+@@ -193,9 +272,137 @@ pub(super) fn left_stock(
+         }
+     }
+     out.held_off_area_mm2 = held_cells as f64 * cell * cell;
++    if let Some(standing) = standing {
++        places(
++            &mut out,
++            standing,
++            &cell_why,
++            &held,
++            one_pass.limit_mm,
++            stock,
++            tool_radius,
++        );
++    }
+     Some(out)
+ }
+ 
++/// P44: the connected places of the standing cells (8-connected), each with
++/// its box, area, height and reason. The reason is the record of a drop on
++/// a cell of the place; else the one-pass hold, when a stock cell that held
++/// a centre off still stands over the limit within one tool radius of the
++/// box of the place; else [`PlaceWhy::NoRecord`].
++#[expect(
++    clippy::indexing_slicing,
++    reason = "each index is row * cols + col with row < rows and col < cols"
++)]
++fn places(
++    out: &mut LeftStock,
++    standing: &super::standing::Standing,
++    cell_why: &[Option<LeftWhy>],
++    held: &super::one_pass::HeldOff,
++    limit_mm: f64,
++    stock: &TriDexelStock,
++    tool_radius: f64,
++) {
++    let grid = &stock.z_grid;
++    let (rows, cols, cell) = (grid.rows, grid.cols, grid.cell_size);
++    let held_standing: Vec<(usize, usize)> = held
++        .cells
++        .iter()
++        .filter(|&(&(row, col), &cutter_z)| {
++            row < rows && col < cols && stock_top_z_at(stock, row, col) - cutter_z > limit_mm
++        })
++        .map(|(&cell_at, _)| cell_at)
++        .collect();
++    let mut seen = vec![false; rows * cols];
++    let mut all: Vec<LeftPlace> = Vec::new();
++    let mut stack: Vec<(usize, usize)> = Vec::new();
++    for row0 in 0..rows {
++        for col0 in 0..cols {
++            if seen[row0 * cols + col0] || !standing.at(row0, col0) {
++                continue;
++            }
++            seen[row0 * cols + col0] = true;
++            stack.push((row0, col0));
++            let (mut r_lo, mut r_hi, mut c_lo, mut c_hi) = (row0, row0, col0, col0);
++            let mut count = 0usize;
++            let (mut tallest, mut tallest_at) = (0.0f32, (row0, col0));
++            // The reasons on the cells of the place, by count.
++            let mut whys = [0usize; 3];
++            while let Some((row, col)) = stack.pop() {
++                count += 1;
++                r_lo = r_lo.min(row);
++                r_hi = r_hi.max(row);
++                c_lo = c_lo.min(col);
++                c_hi = c_hi.max(col);
++                let h = standing.height[row * cols + col];
++                if h > tallest {
++                    tallest = h;
++                    tallest_at = (row, col);
++                }
++                match cell_why[row * cols + col] {
++                    Some(LeftWhy::ShortForecast) => whys[0] += 1,
++                    Some(LeftWhy::NoField) => whys[1] += 1,
++                    Some(LeftWhy::NoLine) => whys[2] += 1,
++                    None => {}
++                }
++                for dr in [-1isize, 0, 1] {
++                    for dc in [-1isize, 0, 1] {
++                        let (Some(r2), Some(c2)) = (
++                            row.checked_add_signed(dr).filter(|&v| v < rows),
++                            col.checked_add_signed(dc).filter(|&v| v < cols),
++                        ) else {
++                            continue;
++                        };
++                        if !seen[r2 * cols + c2] && standing.at(r2, c2) {
++                            seen[r2 * cols + c2] = true;
++                            stack.push((r2, c2));
++                        }
++                    }
++                }
++            }
++            let (x_lo, y_lo) = grid.cell_to_world(r_lo, c_lo);
++            let (x_hi, y_hi) = grid.cell_to_world(r_hi, c_hi);
++            let reach = tool_radius + cell;
++            let why = if whys.iter().any(|&n| n > 0) {
++                if whys[0] >= whys[1] && whys[0] >= whys[2] {
++                    PlaceWhy::ShortForecast
++                } else if whys[1] >= whys[2] {
++                    PlaceWhy::NoField
++                } else {
++                    PlaceWhy::NoLine
++                }
++            } else if held_standing.iter().any(|&(row, col)| {
++                let (x, y) = grid.cell_to_world(row, col);
++                x >= x_lo - reach && x <= x_hi + reach && y >= y_lo - reach && y <= y_hi + reach
++            }) {
++                PlaceWhy::OnePassHold
++            } else {
++                PlaceWhy::NoRecord
++            };
++            let (tx, ty) = grid.cell_to_world(tallest_at.0, tallest_at.1);
++            all.push(LeftPlace {
++                lo: [x_lo, y_lo],
++                hi: [x_hi, y_hi],
++                area_mm2: count as f64 * cell * cell,
++                tallest_mm: f64::from(tallest),
++                at: [tx, ty],
++                why,
++            });
++        }
++    }
++    out.places_total = all.len();
++    out.places_area_mm2 = all.iter().map(|p| p.area_mm2).sum();
++    all.sort_by(|a, b| {
++        b.area_mm2
++            .total_cmp(&a.area_mm2)
++            .then(a.lo[0].total_cmp(&b.lo[0]))
++            .then(a.lo[1].total_cmp(&b.lo[1]))
++    });
++    all.truncate(PLACES_LISTED);
++    out.places = all;
++}
++
+ /// The inclusive row and column ranges of the grid cells in the XY box of
+ /// `outline`. `None`: the outline has no point, or its box is left of or
+ /// below the grid.
+diff --git a/crates/rs_cam_core/src/adaptive3d/level_contour.rs b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+index ed582ab4d..28fbba9b3 100644
+--- a/crates/rs_cam_core/src/adaptive3d/level_contour.rs
++++ b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+@@ -792,6 +792,13 @@ struct WallRead {
+     /// plus the stock to leave over the strip cells (a centre on a strip
+     /// cell stands on the wall). `-inf`: no strip.
+     wall_top: f64,
++    /// P44: the strip read without the material test: the highest stock
++    /// over the cells that the disc covers in full and that stand more than
++    /// one planner cell above the cutter, a material cell of the level or
++    /// not. `-inf`: none. The region contour reads it
++    /// ([`ContourRule::Region`]). `WallRule::FreshStock`: `-inf` (a coarse
++    /// planner cell cannot read it, and no region contour runs).
++    disc_top: f64,
+ }
+ 
+ /// [`WallRead`] at `p` with the level floor `floor`.
+@@ -922,6 +929,7 @@ fn wall_read(
+     // the disc covers it in full (the coverage of the stamp), it stands
+     // more than one planner cell above the cutter, and it is not a material
+     // cell of the level.
++    let mut disc_top = f64::NEG_INFINITY;
+     for (row, col, du, dv, over) in inside {
+         if over <= z + cs {
+             continue;
+@@ -929,6 +937,7 @@ fn wall_read(
+         if TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs) < 1.0 {
+             continue;
+         }
++        disc_top = disc_top.max(over);
+         if super::clearing::cell_has_material(
+             stock,
+             surface_hm,
+@@ -982,6 +991,7 @@ fn wall_read(
+         strip_top,
+         beside_held_stock,
+         wall_top,
++        disc_top,
+     }
+ }
+ 
+@@ -1077,6 +1087,411 @@ pub(super) fn region_wall_pass(
+     regions: &[&crate::polygon::Polygon2],
+     segments: &mut Vec<Adaptive3dSegment>,
+     cursor: &mut PlannerCursor,
++) -> LevelContourStats {
++    let Some(wall) = ctx.wall_pass.as_ref() else {
++        return LevelContourStats {
++            min_factor: 1.0,
++            ..LevelContourStats::default()
++        };
++    };
++    #[cfg(test)]
++    if WALL_PASS_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
++        return LevelContourStats {
++            min_factor: 1.0,
++            ..LevelContourStats::default()
++        };
++    }
++    contour_rounds(
++        ctx,
++        material_stock,
++        surface_hm,
++        level,
++        regions,
++        ContourRule::Wall(wall.rule),
++        segments,
++        cursor,
++    )
++}
++
++/// P44: what a contour of [`contour_rounds`] is for.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(super) enum ContourRule {
++    /// The wall pass of a planned region ([`region_wall_pass`]): only the
++    /// strip at a wall deeper than one pass ([`wall_point_ships`]).
++    Wall(WallRule),
++    /// P44: the contour of a region or a band that no plan cuts
++    /// ([`region_contour_pass`], [`strip_pass`]). A point ships where stock
++    /// stands in the disc more than one planner cell above the cutter
++    /// (`WallRead::disc_top`), a material cell of the level or not. No test of the wall height: the
++    /// contour is the only cut of the region. A run shorter than
++    /// `min_region_cut_length_mm` is not cut (the operator dial of F-038)
++    /// and is recorded (`LeftWhy::ShortForecast`).
++    Region,
++}
++
++/// P44: the distance (mm) of a contour line inside the raw outline of a
++/// region of the level grid: one planner cell plus the cut tolerance. One
++/// planner cell is the least distance of a centre from the raw boundary
++/// (`clearing::grown_outlines`, D19: nearer, the lift reads the rim); the
++/// simplification of the line can move it back out by the cut tolerance.
++/// The wall pass on remaining stock, the region contour and the F-038
++/// forecast read this ONE value.
++pub(super) fn contour_line_inset(cell: f64, cut_tolerance: f64) -> f64 {
++    cell + cut_tolerance.max(0.0)
++}
++
++/// P44: the length (mm) of the contour line of `region` (each ring of its
++/// outline moved inside by [`contour_line_inset`]): the least length that
++/// the plan of the region cuts. 0: the region has no room for the line.
++pub(super) fn contour_line_length(
++    region: &crate::polygon::Polygon2,
++    cell: f64,
++    cut_tolerance: f64,
++) -> f64 {
++    crate::polygon::offset_polygon(region, contour_line_inset(cell, cut_tolerance))
++        .iter()
++        .flat_map(polygon_rings)
++        .map(|ring| {
++            ring.iter()
++                .zip(ring.iter().cycle().skip(1))
++                .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
++                .sum::<f64>()
++        })
++        .sum()
++}
++
++/// P44: the region contour of a level. A region of the level whose plan
++/// ships no cut (the geodesic field has no room in it: a slot region
++/// narrower than the starter pocket) gets one pass along its contour line
++/// ([`contour_line_inset`]), with the reads, the rounds, the one-pass guard,
++/// the load cap and the emission of the wall pass ([`contour_rounds`],
++/// [`ContourRule::Region`]). `clear_z_level_slice` calls it after the plan of
++/// the level, before the wall pass; such a region is not a planned region,
++/// so the wall pass does not trace it again.
++///
++/// On with the guard of the one-pass rule (`OnePass::on`:
++/// `OnePassHold::RemainingStock`), as the strip pass is. On a fresh block a
++/// region with no room for the field stays, and the record names it.
++pub(super) fn region_contour_pass(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &mut TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    level: WallLevel,
++    regions: &[&crate::polygon::Polygon2],
++    segments: &mut Vec<Adaptive3dSegment>,
++    cursor: &mut PlannerCursor,
++) -> LevelContourStats {
++    // The region contour is part of the one-pass rule on remaining stock
++    // (ruling D-4 of P42: no dial of its own). It reads the stock in the
++    // disc on the simulation cell. On a fresh block the planner cell is
++    // coarse (a sixth of the tool radius): it cannot read a sliver that the
++    // levels above left beside the line, and a contour there cut 10.3 mm
++    // deep at 4.166 mm per pass (P44, build 1, the Wanaka back bulk rough).
++    if !ctx.one_pass.on {
++        return LevelContourStats {
++            min_factor: 1.0,
++            ..LevelContourStats::default()
++        };
++    }
++    #[cfg(test)]
++    if REGION_CONTOUR_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
++        return LevelContourStats {
++            min_factor: 1.0,
++            ..LevelContourStats::default()
++        };
++    }
++    contour_rounds(
++        ctx,
++        material_stock,
++        surface_hm,
++        level,
++        regions,
++        ContourRule::Region,
++        segments,
++        cursor,
++    )
++}
++
++#[cfg(test)]
++thread_local! {
++    /// Test control only: the tree before P44 (no region contour, no strip
++    /// pass), so that a test can show that its claim needs them.
++    pub(super) static REGION_CONTOUR_OFF_FOR_CONTROL: std::cell::Cell<bool> =
++        const { std::cell::Cell::new(false) };
++}
++
++/// P44: the strip pass of an op on remaining stock, after its last level.
++///
++/// The level grid reads the stock at the tool centre only, so a strip
++/// beside a wall that is narrower than the tool radius makes no region at
++/// any level (the corner and the wall margin that a larger tool left). The
++/// wall pass cuts such a strip only along a region that the level plans.
++/// This pass cuts the rest:
++///
++/// - The cells: [`super::standing::standing_cells`] at the bottom level
++///   with the strip read (a material cell that the plan left, or a strip
++///   cell).
++/// - The bands: the connected cells, grown on their open side so that the
++///   contour line fits ([`grow_open_side`]).
++/// - The cut: the region contour along each band ([`ContourRule::Region`]),
++///   in rounds, one Depth/Pass per round (`wall_read`), under the one-pass
++///   guard. A band whose line is shorter than `min_region_cut_length_mm`,
++///   or that has no room for the line, is not cut and is recorded.
++///
++/// On with the guard of the one-pass rule (`OnePass::on`:
++/// `OnePassHold::RemainingStock`, where the planner cell is the simulation
++/// cell): a coarse cell cannot read a strip. No dial of its own (ruling D-4
++/// of P42: the wall passes are part of the one-pass rule).
++pub(super) fn strip_pass(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &mut TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    segments: &mut Vec<Adaptive3dSegment>,
++    cursor: &mut PlannerCursor,
++) -> LevelContourStats {
++    let none = LevelContourStats {
++        min_factor: 1.0,
++        ..LevelContourStats::default()
++    };
++    if !ctx.one_pass.on {
++        return none;
++    }
++    #[cfg(test)]
++    if REGION_CONTOUR_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
++        return none;
++    }
++    let cell = material_stock.z_grid.cell_size;
++    let mut standing =
++        super::standing::standing_cells(ctx, material_stock, surface_hm, z_level, true);
++    if standing.count == 0 || cell <= 0.0 {
++        return none;
++    }
++    let outlines = |standing: &super::standing::Standing, stock: &TriDexelStock| {
++        crate::polygon::detect_containment(
++            crate::geometry::contour_extract::marching_squares_bool_grid(
++                &standing.padded,
++                standing.padded_rows,
++                standing.padded_cols,
++                stock.z_grid.origin_u - cell,
++                stock.z_grid.origin_v - cell,
++                cell,
++            )
++            .into_iter()
++            .filter(|ring| ring.len() >= 3)
++            .map(crate::polygon::Polygon2::new)
++            .collect(),
++        )
++    };
++    // The operator dial, read on each band before it grows (the ONE rule of
++    // the F-038 forecast): a band whose cut is under the least cut length is
++    // not worth its entry. The cut of a band is its contour line; a band
++    // too narrow for the line (a strip of one to three cells) is cut there
++    // and back along its own length, which is its outline.
++    let mut dropped = 0usize;
++    if ctx.min_region_cut_length_mm > 0.0 {
++        let grid = &material_stock.z_grid;
++        for band in outlines(&standing, material_stock) {
++            let line = contour_line_length(&band, cell, ctx.cut_tolerance);
++            let length = if line > 0.0 {
++                line
++            } else {
++                polygon_rings(&band)
++                    .map(|ring| {
++                        ring.iter()
++                            .zip(ring.iter().cycle().skip(1))
++                            .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
++                            .sum::<f64>()
++                    })
++                    .sum()
++            };
++            if length >= ctx.min_region_cut_length_mm {
++                continue;
++            }
++            dropped += 1;
++            // The cells of the band leave the grid.
++            let (mut lo, mut hi) = (
++                P2::new(f64::INFINITY, f64::INFINITY),
++                P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
++            );
++            for p in &band.exterior {
++                lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
++                hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
++            }
++            let index = |v: f64, origin: f64, n: usize| -> usize {
++                #[expect(
++                    clippy::cast_possible_truncation,
++                    clippy::cast_sign_loss,
++                    reason = "clamped to 0..n before the cast"
++                )]
++                {
++                    ((v - origin) / cell)
++                        .round()
++                        .clamp(0.0, n.saturating_sub(1) as f64) as usize
++                }
++            };
++            for row in index(lo.y, grid.origin_v, grid.rows)..=index(hi.y, grid.origin_v, grid.rows)
++            {
++                for col in
++                    index(lo.x, grid.origin_u, grid.cols)..=index(hi.x, grid.origin_u, grid.cols)
++                {
++                    let (x, y) = grid.cell_to_world(row, col);
++                    if band.contains_point(&P2::new(x, y))
++                        && let Some(c) = standing
++                            .padded
++                            .get_mut((row + 1) * standing.padded_cols + (col + 1))
++                    {
++                        *c = false;
++                    }
++                }
++            }
++            ctx.unplanned
++                .borrow_mut()
++                .push(super::left_stock::Unplanned {
++                    z_level,
++                    outline: band,
++                    why: super::LeftWhy::ShortForecast,
++                });
++        }
++    }
++    grow_open_side(ctx, material_stock, surface_hm, z_level, &mut standing);
++    let bands = outlines(&standing, material_stock);
++    // A grown band with no room for the line is recorded (none is expected:
++    // the growth gives each band the room).
++    let mut kept: Vec<&crate::polygon::Polygon2> = Vec::new();
++    for band in &bands {
++        if contour_line_length(band, cell, ctx.cut_tolerance) > 0.0 {
++            kept.push(band);
++        } else {
++            ctx.unplanned
++                .borrow_mut()
++                .push(super::left_stock::Unplanned {
++                    z_level,
++                    outline: band.clone(),
++                    why: super::LeftWhy::NoLine,
++                });
++        }
++    }
++    let stats = contour_rounds(
++        ctx,
++        material_stock,
++        surface_hm,
++        WallLevel {
++            z_level,
++            next_level_z: None,
++        },
++        &kept,
++        ContourRule::Region,
++        segments,
++        cursor,
++    );
++    tracing::debug!(
++        z = z_level,
++        bands = bands.len(),
++        cut = kept.len(),
++        under_the_dial = dropped,
++        runs = stats.runs,
++        peak_load = stats.peak_load,
++        "P44 strip pass"
++    );
++    stats
++}
++
++/// P44: grow the cells of `standing` on their open side, so that the
++/// contour line ([`contour_line_inset`]) has room in a band that is one cell
++/// wide. A band of strip cells lies against the tool-centre limit of a
++/// wall. The line must stand one planner cell plus the cut tolerance inside
++/// that limit, so the band needs that margin twice plus one cell.
++///
++/// A neighbour joins when its level floor is at most one planner cell above
++/// the floor of the cell that it joins from: the ground beside the band,
++/// never the wall (the tool-centre floor steps up at the wall). The grown
++/// cells stay inside the boundary of the op.
++#[expect(
++    clippy::indexing_slicing,
++    reason = "each index is inside the padded grid: row < rows + 2 and col < cols + 2"
++)]
++fn grow_open_side(
++    ctx: &ClearZLevelContext<'_>,
++    stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    standing: &mut super::standing::Standing,
++) {
++    let grid = &stock.z_grid;
++    let (rows, cols, cs) = (grid.rows, grid.cols, grid.cell_size);
++    let pc = standing.padded_cols;
++    let floor = |row: usize, col: usize| {
++        super::intended_floor::level_floor_z(
++            surface_hm.z_or_bbox_floor_at(row, col),
++            ctx.stock_to_leave,
++            z_level,
++        )
++    };
++    // The cells to grow: the line margin twice plus one cell, less the one
++    // cell that the band has.
++    let steps = crate::util::steps::steps(2.0 * contour_line_inset(cs, ctx.cut_tolerance), cs)
++        .unwrap_or(1)
++        .max(1);
++    let mut frontier: Vec<(usize, usize)> = (0..rows)
++        .flat_map(|row| (0..cols).map(move |col| (row, col)))
++        .filter(|&(row, col)| standing.padded[(row + 1) * pc + (col + 1)])
++        .collect();
++    for _ in 0..steps {
++        let mut next = Vec::new();
++        for &(row, col) in &frontier {
++            let from = floor(row, col);
++            for (dr, dc) in [
++                (-1isize, -1isize),
++                (-1, 0),
++                (-1, 1),
++                (0, -1),
++                (0, 1),
++                (1, -1),
++                (1, 0),
++                (1, 1),
++            ] {
++                let (Some(r2), Some(c2)) = (
++                    row.checked_add_signed(dr).filter(|&v| v < rows),
++                    col.checked_add_signed(dc).filter(|&v| v < cols),
++                ) else {
++                    continue;
++                };
++                let i = (r2 + 1) * pc + (c2 + 1);
++                if standing.padded[i] || floor(r2, c2) > from + cs {
++                    continue;
++                }
++                let (x, y) = grid.cell_to_world(r2, c2);
++                if ctx.centre_clip.is_some_and(|clip| !clip.contains(x, y)) {
++                    continue;
++                }
++                standing.padded[i] = true;
++                next.push((r2, c2));
++            }
++        }
++        frontier = next;
++    }
++    if let Some(clip) = ctx.region_clip.as_ref() {
++        clip.restrict_regions(&mut standing.padded, standing.padded_rows, pc);
++    }
++}
++
++/// The rounds of a contour along `regions` ([`region_wall_pass`] has the
++/// rules of the wall pass; [`ContourRule`] says what differs for a region
++/// contour).
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input that the callers supply"
++)]
++fn contour_rounds(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &mut TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    level: WallLevel,
++    regions: &[&crate::polygon::Polygon2],
++    contour: ContourRule,
++    segments: &mut Vec<Adaptive3dSegment>,
++    cursor: &mut PlannerCursor,
+ ) -> LevelContourStats {
+     let WallLevel {
+         z_level,
+@@ -1086,27 +1501,31 @@ pub(super) fn region_wall_pass(
+         min_factor: 1.0,
+         ..LevelContourStats::default()
+     };
+-    let Some(wall) = ctx.wall_pass.as_ref() else {
+-        return stats;
+-    };
+-    #[cfg(test)]
+-    if WALL_PASS_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
+-        return stats;
+-    }
+     let cell = material_stock.z_grid.cell_size;
+-    if cell <= 0.0 {
++    if cell <= 0.0 || regions.is_empty() {
+         return stats;
+     }
+-    let rule = wall.rule;
++    // The reads of a point: the rule of the wall pass of the op.
++    let rule = match contour {
++        ContourRule::Wall(rule) => rule,
++        // A region contour runs only on remaining stock (`OnePass::on`).
++        ContourRule::Region => WallRule::RemainingStock,
++    };
++    let link_kinematics = ctx
++        .wall_pass
++        .as_ref()
++        .and_then(|wall| wall.link_kinematics.as_ref());
+     // The polygons whose rings are the wall line.
+-    let lines: Vec<crate::polygon::Polygon2> = match rule {
++    let lines: Vec<crate::polygon::Polygon2> = match (contour, rule) {
+         // One planner cell inside the raw outline after the simplification
+         // (which can move the line back out by its tolerance): the least
+         // distance of a centre from the raw boundary (`grown_outlines`,
+         // D19: nearer, the lift reads the rim).
+-        WallRule::RemainingStock => regions
++        (ContourRule::Region, _) | (ContourRule::Wall(_), WallRule::RemainingStock) => regions
+             .iter()
+-            .flat_map(|region| crate::polygon::offset_polygon(region, cell + ctx.cut_tolerance))
++            .flat_map(|region| {
++                crate::polygon::offset_polygon(region, contour_line_inset(cell, ctx.cut_tolerance))
++            })
+             .collect(),
+         // P43: one planner cell less `fresh_line_shift` inside the raw
+         // outline: nearer to the wall than each plan line, and the same
+@@ -1116,7 +1535,7 @@ pub(super) fn region_wall_pass(
+         // outline and take that band in one cut (measured on the Wanaka
+         // front: 5.73 mm at 4.166 mm per pass). The band is under one tool
+         // diameter wide; the load cap of the run holds its feed.
+-        WallRule::FreshStock => {
++        (ContourRule::Wall(_), WallRule::FreshStock) => {
+             let inset = cell - fresh_line_shift(cell, ctx.cut_tolerance);
+             regions
+                 .iter()
+@@ -1158,6 +1577,7 @@ pub(super) fn region_wall_pass(
+                         strip_top: f64::NEG_INFINITY,
+                         beside_held_stock: false,
+                         wall_top: f64::NEG_INFINITY,
++                        disc_top: f64::NEG_INFINITY,
+                     }
+                 };
+                 let point = P3::new(p.x, p.y, read.z);
+@@ -1168,8 +1588,13 @@ pub(super) fn region_wall_pass(
+                 let next_floor = next_level_z.map_or(floor, |z| {
+                     super::clearing::lift_to_level(ctx, surface_hm, z, p).z
+                 });
+-                let stands = match rule {
+-                    WallRule::RemainingStock => {
++                // P44: the stock that a region contour reads at the point.
++                let region_top = read.disc_top;
++                let stands = match (contour, rule) {
++                    (ContourRule::Region, _) => {
++                        region_top > read.z + cell && region_top < wp.cut_from - cell
++                    }
++                    (ContourRule::Wall(_), WallRule::RemainingStock) => {
+                         read.strip_top > read.z + cell
+                             && read.strip_top < wp.cut_from - cell
+                             && wall_point_ships(
+@@ -1187,7 +1612,7 @@ pub(super) fn region_wall_pass(
+                     // cuts under this floor at the point: on the tread of a
+                     // draped slope the two floors are the same, and the
+                     // cells uphill under the disc are the part, not a strip.
+-                    WallRule::FreshStock => {
++                    (ContourRule::Wall(_), WallRule::FreshStock) => {
+                         wp.cut_from.is_infinite()
+                             && wall_point_ships(
+                                 &ctx.one_pass,
+@@ -1212,7 +1637,28 @@ pub(super) fn region_wall_pass(
+                             .blocks(material_stock, ctx.one_pass_tool(), point));
+                 standing.push(stands && !blocked);
+                 refused.push(blocked);
+-                points.push((point, read.strip_top));
++                points.push((
++                    point,
++                    match contour {
++                        ContourRule::Region => region_top,
++                        ContourRule::Wall(_) => read.strip_top,
++                    },
++                ));
++            }
++            // P44: a point of a region contour takes the highest Z of its
++            // own read and of its two neighbours on the ring. The Z of a
++            // point holds one Depth/Pass under the stock in ITS disc; the
++            // move to a neighbour with a higher Z would pass under the
++            // stock of that neighbour at the lower Z (measured: 9.7 mm deep
++            // at the disc edge, at 6 mm per pass).
++            if contour == ContourRule::Region && points.len() >= 3 {
++                let n = points.len();
++                let own: Vec<f64> = points.iter().map(|(p, _)| p.z).collect();
++                for (i, (point, _)) in points.iter_mut().enumerate() {
++                    let before = own.get((i + n - 1) % n).copied().unwrap_or(point.z);
++                    let after = own.get((i + 1) % n).copied().unwrap_or(point.z);
++                    point.z = point.z.max(before).max(after);
++                }
+             }
+             let path: Vec<P3> = points.iter().map(|(p, _)| *p).collect();
+             let mut flags = merge_short_gaps(
+@@ -1221,7 +1667,7 @@ pub(super) fn region_wall_pass(
+                 ctx.feed_rate,
+                 ctx.plunge_rate,
+                 ctx.safe_z,
+-                wall.link_kinematics.as_ref(),
++                link_kinematics,
+             );
+             // No merge feeds through a point that the clip or the one-pass
+             // rule refuses.
+@@ -1230,13 +1676,32 @@ pub(super) fn region_wall_pass(
+             }
+             for ((wp, &cut), (point, strip_top)) in ring.iter_mut().zip(&standing).zip(&points) {
+                 if cut {
+-                    wp.cut_from = match rule {
+-                        WallRule::RemainingStock => *strip_top,
+-                        WallRule::FreshStock => point.z,
++                    wp.cut_from = match (contour, rule) {
++                        (ContourRule::Region, _)
++                        | (ContourRule::Wall(_), WallRule::RemainingStock) => *strip_top,
++                        (ContourRule::Wall(_), WallRule::FreshStock) => point.z,
+                     };
+                 }
+             }
+-            runs.extend(standing_runs(&path, &flags));
++            for run in standing_runs(&path, &flags) {
++                // P44: the operator dial of F-038 on a region contour: a run
++                // under the least cut length is not worth its entry.
++                if contour == ContourRule::Region
++                    && crate::geo::polyline_length(&run) < ctx.min_region_cut_length_mm
++                {
++                    if let Some(outline) = run_box(&run, cell) {
++                        ctx.unplanned
++                            .borrow_mut()
++                            .push(super::left_stock::Unplanned {
++                                z_level,
++                                outline,
++                                why: super::LeftWhy::ShortForecast,
++                            });
++                    }
++                    continue;
++                }
++                runs.push(run);
++            }
+         }
+         if runs.is_empty() {
+             break;
+@@ -1270,11 +1735,29 @@ pub(super) fn region_wall_pass(
+         z = z_level,
+         runs = stats.runs,
+         peak_load = stats.peak_load,
++        contour = ?contour,
+         "P42 wall pass of the level"
+     );
+     stats
+ }
+ 
++/// The XY box of a run, one planner cell larger on each side, as a polygon:
++/// the outline of the record of a run that the contour did not cut.
++fn run_box(run: &[P3], cell: f64) -> Option<crate::polygon::Polygon2> {
++    let first = run.first()?;
++    let (mut lo, mut hi) = (P2::new(first.x, first.y), P2::new(first.x, first.y));
++    for p in run {
++        lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
++        hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
++    }
++    Some(crate::polygon::Polygon2::new(vec![
++        P2::new(lo.x - cell, lo.y - cell),
++        P2::new(hi.x + cell, lo.y - cell),
++        P2::new(hi.x + cell, hi.y + cell),
++        P2::new(lo.x - cell, hi.y + cell),
++    ]))
++}
++
+ /// C4b (the F9 fix): whether a wall-cleanup point `p` at `z_level` of the
+ /// region `mask` may be cut now. It may when no planner cell whose centre
+ /// is within `reach` of `p` (R + cs/2, the reach of [`BandEdge`] and
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index dbf4f0670..312a20313 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -37,8 +37,9 @@ mod region_map;
+ mod rest_region_filter;
+ mod rest_regions;
+ mod search;
++mod standing;
+ pub use intended_floor::{FloorGrid, intended_floor_grid};
+-pub use left_stock::{LeftStock, LeftWhy};
++pub use left_stock::{LeftPlace, LeftStock, LeftWhy, PLACES_LISTED, PlaceWhy};
+ use path::adaptive_3d_segments;
+ #[cfg(test)]
+ use path::segments_to_toolpath;
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index d531572d6..d03b31232 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1734,6 +1734,30 @@ fn adaptive_3d_segments_probed(
+         }
+     }
+ 
++    // P44: the strip pass of an op on remaining stock, after its last
++    // level (`level_contour::strip_pass`): the strips beside the walls that
++    // no region of a level holds, and the material that the plan left.
++    // P44 build 3 (a measure only): no strip pass.
++    if let Some(&bottom) = z_levels.last()
++        && params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
++        && std::env::var("P44_STRIP_PASS").is_ok()
++    {
++        check_cancel(cancel)?;
++        super::level_contour::strip_pass(
++            &ctx,
++            &mut material_stock,
++            &surface_hm,
++            bottom,
++            &mut segments,
++            &mut cursor,
++        );
++    }
++    // P44: the stock that stands where the tool fits at the end of the plan
++    // (the strip read only on remaining stock, where the planner cell is
++    // the simulation cell).
++    let standing = z_levels.last().map(|&bottom| {
++        super::standing::standing_cells(&ctx, &material_stock, &surface_hm, bottom, ctx.one_pass.on)
++    });
+     let left_stock = super::left_stock::left_stock(
+         &ctx.unplanned.take(),
+         ctx.dropped_cut_groups.get(),
+@@ -1741,6 +1765,8 @@ fn adaptive_3d_segments_probed(
+         &material_stock,
+         &surface_hm,
+         params.depth.stock_to_leave,
++        standing.as_ref(),
++        tool_radius,
+     );
+     Ok(Adaptive3dSegmentsResult {
+         segments,
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index 9a55b2d3b..1137eaf38 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -3199,6 +3199,12 @@ fn two_cut_pieces_share_the_fed_chain_p36() {
+ /// P37 fixture: a rest stock on a flat floor (Z 0) with a block of 20 x 24 mm
+ /// and, when `island`, a column of 4 x 4 mm, both 6 mm tall. Cell 0.5 mm.
+ fn left_stock_of(island: bool) -> Option<LeftStock> {
++    left_stock_with_dial(island, 15.0, OnePassHold::Off)
++}
++
++/// [`left_stock_of`] with `min_region_cut_length_mm` and the one-pass dial
++/// stated (the region contour and the strip pass of P44 are on with it).
++fn left_stock_with_dial(island: bool, min_cut_mm: f64, hold: OnePassHold) -> Option<LeftStock> {
+     let mesh = crate::mesh::make_test_flat(60.0);
+     let si = SpatialIndex::build(&mesh, 10.0);
+     let cutter = flat_cutter();
+@@ -3216,6 +3222,8 @@ fn left_stock_of(island: bool) -> Option<LeftStock> {
+     }
+     let mut params = default_params();
+     params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
++    params.linking.min_region_cut_length_mm = min_cut_mm;
++    params.linking.one_pass_hold = hold;
+     params.depth.stock_top_z = 6.0;
+     params.initial_stock = Some(make_stock_with_cells(
+         n, n, -30.0, -30.0, cell, -10.0, &tops,
+@@ -3225,17 +3233,18 @@ fn left_stock_of(island: bool) -> Option<LeftStock> {
+         .left_stock
+ }
+ 
+-/// P37 (prediction P-5): a region under the small-region bound is recorded,
+-/// and the op states that it still holds stock at the end of the plan: its
+-/// count, its area, its height and its position. The tool is 6.35 mm and
+-/// the depth per pass 3 mm, so the bound is (2 x 6.35)^2 x 3 / 3.175 =
+-/// 152.4 mm2; the column is 16 mm2 and the block 480 mm2.
++/// P37 (prediction P-5), P44: a region whose cut is shorter than the
++/// operator dial `min_region_cut_length_mm` (15 mm) is recorded, and the op
++/// states that it still holds stock at the end of the plan: its count, its
++/// area, its height and its position. The column is 4 x 4 mm: its contour
++/// line (0.6 mm inside the outline of its cells) is 4 x 3.3 mm long, under
++/// the dial. P44 removed the small-region bound that dropped it before.
+ #[test]
+-fn a_small_region_the_plan_drops_is_stated_p37() {
++fn a_region_under_the_cut_length_dial_is_stated_p37() {
+     let left = left_stock_of(true).expect("the plan dropped a region");
+-    assert!(left.small_regions >= 1, "{left:?}");
+-    assert_eq!((left.short_forecast, left.no_field), (0, 0), "{left:?}");
+-    assert_eq!(left.standing_pieces, left.small_regions, "{left:?}");
++    assert!(left.short_forecast >= 1, "{left:?}");
++    assert_eq!(left.no_field, 0, "{left:?}");
++    assert_eq!(left.standing_pieces, left.short_forecast, "{left:?}");
+     // The column: 9 x 9 cells of 0.25 mm2, less the cells on the outline.
+     assert!(
+         (12.0..=20.25).contains(&left.standing_area_mm2),
+@@ -3250,18 +3259,303 @@ fn a_small_region_the_plan_drops_is_stated_p37() {
+         "{left:?}"
+     );
+     assert!((z - 6.0).abs() < 1e-6, "{left:?}");
++    // P44: the column is a named place, with the reason.
++    let place = left
++        .places
++        .iter()
++        .find(|p| p.lo[0] >= -17.5 && p.hi[0] <= -12.5 && p.lo[1] >= -2.5 && p.hi[1] <= 2.5)
++        .expect("the column is a place");
++    assert_eq!(place.why, PlaceWhy::ShortForecast, "{left:?}");
++    assert!((place.tallest_mm - 5.5).abs() < 1e-3, "{left:?}");
++    assert!((12.0..=20.25).contains(&place.area_mm2), "{left:?}");
+ }
+ 
+-/// P37: with no dropped region the op states nothing that stands.
++/// P37: with no dropped region the op states no dropped piece.
+ #[test]
+ fn a_plan_that_drops_nothing_states_no_standing_stock_p37() {
+     let left = left_stock_of(false);
+     assert!(
+-        left.is_none_or(|l| l.standing_pieces == 0 && l.small_regions == 0),
++        left.as_ref()
++            .is_none_or(|l| l.standing_pieces == 0 && l.short_forecast == 0),
+         "{left:?}"
+     );
+ }
+ 
++/// P44 (H1, H3): with the dial off (0) the same column is cut. No area
++/// bound drops it, and the region contour cuts a region where the geodesic
++/// field has no room. The control is the tree with no region contour: the
++/// column stands.
++#[test]
++fn a_small_region_is_cut_when_no_dial_drops_it_p44() {
++    // The place of the column holds the centres whose disc covers it: the
++    // column and one tool radius (3.175 mm) round it.
++    let in_column =
++        |p: &LeftPlace| p.lo[0] >= -20.5 && p.hi[0] <= -9.5 && p.lo[1] >= -5.5 && p.hi[1] <= 5.5;
++    let hold = || OnePassHold::RemainingStock {
++        link_kinematics: None,
++    };
++    let left = left_stock_with_dial(true, 0.0, hold());
++    assert!(
++        left.as_ref()
++            .is_none_or(|l| !l.places.iter().any(|p| in_column(p) && p.tallest_mm > 1.0)),
++        "the column is cut: {left:?}"
++    );
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
++    let control = left_stock_with_dial(true, 0.0, hold());
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
++    assert!(
++        control
++            .as_ref()
++            .is_some_and(|l| l.places.iter().any(|p| in_column(p) && p.tallest_mm > 5.0)),
++        "the control: with no region contour the column stands: {control:?}"
++    );
++}
++
++/// P44 fixture: a plate 60 x 60 mm, top Z 10, with a slot pocket 40 x 9 mm
++/// (X 10..50, Y 20..29) and a square pocket 8 x 8 mm (X 10..18, Y 40..48),
++/// floors at Z 0. The stock is the full block on a cell of 0.2 mm, given as
++/// remaining stock. Tool 6.35 mm, Depth/Pass 3 mm, stock to leave 0.5: the
++/// levels are 7, 4, 1 and 0.5. The tool-centre region of the slot is 2.65 mm
++/// wide at the floor: the geodesic field has no room in it.
++///
++/// Returns the deepest simulated sample, the highest stock on the centre
++/// line of the slot (Y 24.5, X 16..44) after the simulation, and the record.
++fn slot_fixture_p44(min_cut_mm: f64) -> (f64, f64, Option<LeftStock>) {
++    let mesh = make_pocket_plate(
++        60,
++        60,
++        &[(10.0, 20.0, 50.0, 29.0), (10.0, 40.0, 18.0, 48.0)],
++    );
++    let si = SpatialIndex::build(&mesh, 10.0);
++    let cutter = flat_cutter();
++    let (cell, n) = (0.2, 301usize);
++    let tops = vec![10.0f64; n * n];
++    let stock = make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &tops);
++    let mut params = default_params();
++    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
++    params.linking.min_region_cut_length_mm = min_cut_mm;
++    params.linking.one_pass_hold = OnePassHold::RemainingStock {
++        link_kinematics: None,
++    };
++    params.depth.stock_top_z = 10.0;
++    params.initial_stock = Some(stock.clone());
++    let out =
++        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
++            .expect("not cancelled");
++    let mut sim_stock = stock;
++    let samples = sim_stock
++        .simulate_toolpath_with_metrics_with_cancel(
++            &out.toolpath,
++            &cutter,
++            StockCutDirection::FromTop,
++            ToolpathId::from_raw(0),
++            12_000,
++            2,
++            3000.0,
++            0.5,
++            None,
++            &[],
++            &[],
++            false,
++            &|| false,
++        )
++        .expect("the simulation is not cancelled");
++    let deepest = samples
++        .iter()
++        .map(|s| s.axial_engagement_mm)
++        .fold(0.0, f64::max);
++    let row = 122; // Y 24.4
++    let highest = (80..=220) // X 16..44
++        .map(|col| stock_top_z_at(&sim_stock, row, col))
++        .fold(f64::NEG_INFINITY, f64::max);
++    (deepest, highest, out.left_stock)
++}
++
++/// P44 (H1, H3): a slot that the tool fits in is cut to its floor, one
++/// Depth/Pass at a time. Before P44 the small-region bound dropped the slot
++/// region at each level (89 mm2 against 152 mm2), and the geodesic plan has
++/// no field in it. The control (no region contour): the slot keeps the
++/// stock top.
++#[test]
++fn a_slot_narrower_than_the_field_is_cut_to_its_floor_p44() {
++    let (deepest, highest, left) = slot_fixture_p44(0.0);
++    assert!(
++        highest <= 0.5 + 0.3,
++        "the centre line of the slot stands at Z {highest:.2}; the floor of the plan is 0.5          ({left:?})"
++    );
++    assert!(
++        deepest <= 3.0 + 0.5 + 1e-6,
++        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are 3.5 mm"
++    );
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
++    let (_, control, _) = slot_fixture_p44(0.0);
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
++    assert!(
++        control >= 10.0 - 1e-6,
++        "the control: with no region contour the slot keeps the stock top: {control:.2}"
++    );
++}
++
++/// P44 (H2): the F-038 forecast reads a region in its own frame. With the
++/// dial at 15 mm the slot is cut (its contour line is about 70 mm long;
++/// the forecast before P44 moved the outline inside by the tool radius
++/// again and read 0). The square pocket is dropped by the dial (its line is
++/// under 15 mm at each level), and the record names it with that reason.
++#[test]
++fn the_forecast_reads_a_slot_region_in_its_own_frame_p44() {
++    let (deepest, highest, left) = slot_fixture_p44(15.0);
++    assert!(
++        highest <= 0.5 + 0.3,
++        "the centre line of the slot stands at Z {highest:.2} ({left:?})"
++    );
++    assert!(deepest <= 3.5 + 1e-6, "{deepest:.2}");
++    let left = left.expect("the square pocket is dropped");
++    let place = left
++        .places
++        .iter()
++        .find(|p| p.lo[0] >= 9.0 && p.hi[0] <= 19.0 && p.lo[1] >= 39.0 && p.hi[1] <= 49.0)
++        .expect("the square pocket is a place");
++    assert_eq!(place.why, PlaceWhy::ShortForecast, "{left:?}");
++    assert!(place.tallest_mm > 9.0, "{left:?}");
++    let text = crate::compute::toolpath_stats::RoughLeftStockFinding {
++        left: left.clone(),
++        regions_published: false,
++    }
++    .to_string();
++    assert!(
++        text.contains("a cut there is shorter than Min Region Cut Length"),
++        "{text}"
++    );
++}
++
++/// P44 fixture (H4): the wall of the P42 fixture (X 10, top Z 9) and a rest
++/// stock where a larger tool left a strip 2 mm wide and 6 mm tall at the
++/// foot of the wall (X 8..10, Y -10..10). A block 3 mm tall stands away
++/// from the wall (X -20..-5), so that the plan has a level. No tool centre
++/// can stand over the strip (the tool-centre limit is X 6.825), so the
++/// strip makes no region at any level.
++///
++/// Returns the deepest simulated sample, the highest stock in the strip on
++/// the line Y 0 between X 8.0 and 9.4 after the simulation, and the record.
++fn wall_strip_fixture_p44() -> (f64, f64, Option<LeftStock>) {
++    let (wall_x, wall_top) = (10.0, 9.0);
++    let vertices = vec![
++        P3::new(-40.0, -40.0, 0.0),
++        P3::new(wall_x, -40.0, 0.0),
++        P3::new(wall_x, 40.0, 0.0),
++        P3::new(-40.0, 40.0, 0.0),
++        P3::new(wall_x, -40.0, wall_top),
++        P3::new(wall_x, 40.0, wall_top),
++        P3::new(40.0, -40.0, wall_top),
++        P3::new(40.0, 40.0, wall_top),
++    ];
++    let triangles = vec![
++        [0, 1, 2],
++        [0, 2, 3],
++        [1, 4, 5],
++        [1, 5, 2],
++        [4, 6, 7],
++        [4, 7, 5],
++    ];
++    let mesh = TriangleMesh::from_raw(vertices, triangles);
++    let si = SpatialIndex::build(&mesh, 10.0);
++    let cutter = flat_cutter();
++    let (cell, n) = (0.2, 351usize);
++    let mut tops = vec![0.0f64; n * n];
++    for row in 0..n {
++        for col in 0..n {
++            let (x, y) = (-35.0 + col as f64 * cell, -35.0 + row as f64 * cell);
++            tops[row * n + col] = if x > wall_x {
++                wall_top
++            } else if x >= 8.0 - 1e-9 && (-10.0..=10.0).contains(&y) {
++                6.0
++            } else if (-20.0..=-5.0).contains(&x) && (-12.0..=12.0).contains(&y) {
++                3.0
++            } else {
++                0.0
++            };
++        }
++    }
++    let stock = make_stock_with_cells(n, n, -35.0, -35.0, cell, -10.0, &tops);
++    let mut params = default_params();
++    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
++    params.linking.one_pass_hold = OnePassHold::RemainingStock {
++        link_kinematics: None,
++    };
++    params.depth.stock_top_z = 9.0;
++    params.initial_stock = Some(stock.clone());
++    let out =
++        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
++            .expect("not cancelled");
++    let mut sim_stock = stock;
++    let samples = sim_stock
++        .simulate_toolpath_with_metrics_with_cancel(
++            &out.toolpath,
++            &cutter,
++            StockCutDirection::FromTop,
++            ToolpathId::from_raw(0),
++            12_000,
++            2,
++            3000.0,
++            0.5,
++            None,
++            &[],
++            &[],
++            false,
++            &|| false,
++        )
++        .expect("the simulation is not cancelled");
++    let deepest = samples
++        .iter()
++        .map(|s| s.axial_engagement_mm)
++        .fold(0.0, f64::max);
++    let row = 175; // Y 0
++    let highest = (0..n)
++        .filter(|&col| (8.0..=9.4).contains(&(-35.0 + col as f64 * cell)))
++        .map(|col| stock_top_z_at(&sim_stock, row, col))
++        .fold(f64::NEG_INFINITY, f64::max);
++    (deepest, highest, out.left_stock)
++}
++
++/// P44 (H4): a rough on remaining stock cuts the strip that stands beside a
++/// wall where no region of a level holds it (`level_contour::strip_pass`),
++/// one Depth/Pass per round. The contour runs one planner cell plus the cut
++/// tolerance inside the tool-centre limit, so the tool reaches X 9.7; the
++/// read is to X 9.4. The control (no strip pass): the strip keeps its 6 mm.
++#[test]
++fn a_strip_beside_a_wall_with_no_region_is_cut_p44() {
++    let (deepest, highest, left) = wall_strip_fixture_p44();
++    assert!(
++        highest <= 0.5 + 0.3,
++        "the strip stands at Z {highest:.2} between X 8.0 and 9.4; the floor is 0.5 ({left:?})"
++    );
++    assert!(
++        deepest <= 3.0 + 0.5 + 1e-6,
++        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are 3.5 mm"
++    );
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
++    let (_, control, control_left) = wall_strip_fixture_p44();
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
++    assert!(
++        control >= 6.0 - 1e-6,
++        "the control: with no strip pass the strip keeps its height: {control:.2}"
++    );
++    // The record of the control names the strip as a place: the strip read
++    // finds it with no drop record.
++    let control_left = control_left.expect("the strip stands");
++    assert!(control_left.strips_read, "{control_left:?}");
++    let place = control_left
++        .places
++        .iter()
++        .find(|p| p.tallest_mm > 5.0)
++        .expect("the strip is a place");
++    assert_eq!(place.why, PlaceWhy::NoRecord, "{control_left:?}");
++    assert!(
++        place.lo[0] >= 4.5 && place.hi[0] <= 10.0 && place.lo[1] >= -14.0 && place.hi[1] <= 14.0,
++        "{control_left:?}"
++    );
++}
++
+ /// K5 CentreCut (P40 A4): the descent clamp of the cut and link pipelines
+ /// (`clamp_descents_to_limit`) reads only a tool with a centre core.
+ ///
+@@ -3370,9 +3664,14 @@ fn deepest_cut_on_rib_fixture_p41(
+     };
+     params.depth.stock_top_z = if rib { 12.0 } else { 3.0 };
+     params.initial_stock = Some(stock.clone());
++    // P44: the region contour cuts the rib at its own levels, and the strip
++    // pass cuts what stands at the end. This fixture needs stock that the
++    // levels above LEFT, so it runs with both off (the tree before P44).
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
+     let out =
+-        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+-            .expect("not cancelled");
++        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None);
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
++    let out = out.expect("not cancelled");
+     let mut sim_stock = stock;
+     let samples = sim_stock
+         .simulate_toolpath_with_metrics_with_cancel(
+@@ -3449,7 +3748,10 @@ fn a_plan_with_one_pass_of_stock_holds_no_centre_off_p41() {
+         (2.0..=3.5).contains(&deepest),
+         "the block is one pass deep: {deepest:.2}"
+     );
+-    assert!(left.is_none_or(|l| l.held_off_centres == 0), "{left:?}");
++    assert!(
++        left.as_ref().is_none_or(|l| l.held_off_centres == 0),
++        "{left:?}"
++    );
+ }
+ 
+ /// P41: the rule is in the ONE level grid, so it holds for Contour Parallel
+@@ -3587,8 +3889,12 @@ fn each_level_cuts_to_the_wall_that_it_can_reach_p42() {
+         deepest <= limit + 1e-6,
+         "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
+     );
++    // The control is the tree before P42: no wall pass, and no strip pass
++    // of P44 (it cuts the same strip after the last level).
+     super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
+     let (deepest_held, strip_held_mm) = wall_strip_fixture_p42(hold());
++    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
+     super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
+     assert!(deepest_held <= limit + 1e-6, "{deepest_held}");
+     assert!(
+@@ -3687,20 +3993,30 @@ fn the_one_pass_dial_off_keeps_the_plan_without_the_rule_p41() {
+         params.linking.one_pass_hold = hold;
+         params.depth.stock_top_z = 12.0;
+         params.initial_stock = Some(stock.clone());
+-        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+-            .expect("not cancelled")
++        // P44: the region contour cuts the rib at its own levels; this test
++        // needs the rib as stock that the levels above left (see the
++        // fixture `deepest_cut_on_rib_fixture_p41`).
++        super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
++        let out =
++            adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None);
++        super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
++        out.expect("not cancelled")
+     };
+     let off = run(OnePassHold::Off);
+     let on = run(OnePassHold::RemainingStock {
+         link_kinematics: None,
+     });
+     assert!(
+-        off.left_stock.is_none_or(|l| l.held_off_centres == 0),
++        off.left_stock
++            .as_ref()
++            .is_none_or(|l| l.held_off_centres == 0),
+         "the dial is off: {:?}",
+         off.left_stock
+     );
+     assert!(
+-        on.left_stock.is_some_and(|l| l.held_off_centres > 0),
++        on.left_stock
++            .as_ref()
++            .is_some_and(|l| l.held_off_centres > 0),
+         "the dial is on: {:?}",
+         on.left_stock
+     );
+diff --git a/crates/rs_cam_core/src/compute/execute/findings.rs b/crates/rs_cam_core/src/compute/execute/findings.rs
+index 28e96caf2..5088a1369 100644
+--- a/crates/rs_cam_core/src/compute/execute/findings.rs
++++ b/crates/rs_cam_core/src/compute/execute/findings.rs
+@@ -411,7 +411,7 @@ impl RecordFindings for DerivedStepoverFinding {
+ /// operation, so the report overwrites.
+ impl RecordFindings for RoughLeftStockFinding {
+     fn record_into(&self, findings: &mut GenerationFindings) {
+-        findings.rough_left_stock = Some(*self);
++        findings.rough_left_stock = Some(self.clone());
+     }
+ }
+ 
+diff --git a/crates/rs_cam_core/src/compute/toolpath_stats.rs b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+index 94a7cadb5..d7001dcda 100644
+--- a/crates/rs_cam_core/src/compute/toolpath_stats.rs
++++ b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+@@ -767,17 +767,17 @@ pub struct RestLevelsFinding {
+ 
+ /// P37: the stock that a 3D Rough held as material and did not plan.
+ ///
+-/// The level plan drops a region under its small-region bound, a region
+-/// with a short F-038 forecast and a piece where the geodesic field does not
+-/// fit. A lower level can still cut such a piece, so the planner reads each
+-/// one on its own stock at the end of the plan
+-/// ([`crate::adaptive3d::LeftStock`]). The finding is raised when a piece
+-/// still holds material there.
++/// The level plan drops a region with a short F-038 forecast and a piece
++/// where the geodesic field does not fit. A lower level can still cut such
++/// a piece, so the planner reads each one on its own stock at the end of
++/// the plan ([`crate::adaptive3d::LeftStock`]).
+ ///
+-/// It is not the whole stock that stays: stock that never made a region
+-/// (a strip narrower than the tool radius at a wall) is not in it. Only the
+-/// simulation reads that.
+-#[derive(Debug, Clone, Copy, PartialEq)]
++/// P44: the planner also reads the stock that stands where its tool fits at
++/// the end of the plan, with or without a drop record, and names each place
++/// (`LeftStock::places`: position, area, height, reason). On remaining
++/// stock the read includes the strips beside the walls
++/// (`LeftStock::strips_read`). The finding is raised when a place stands.
++#[derive(Debug, Clone, PartialEq)]
+ pub struct RoughLeftStockFinding {
+     pub left: crate::adaptive3d::LeftStock,
+     /// The rest analysis of this op is on, so it publishes its rest regions
+@@ -790,24 +790,77 @@ pub struct RoughLeftStockFinding {
+ 
+ impl std::fmt::Display for RoughLeftStockFinding {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        use crate::adaptive3d::PlaceWhy;
+         let l = &self.left;
++        // P44: each place where the tool fits and stock stands at the end of
++        // the plan, with its position, area, height and reason.
++        if l.places_total > 0 {
++            write!(
++                f,
++                "At the end of its plan the tool of this operation fits and stock still \
++                 stands at {} {} ({:.1} mm² of tool-centre area). ",
++                l.places_total,
++                if l.places_total == 1 {
++                    "place"
++                } else {
++                    "places"
++                },
++                l.places_area_mm2,
++            )?;
++            if l.places_total > l.places.len() {
++                write!(f, "The {} largest, in the setup frame: ", l.places.len())?;
++            } else {
++                f.write_str("In the setup frame: ")?;
++            }
++            for (k, p) in l.places.iter().enumerate() {
++                let why = match p.why {
++                    PlaceWhy::ShortForecast => "a cut there is shorter than Min Region Cut Length",
++                    PlaceWhy::NoField => "the Geodesic Adaptive field does not fit",
++                    PlaceWhy::NoLine => "it is narrower than a contour line of the planner",
++                    PlaceWhy::OnePassHold => {
++                        "the tool stays off stock that stands more than one Depth/Pass above \
++                         the cutter"
++                    }
++                    PlaceWhy::NoRecord => {
++                        "no rule dropped it (the margin of the plan at a wall, or stock that \
++                         the plan held cut)"
++                    }
++                };
++                write!(
++                    f,
++                    "({}) X{:.1}..{:.1} Y{:.1}..{:.1}, {:.1} mm², {:.2} mm above the cutter \
++                     at X{:.1} Y{:.1}: {why}. ",
++                    k + 1,
++                    p.lo[0],
++                    p.hi[0],
++                    p.lo[1],
++                    p.hi[1],
++                    p.area_mm2,
++                    p.tallest_mm,
++                    p.at[0],
++                    p.at[1],
++                )?;
++            }
++        }
+         let [x, y, z] = l.tallest_at;
+-        let dropped = l.small_regions + l.short_forecast + l.no_field;
+-        write!(
+-            f,
+-            "This operation found stock in {dropped} areas, counted at each level, and planned \
+-             no cut there: {} under the small-area bound, {} with a cut length under Min Region \
+-             Cut Length, {} where the Geodesic Adaptive field does not fit. At the end of its \
+-             plan {} of them still hold stock on {:.1} mm² (tool-centre area). The tallest \
+-             stands {:.2} mm above the level floor at X{x:.2} Y{y:.2} in the setup frame (stock \
+-             top Z {z:.3}).",
+-            l.small_regions,
+-            l.short_forecast,
+-            l.no_field,
+-            l.standing_pieces,
+-            l.standing_area_mm2,
+-            l.tallest_mm,
+-        )?;
++        let dropped = l.short_forecast + l.no_field + l.no_line;
++        if dropped > 0 {
++            write!(
++                f,
++                "The plan found stock in {dropped} areas, counted at each level, and planned \
++                 no cut there: {} with a cut length under Min Region Cut Length, {} where the \
++                 Geodesic Adaptive field does not fit, {} too narrow for a contour line. {} of \
++                 them still hold stock at their own position on {:.1} mm² (tool-centre area); \
++                 the tallest stands {:.2} mm above the level floor at X{x:.2} Y{y:.2} (stock \
++                 top Z {z:.3}).",
++                l.short_forecast,
++                l.no_field,
++                l.no_line,
++                l.standing_pieces,
++                l.standing_area_mm2,
++                l.tallest_mm,
++            )?;
++        }
+         if l.held_off_area_mm2 > 0.0 {
+             let [x, y, z] = l.held_off_at;
+             write!(
+@@ -844,10 +897,18 @@ impl std::fmt::Display for RoughLeftStockFinding {
+                  Profile on the outline of the walls.",
+             )?;
+         }
+-        f.write_str(
+-            " Stock in a strip narrower than the tool radius at a wall is not counted here. \
+-             Check the simulated stock.",
+-        )
++        if l.strips_read {
++            f.write_str(
++                " The places include the strips beside the walls. A strip narrower than one \
++                 planner cell is not counted. Check the simulated stock.",
++            )
++        } else {
++            f.write_str(
++                " Stock in a strip narrower than the tool radius at a wall is not counted \
++                 here (the planner cell of a fresh block cannot read it). Check the simulated \
++                 stock.",
++            )
++        }
+     }
+ }
+ 
+diff --git a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+index 0edcf7107..5b9e1b147 100644
+--- a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
++++ b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+@@ -211,7 +211,7 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
+ /// Silent when the planner dropped nothing, and when every dropped piece is
+ /// cut by a lower level of the same op.
+ fn rough_left_stock(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+-    let Some(finding) = stats.rough_left_stock.filter(|f| f.left.stands()) else {
++    let Some(finding) = stats.rough_left_stock.as_ref().filter(|f| f.left.stands()) else {
+         return Vec::new();
+     };
+     vec![Diagnostic {
+@@ -1260,7 +1260,18 @@ mod tests {
+         ToolpathStats {
+             rough_left_stock: Some(crate::compute::toolpath_stats::RoughLeftStockFinding {
+                 left: crate::adaptive3d::LeftStock {
+-                    small_regions: 5,
++                    places: vec![crate::adaptive3d::LeftPlace {
++                        lo: [10.0, 30.0],
++                        hi: [14.0, 38.0],
++                        area_mm2: 21.5,
++                        tallest_mm: 9.0,
++                        at: [12.0, 34.0],
++                        why: crate::adaptive3d::PlaceWhy::ShortForecast,
++                    }],
++                    places_total: if standing_pieces > 0 { 6 } else { 0 },
++                    places_area_mm2: 61.5,
++                    no_line: 5,
++                    strips_read: true,
+                     short_forecast: 3,
+                     no_field: 2,
+                     dropped_cut_groups: 7,
+@@ -1290,12 +1301,18 @@ mod tests {
+         assert_eq!(out[0].severity, Severity::Caution);
+         let m = &out[0].message;
+         for needle in [
++            // P44: each place, with its position, area, height and reason.
++            "stock still stands at 6 places (61.5 mm² of tool-centre area)",
++            "The 1 largest, in the setup frame",
++            "(1) X10.0..14.0 Y30.0..38.0, 21.5 mm², 9.00 mm above the cutter at X12.0 Y34.0: \
++             a cut there is shorter than Min Region Cut Length",
+             "10 areas",
+-            "5 under the small-area bound",
+             "3 with a cut length under Min Region Cut Length",
+             "2 where the Geodesic Adaptive field does not fit",
+-            "4 of them still hold stock on 61.5 mm²",
+-            "9.00 mm above the level floor at X12.00 Y34.00 in the setup frame (stock top Z 25.500)",
++            "5 too narrow for a contour line",
++            "4 of them still hold stock at their own position on 61.5 mm²",
++            "9.00 mm above the level floor at X12.00 Y34.00 (stock top Z 25.500)",
++            "The places include the strips beside the walls",
+             "dropped 7 cut groups",
+             "No toolpath reads these areas",
+             "a Pocket from remaining stock or a Profile on the outline of the walls",
+diff --git a/crates/rs_cam_core/src/diagnostics/ids.rs b/crates/rs_cam_core/src/diagnostics/ids.rs
+index ae5698369..86db6f90a 100644
+--- a/crates/rs_cam_core/src/diagnostics/ids.rs
++++ b/crates/rs_cam_core/src/diagnostics/ids.rs
+@@ -452,10 +452,11 @@ diag_ids! {
+     /// machined stock, so it cut the whole outline at every level. A REPORT:
+     /// the fallback cuts more, never less.
+     pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback" => warn(Danger::Part);
+-    /// P37: a 3D Rough held stock as material and planned no cut there (a
+-    /// small region, a short forecast, a piece with no geodesic field), and
+-    /// the stock still stands at the end of its plan. A REPORT: the op does
+-    /// not know what a later toolpath cuts.
++    /// P37, P44: at the end of its plan the tool of a 3D Rough fits and
++    /// stock still stands at one place or more (a cut shorter than the
++    /// cut-length dial, a piece with no geodesic field, the one-pass hold,
++    /// a strip beside a wall); the text names each place. A REPORT: the op
++    /// does not know what a later toolpath cuts.
+     pub const GEOM_ROUGH_LEFT_STOCK: &str = "geom.rough_left_stock" => warn(Danger::Part);
+     /// An operation sized an offset stepover from the canonical reach policy
+     /// rather than from any dial, and the value differs from the envelope-scaled
+diff --git a/crates/rs_cam_core/src/session/compute/export.rs b/crates/rs_cam_core/src/session/compute/export.rs
+index 84c5f5baa..4f2200fc3 100644
+--- a/crates/rs_cam_core/src/session/compute/export.rs
++++ b/crates/rs_cam_core/src/session/compute/export.rs
+@@ -311,7 +311,7 @@ impl ProjectSession {
+                     for &idx in emitted {
+                         if let Some(left) = self
+                             .result_at(idx)
+-                            .and_then(|r| r.stats.rough_left_stock)
++                            .and_then(|r| r.stats.rough_left_stock.as_ref())
+                             .filter(|f| f.left.stands())
+                         {
+                             push(
+diff --git a/crates/rs_cam_core/tests/findings_transport_join_h21.rs b/crates/rs_cam_core/tests/findings_transport_join_h21.rs
+index 0b39b50f9..57b07b110 100644
+--- a/crates/rs_cam_core/tests/findings_transport_join_h21.rs
++++ b/crates/rs_cam_core/tests/findings_transport_join_h21.rs
+@@ -308,7 +308,18 @@ fn every_finding_recorded() -> GenerationFindings {
+         // P37. Every counter differs, so a swapped field reads wrong.
+         rough_left_stock: Some(RoughLeftStockFinding {
+             left: rs_cam_core::adaptive3d::LeftStock {
+-                small_regions: 5,
++                places: vec![rs_cam_core::adaptive3d::LeftPlace {
++                    lo: [10.0, 30.0],
++                    hi: [14.0, 38.0],
++                    area_mm2: 21.5,
++                    tallest_mm: 9.0,
++                    at: [12.0, 34.0],
++                    why: rs_cam_core::adaptive3d::PlaceWhy::ShortForecast,
++                }],
++                places_total: 6,
++                places_area_mm2: 61.5,
++                no_line: 5,
++                strips_read: true,
+                 short_forecast: 3,
+                 no_field: 2,
+                 dropped_cut_groups: 7,
+diff --git a/crates/rs_cam_core/src/adaptive3d/standing.rs b/crates/rs_cam_core/src/adaptive3d/standing.rs
+new file mode 100644
+index 000000000..19294c407
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive3d/standing.rs
+@@ -0,0 +1,269 @@
++//! P44: the ONE read of the stock that stands where the tool fits.
++//!
++//! A cell of the level grid is a tool-centre position. The level grid
++//! (`clearing.rs::build_material_bool_grid`) reads the stock only at the
++//! centre cell. So stock in a strip beside a wall makes no region: the tool
++//! centre cannot stand over it, and a centre up to one tool radius away
++//! holds no stock at its own cell. [`standing_cells`] reads both:
++//!
++//! - a material cell of the level (`cell_has_material`), and
++//! - with `strips`, a strip cell: the cell holds no material, and the tool
++//!   disc at the cell covers in full a cell whose stock stands more than
++//!   one planner cell above the cutter. This is the strip read of the wall
++//!   pass (`level_contour::wall_read`, pass 2). The part under the disc is
++//!   at or under the floor of the centre (the floor is the drop-cutter
++//!   height), so that stock is wood. A coarse planner cell cannot read a
++//!   strip, so the caller sets `strips` only on remaining stock.
++//!
++//! Two callers: the strip pass (`level_contour::strip_pass`) and the read of
++//! the places that stand at the end of the plan (`left_stock`).
++
++use crate::dexel_stock::TriDexelStock;
++use crate::surface::slope::SurfaceHeightmap;
++
++use super::clearing::{ClearZLevelContext, cell_has_material};
++use super::intended_floor::level_floor_z;
++use super::stock_top_z_at;
++
++/// The cells of [`standing_cells`], as a padded grid (one cell of `false`
++/// border, the layout of `build_material_bool_grid`), and the count.
++pub(super) struct Standing {
++    pub padded: Vec<bool>,
++    pub padded_rows: usize,
++    pub padded_cols: usize,
++    /// The stock above the cutter at each standing cell (mm; not padded):
++    /// the stock at a material cell above its floor, or the tallest stock
++    /// that the disc of a strip cell covers in full above its floor. 0
++    /// elsewhere.
++    pub height: Vec<f32>,
++    pub count: usize,
++}
++
++impl Standing {
++    pub(super) fn at(&self, row: usize, col: usize) -> bool {
++        self.padded
++            .get((row + 1) * self.padded_cols + (col + 1))
++            .copied()
++            .unwrap_or(false)
++    }
++}
++
++/// The highest value of `values` in the window of `half` cells each side,
++/// along one row of length `n` and stride `stride` from `start` (a sliding
++/// maximum; the cost is linear in `n`).
++#[expect(
++    clippy::indexing_slicing,
++    reason = "each index is start + i * stride with i < n, inside the slice by the caller's layout"
++)]
++fn sliding_max(
++    values: &[f32],
++    out: &mut [f32],
++    start: usize,
++    stride: usize,
++    n: usize,
++    half: usize,
++) {
++    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
++    let at = |i: usize| values[start + i * stride];
++    let mut next = 0usize;
++    for i in 0..n {
++        let hi = (i + half).min(n - 1);
++        while next <= hi {
++            while queue.back().is_some_and(|&b| at(b) <= at(next)) {
++                queue.pop_back();
++            }
++            queue.push_back(next);
++            next += 1;
++        }
++        while queue.front().is_some_and(|&f| f + half < i) {
++            queue.pop_front();
++        }
++        out[start + i * stride] = queue.front().map_or(f32::NEG_INFINITY, |&f| at(f));
++    }
++}
++
++/// The cells where the tool fits and stock stands at `z_level`, inside the
++/// boundary of the op. See the module text.
++#[expect(
++    clippy::indexing_slicing,
++    reason = "each index is row * cols + col with row < rows and col < cols"
++)]
++pub(super) fn standing_cells(
++    ctx: &ClearZLevelContext<'_>,
++    stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    strips: bool,
++) -> Standing {
++    let grid = &stock.z_grid;
++    let (rows, cols, cs) = (grid.rows, grid.cols, grid.cell_size);
++    let (padded_rows, padded_cols) = (rows + 2, cols + 2);
++    let mut padded = vec![false; padded_rows * padded_cols];
++    let mut height = vec![0.0f32; rows * cols];
++    if rows == 0 || cols == 0 || cs <= 0.0 {
++        return Standing {
++            padded,
++            padded_rows,
++            padded_cols,
++            height,
++            count: 0,
++        };
++    }
++    for row in 0..rows {
++        for col in 0..cols {
++            if cell_has_material(stock, surface_hm, row, col, z_level, ctx.stock_to_leave) {
++                padded[(row + 1) * padded_cols + (col + 1)] = true;
++                let floor = level_floor_z(
++                    surface_hm.z_or_bbox_floor_at(row, col),
++                    ctx.stock_to_leave,
++                    z_level,
++                );
++                #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
++                {
++                    height[row * cols + col] = (stock_top_z_at(stock, row, col) - floor) as f32;
++                }
++            }
++        }
++    }
++    if strips {
++        let r = ctx.tool_radius;
++        let r_sq = r * r;
++        #[expect(
++            clippy::cast_possible_truncation,
++            clippy::cast_sign_loss,
++            reason = "a radius over a cell size, positive and small"
++        )]
++        let half = (r / cs).floor().max(0.0) as usize;
++        // An upper bound of the stock in the disc: the highest top in the
++        // square of the disc (two sliding maxima). Only a cell that passes
++        // this bound takes the exact read below.
++        let tops: Vec<f32> = (0..rows * cols)
++            .map(|i| {
++                #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
++                {
++                    stock_top_z_at(stock, i / cols, i % cols) as f32
++                }
++            })
++            .collect();
++        let mut by_row = vec![f32::NEG_INFINITY; rows * cols];
++        for row in 0..rows {
++            sliding_max(&tops, &mut by_row, row * cols, 1, cols, half);
++        }
++        let mut bound = vec![f32::NEG_INFINITY; rows * cols];
++        for col in 0..cols {
++            sliding_max(&by_row, &mut bound, col, cols, rows, half);
++        }
++        #[expect(
++            clippy::cast_possible_wrap,
++            reason = "a cell count under the grid size"
++        )]
++        let reach = half as isize;
++        // The offsets of the cells that the disc covers in full, and the
++        // profile height of the cutter over each (the coverage of the
++        // stamp, read once).
++        let side = 2 * half + 1;
++        let mut full: Vec<Option<f64>> = vec![None; side * side];
++        for (i, slot) in full.iter_mut().enumerate() {
++            let dv = ((i / side) as f64 - half as f64) * cs;
++            let du = ((i % side) as f64 - half as f64) * cs;
++            if TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs) >= 1.0 {
++                *slot = Some(
++                    ctx.lut
++                        .height_at_dist_sq((du * du + dv * dv).min(ctx.lut.radius_sq()))
++                        .unwrap_or(0.0),
++                );
++            }
++        }
++        for row in 0..rows {
++            for col in 0..cols {
++                if padded[(row + 1) * padded_cols + (col + 1)] {
++                    continue;
++                }
++                let floor = level_floor_z(
++                    surface_hm.z_or_bbox_floor_at(row, col),
++                    ctx.stock_to_leave,
++                    z_level,
++                );
++                if f64::from(bound[row * cols + col]) <= floor + cs {
++                    continue;
++                }
++                // The exact read: a cell that the disc covers in full, with
++                // stock more than one planner cell above the cutter surface
++                // over it.
++                let mut tallest = f64::NEG_INFINITY;
++                for dr in -reach..=reach {
++                    let Some(r2) = row.checked_add_signed(dr).filter(|&v| v < rows) else {
++                        continue;
++                    };
++                    for dc in -reach..=reach {
++                        let Some(c2) = col.checked_add_signed(dc).filter(|&v| v < cols) else {
++                            continue;
++                        };
++                        let top = f64::from(tops[r2 * cols + c2]);
++                        if top <= floor + cs {
++                            continue;
++                        }
++                        let k = (dr + reach).unsigned_abs() * side + (dc + reach).unsigned_abs();
++                        if let Some(profile) = full[k] {
++                            tallest = tallest.max(top - profile);
++                        }
++                    }
++                }
++                if tallest > floor + cs {
++                    padded[(row + 1) * padded_cols + (col + 1)] = true;
++                    #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
++                    {
++                        height[row * cols + col] = (tallest - floor) as f32;
++                    }
++                }
++            }
++        }
++    }
++    // The boundary of the op: the region clip of the level grid, and the
++    // containment of the tool centre.
++    if let Some(clip) = ctx.region_clip.as_ref() {
++        clip.restrict_regions(&mut padded, padded_rows, padded_cols);
++    }
++    let mut count = 0usize;
++    for row in 0..rows {
++        for col in 0..cols {
++            let i = (row + 1) * padded_cols + (col + 1);
++            if !padded[i] {
++                height[row * cols + col] = 0.0;
++                continue;
++            }
++            let (x, y) = grid.cell_to_world(row, col);
++            if ctx.centre_clip.is_some_and(|clip| !clip.contains(x, y)) {
++                padded[i] = false;
++                height[row * cols + col] = 0.0;
++            } else {
++                count += 1;
++            }
++        }
++    }
++    Standing {
++        padded,
++        padded_rows,
++        padded_cols,
++        height,
++        count,
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::sliding_max;
++
++    /// The sliding maximum is the maximum of each window, at the ends too.
++    #[test]
++    fn the_sliding_maximum_reads_each_window_p44() {
++        let values = [1.0_f32, 5.0, 2.0, 0.0, 0.0, 0.0, 3.0, 0.0];
++        let mut out = [0.0_f32; 8];
++        sliding_max(&values, &mut out, 0, 1, 8, 2);
++        assert_eq!(out, [5.0, 5.0, 5.0, 5.0, 3.0, 3.0, 3.0, 3.0]);
++        // A column of a 2-column layout (stride 2).
++        let mut col = [0.0_f32; 8];
++        sliding_max(&values, &mut col, 1, 2, 4, 1);
++        assert_eq!([col[1], col[3], col[5], col[7]], [5.0, 5.0, 0.0, 0.0]);
++    }
++}

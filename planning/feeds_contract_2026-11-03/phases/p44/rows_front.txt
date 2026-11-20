@@ -1,0 +1,10 @@
+before total_runtime_s 8762.4 collisions 0 rapid 0 failed checks 0 []
+after  total_runtime_s 9183.4 collisions 0 rapid 0 failed checks 0 []
+21 Front 3D rough: moves 36882 -> 49802
+   ('force_budget', 'group', 'cleanup'): (4.392982482910156, 3.1383959068287117, 'exceeds', 5.175788879394531) -> (3.724893569946289, 3.0120061144189965, 'exceeds', 5.129812240600586)
+   ('force_budget', 'group', 'entry'): (1.9955997467041016, 3.00070171464892, 'within', 1.9955997467041016) -> (1.7163410186767578, 3.00070171464892, 'within', 1.8813591003417969)
+   ('force_budget', 'group', 'link'): (0.48030948638916016, 3.0005161332908408, 'within', 0.48030948638916016) -> (0.48030948638916016, 3.0005161332908408, 'within', 0.48737335205078125)
+23 Front scallop finish: moves 463770 -> 463770
+   ('force_budget', 'group', 'body'): (6.010733604431152, None, 'no_number', 6.010733604431152) -> (4.632085800170898, None, 'no_number', 4.632085800170898)
+   ('force_budget', 'group', 'entry'): (2.5722522735595703, None, 'no_number', 2.5722522735595703) -> (2.5503368377685547, None, 'no_number', 2.5503368377685547)
+   ('force_budget', 'group', 'link'): (3.6643295288085938, None, 'no_number', 3.6643295288085938) -> (3.2894763946533203, None, 'no_number', 3.2894763946533203)

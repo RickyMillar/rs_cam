@@ -1,0 +1,14 @@
+op 'Back bulk rough 18 mm', tool radius 9.0, plan bottom Z 11.0: nodes where the stock after the op stands more than 0.3 mm over the reach surface of this tool (not under the plan bottom): 8965.8 mm2
+classes: c1 = by area: no job call owns the cell at its last level; c2 = one-pass hold (P41); c3 = rest region filter; c4 = region clip (boundary); c5 = contour of 1 cell2 or less (no region); c6 = small-region bound; c7 = F-038 forecast; c8 = planned, 0 cuts (no field / all air); c9 = planned and cut, stock still stands; strip-wl = strip at a wall, no centre cell within the tool radius has a class
+place                            c1       c2       c3       c4       c5       c6       c7       c8       c9  strip-wl     totalof it:strip-near
+1 antenna slot                  0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0       0.0       0.0       0.0
+2 control relief                0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0       0.0       0.0       0.0
+3 slit slot                     0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0    989.6       0.0     989.6     809.5
+4 ESP relief                    0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      56.8      56.8       0.0
+5 step shelf                    0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0     674.2     674.2       0.0
+6 board pocket                  0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0   2045.0     605.7    2650.7    2045.0
+7 cavity                        0.0      0.0      0.0      0.0    292.5   2381.6      0.0      0.0      0.0    1897.0    4571.2    2435.8
+other (outside the seven)       0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0     17.6       5.8      23.4      17.6
+all                             0.0      0.0      0.0      0.0    292.5   2381.6      0.0      0.0   3052.1    3239.6    8965.8    5307.8
+strip at a wall: height over the reach surface, mm2 per band: 0.3..1: 218, 1..3: 345, 3..6.5: 892, over 6.5: 1785
+of it, nodes that this op lowered: 1562 mm2; nodes that it did not touch: 1677 mm2
