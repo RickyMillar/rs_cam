@@ -48,6 +48,17 @@
   ring (D-3); the source (the 2D plan stops one 2D cell inside its region; the sweep on a fresh
   rough); rivmap100 has no fresh Geodesic file; setup "3 Front" has no model frame in the
   replay instruments (below target and wood left are not measured there).
+- 2026-11-20, the slit (proposal `f29da22fd`, `951e3da9f`). Cause: "Back rest 6 mm" leaves the
+  floor of the 7 mm day strip slot at Z 7.5 (target 4.83; the last level of the slot is not
+  planned, cause not traced). New toolpath id 41 "Slit slot rest pocket 6 mm" (model 11, floor
+  Z 4.83). Operator ruling: slit depth 5.5 (was 5.8); the file has 5.49 because the cone of the
+  tool record is 5.4993 mm. "1 Back" 9 716 s, 0 collisions. The flute finding stays on 2 moves:
+  one corner at the low X end, 17 replay nodes, the 6.35 mm body 2.83 mm from the chamfer of the
+  slot outline. Open: the operator's call on that corner.
+- The three Project Curve warnings (ids 11, 28, 15, depth negative) are a wording defect of
+  `project_curve_negative_depth`: the tool rides above the model by design and cuts the stock
+  that stands there (46 994, 8 061 and 22 344 moves). Clean-up list: the rule must not say
+  "cuts nothing" when the op removes stock.
 
 ## State on 2026-11-18
 
