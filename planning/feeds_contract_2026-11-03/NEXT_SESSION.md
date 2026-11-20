@@ -1,6 +1,31 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## State on 2026-11-20 (read this first)
+## State on 2026-11-21 (read this first)
+
+P44 (operator ruling 2026-11-20: a 3D Rough must cut a place that it is told to cut, or name
+the place and the reason). Record: `phases/P44_REST_ROUGH_CUTS_WHAT_IT_IS_TOLD_2026-11-20.md`,
+commit `82cf231c7`. No product code is changed by that commit.
+
+- The cause, id 2 "Back rest 6 mm" (9 193.9 mm2 where the 6 mm tool fits): the small-region
+  bound (2 835.9 mm2 with the one-pass hold that follows it), the F-038 forecast in the wrong
+  frame (2 827.7 mm2), strips at walls that make no region (3 430.8 mm2).
+- Build 2 (all fixes and a strip pass): 1 475.8 mm2 left; NOT landed. The corrected replay
+  class has 4 pieces (11 nodes, deepest 8.50 mm, at most 0.199 mm inside the disc edge).
+- Lead rulings: the replay bar does not move (D-1 no). A product form of build 3 (no strip
+  pass; 4 463.2 mm2 left, replay class 0) lands first: phase P44b, in work. The strip pass is
+  a later phase, after a trace of the planner-stock read. The finding fires only for a place
+  with a drop record (D-9). The D19 rim at each pocket wall stays.
+- Correction to the message of `82cf231c7`: rivmap100 WAS run on build 2. The motion is the
+  same as HEAD; one header line is new (the finding). The message says "not run".
+- Open, in committed P43 code (D-5): with the wall pass on, the lib parity fixture
+  `planner_sim_dexel_parity_geodesic_adaptive_world_stock_declared` shows the simulation
+  removing more than the planner stamp (47 cells, up to 12.9 mm). The direction is the safe
+  one for load (the planner reads more stock than stands). The cause is not found.
+- Open instrument defect: `p37/gapmap.py report` reads a model hole as the stock top. Use
+  `p44/places.py` (`reach6h`) for "fits" areas.
+- The lead pruned `target/debug/deps` on 2026-11-21 (19 215 older duplicates, 108.9 GB).
+
+## State on 2026-11-20
 
 - Committed, not pushed: P41 (`03762ea4e`; note `phases/P41_ONE_PASS_REGION_GRID_2026-11-18.md`):
   the one-pass rule in the region grid (`adaptive3d/one_pass.rs`, the dial
