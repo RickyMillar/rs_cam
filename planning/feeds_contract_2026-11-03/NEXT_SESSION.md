@@ -11,6 +11,17 @@ commit `82cf231c7`. No product code is changed by that commit.
   frame (2 827.7 mm2), strips at walls that make no region (3 430.8 mm2).
 - Build 2 (all fixes and a strip pass): 1 475.8 mm2 left; NOT landed. The corrected replay
   class has 4 pieces (11 nodes, deepest 8.50 mm, at most 0.199 mm inside the disc edge).
+- LANDED `9b5819afd` (P44b, the product form of build 3; note section 10): no small-region
+  bound, the forecast in the region frame, the region contour on remaining stock, the finding
+  names each place with a drop record. Wood after id 2 where the tool fits 9 193.9 to
+  4 463.2 mm2; id 2 579.7 to 676.9 s; "1 Back" 9 715.8 to 9 847.8 s; "3 Front" 8 762.4 to
+  9 053.4 s; replay class 0; 0 collisions; rivmap100 the same bytes. Gates by the agent logs:
+  no new red (op golden: the 52 known cells, not blessed).
+- Open after P44b: the wall strips (3 430.8 mm2 class; control relief 63.9, ESP relief, step
+  shelf, board pocket, cavity) wait for the strip pass phase P45, which first needs the trace
+  of the planner-stock read at a cell that the disc covers in part (the 4 replay pieces of
+  build 2). Job file: id 41 is no longer needed; "Lake relief band 6 mm, 11 lakes" cuts air.
+  Id 20 changes its region order (fed 55 288.0 to 55 236.4 mm, rows the same).
 - Lead rulings: the replay bar does not move (D-1 no). A product form of build 3 (no strip
   pass; 4 463.2 mm2 left, replay class 0) lands first: phase P44b, in work. The strip pass is
   a later phase, after a trace of the planner-stock read. The finding fires only for a place
