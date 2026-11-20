@@ -3259,7 +3259,7 @@ coolant = "off"
 kind = "trace"
 
 [setups.toolpaths.operation.params]
-depth = 5.8
+depth = 5.49
 depth_per_pass = 2.6
 feed_rate = 2286.0
 plunge_rate = 762.0
