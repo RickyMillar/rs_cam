@@ -1,0 +1,119 @@
+
+running 11 tests
+iiiiiiiiitest a_clearing_cut_holds_the_pass_load has been running for over 60 seconds
+test a_straight_plunge_entry_is_exempt_only_leaving_its_hole has been running for over 60 seconds
+ 9/11
+a_straight_plunge_entry_is_exempt_only_leaving_its_hole --- FAILED
+.
+failures:
+
+---- a_straight_plunge_entry_is_exempt_only_leaving_its_hole stdout ----
+G-ADAPTPASSLOAD plunge entries: exempt 3934 (peak 0.9060), over 2 of 15766 (peak 0.8329), cycle 848.2 s
+sim sample over the bound: move 2810, sim 0.8329, exact peak of the move 0.9404
+sim sample over the bound: move 6159, sim 0.8329, exact peak of the move 0.9404
+
+thread 'a_straight_plunge_entry_is_exempt_only_leaving_its_hole' (2862138) panicked at crates/rs_cam_core/tests/a_clearing_cut_holds_the_pass_load_g_adaptpassload.rs:735:5:
+non-exempt ClearingCut samples over 0.5460 that the exact oracle also reads over (move, sim, exact): [(2810, 0.8329080445671909, 0.9403847504031052), (6159, 0.8329080445671909, 0.9403847504031052)]; per producer: {"Agent pass": (0, 0.46821928964406334, 183.1270994369374), "Boundary cleanup": (0, 0.17721034207812378, 10.770834532290216), "Residue contour": (0, 0.5, 17.26018276941713), "Residue mop": (2, 0.8329080445671909, 53.11648661865778), "Starter pocket": (0, 0.11845968398056943, 1.1532987594784723)}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_straight_plunge_entry_is_exempt_only_leaving_its_hole
+
+test result: FAILED. 1 passed; 1 failed; 9 ignored; 0 measured; 0 filtered out; finished in 93.51s
+
+error: test failed, to rerun pass `-p rs_cam_core --test a_clearing_cut_holds_the_pass_load_g_adaptpassload`
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.35s
+
+
+running 5 tests
+....test a_2d_adaptive_keep_down_link_is_silent has been running for over 60 seconds
+.
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 82.41s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.62s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+
+running 4 tests
+iii.
+test result: ok. 1 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 14.13s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.85s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.42s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.93s
+
+
+running 5 tests
+i....
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.02s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.31s
+
+error: 1 target failed:
+    `-p rs_cam_core --test a_clearing_cut_holds_the_pass_load_g_adaptpassload`
+rc 101

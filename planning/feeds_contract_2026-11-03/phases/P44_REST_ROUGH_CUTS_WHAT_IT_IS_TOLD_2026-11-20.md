@@ -3,6 +3,11 @@
 Status: CLOSED, not landed (2026-11-21). Two product builds were measured. Bar 2 fails by 4
 replay pieces, so the tree is back at HEAD and the patch is in `p44/not_landed/`.
 
+Update, P44b (2026-11-21, section 10): the product form of build 3 (no strip pass) is applied
+on the working tree and is not committed. Its measure bars hold. The lead ruled on D-10 to
+D-16; round 2 (10.10) holds those rulings and its gates. Sections 0 to 9 are the record of
+P44 as it closed; section 10 is the current state, and 10.0 is its summary.
+
 ## 0. What failed and what is not verified
 
 RESULT: NOT LANDED. The tree is at HEAD. Two patches are in `p44/not_landed/`:
@@ -472,3 +477,439 @@ Predictions P4 to P8, verdicts (build 2): P4 TRUE for the rows, FALSE for the re
 it was FALSE: 10.33 mm). P6 TRUE for collisions; the nodes under the target are the 8 of HEAD.
 P7: "3 Front" moves (+421 s, id 21), no depth row worse, TRUE; rivmap100 does not move, the
 prediction was FALSE. P8 TRUE: 421 places, 1 185.5 mm2 (strip cells and material cells).
+
+## 10. P44b: the product form (2026-11-21)
+
+Status: the product form of build 3 is applied on the working tree (not committed), with the
+lead rulings of round 2 (10.10). HEAD is
+`82cf231c7`. The lead rulings of 2026-11-21 are the base: no strip pass in the product, the
+replay bar does not move, the finding rule of D-9, bar 1 for places 1 and 3, H3 off on fresh
+stock, no new constant.
+
+### 10.0 What failed and what is not verified (after round 2)
+
+RESULT: every measure bar holds and no new gate is red. The code is applied on the working
+tree and is ready for the commit of the lead (`p44/COMMIT_MSG.txt`). Nothing is committed.
+
+- NOT DONE by ruling (D-10): the control relief keeps a strip of 63.9 mm2 (86.6 mm2 with the
+  rim). It waits for the strip pass phase. The finding now names it by its real reason (the
+  dropped cut groups, D-11).
+- Bar 1, place 1 (the antenna slot): the slot is cut to its floor, and the rim is 0.2 to
+  0.6 mm wide, not only the D19 margin. The line stays (ruling D-12). Place 3 holds.
+- The gouge bar holds for its class (8 nodes, HEAD 8). The count of nodes nearer than 0.1 mm
+  to the disc edge is 270 against 265.
+- The fresh front rough (id 20) does not keep its G-code: the same 22 842 moves in another
+  region order, and its fed length is 51.6 mm less (10.10). Each row value, bound and state
+  is the same. The cause (H1) is from reading the code; no run with H1 reverted alone was
+  made on the front.
+- "Slit slot rest pocket 6 mm" (id 41): its deepest body sample is 3.570 mm against the bound
+  3.0005; the row stays 2.067, within (10.3).
+- The published rest regions of a Geodesic Adaptive rough change (BREAK, 10.10): a small
+  region that the rough plans and cannot cut is stated; a no-field piece is stated in
+  tool-centre space; a region that the region contour cut is not stated.
+- NOT VERIFIED: the op golden against a HEAD run of this session. The red list (52 cells,
+  names and values) is the same in round 1, in round 2 and in the last golden run of P43
+  (scratch `p43/gate_b3_golden.log`). No cell is blessed.
+- NOT VERIFIED: the replay class and the gouge nodes were not run again in round 2. The four
+  G-code files of round 2 are the same bytes as those of round 1, so the round 1 results stand.
+- NOT VERIFIED: the front in the replay instruments (no model frame, as P43). No GUI or MCP
+  surface was run, and no `rs_cam_gui` was built.
+- NOT RUN in round 2: the extra rough and trace sentries of round 1 (`p44/gate_p44b_more.log`:
+  18 of 19 green, 1 known red). The lead list of round 2 does not name them.
+- No red proof was made for the two assertions that round 2 adds to the lib tests. The slot
+  assertion has its control in the test. The frame fix has the D44 sentry, red before the fix.
+- KNOWN RED, not from this phase: `feeds::envelope::tests::the_envelope_meets_its_time_budget`
+  (lib) and `a_clearing_cut_holds_the_pass_load_g_adaptpassload` (red since `c6826ad05`).
+- The limit of the cause reading of 10.2: the debug lines are per By Area job and level. The
+  moves inside the place come from the G-code. No probe per cell was run in P44b.
+- Sections 10.2 to 10.8 keep the text of round 1. Where 10.10 differs (the finding counts of
+  10.4, the gates of 10.6, the decisions of 10.8), 10.10 is the current fact.
+
+### 10.1 What the product form is
+
+- H1: no small-region bound. `LeftWhy::SmallRegion` is deleted. The level metric
+  `dropped_micro_region_count` and its trace key are deleted (BREAK: the semantic key
+  vocabulary has 75 keys, was 76).
+- H2: the F-038 forecast of a region reads the length of its contour line
+  (`level_contour::contour_line_inset`: one planner cell plus the cut tolerance).
+- H3: `level_contour::region_contour_pass`, only with `OnePass::on` (remaining stock).
+- H5: `standing.rs` and the places of `left_stock.rs`, with the finding rule of ruling 3
+  (10.4).
+- Deleted from build 3: `strip_pass`, `grow_open_side`, the env switch `P44_STRIP_PASS`,
+  `LeftWhy::NoLine`, `PlaceWhy::NoLine`, `PlaceWhy::NoRecord`, `LeftStock::no_line`, the test
+  `a_strip_beside_a_wall_with_no_region_is_cut_p44`, `contour_line_length` and two fields of
+  `Standing` (dead with no strip pass). No env switch is in product code. The test control
+  `REGION_CONTOUR_OFF_FOR_CONTROL` is `cfg(test)` only.
+- `p44/not_landed/p44_build2.patch` and `p44_build3_no_strip_pass.patch` are not changed.
+
+The G-code of setup "1 Back" with id 41 off is the same as build 3, byte for byte
+(`cmp out_b3.nc out_p44b.nc`). So each measure of section 6.6 holds for the product form.
+
+### 10.2 The two open points (work B)
+
+Control relief, 86.6 mm2 in build 3 against 13.6 in build 2. The cause is the cut-length
+dial inside the plan: the cut-group filter of F-038 drops 11 of the 13 cut groups of a region
+that H1 now plans. The wood that stays is then a strip beside a wall, which no level can
+plan. H1, H2 and H3 do not drop it, and the fix is not in P44b (D-10). The numbers:
+
+- Level 1.5 of id 2. The region of the relief is 77.3 mm2 of tool centres (9.07 x 8.16 mm).
+  H1 keeps it (HEAD dropped it under 144 mm2). The forecast passes. The region opens "grown,
+  no sweep".
+- The geodesic plan of the region has 13 cut groups. The cut-group filter of F-038
+  (`filter_short_groups`, the dial `min_region_cut_length_mm` = 15 mm) drops 11 of them
+  (debug line `F-038: dropped short cut groups .. z=1.5 region=2 dropped_groups=11
+  group_total=13`). The 2 groups that ship are the ramp and the starter spiral: moves 10 622
+  to 10 697 of id 2, a spiral to a radius of 3.0 mm about X 181.95 Y 58.35 at Z 4.5. They cut
+  a disc of radius 6.0 mm.
+- After that cut no tool centre of the region holds stock at its own cell, but two corner
+  pieces of 0.70 and 0.42 mm2 (the regions of level 0.5; the forecast drops them). So the
+  wood between the disc and the walls is a strip beside a wall (mechanism D): it makes no
+  region at level 0.5.
+- The P42 wall pass ships no point there: the wall is 3.0 mm (Z 7.5 to 4.5), not deeper than
+  one pass (limit 6.5 mm). The region contour does not run: the plan of the region shipped a
+  cut.
+- The area split (`p44/rim_split.py`, `p44/place_map.py`): 86.6 mm2 = 22.7 mm2 at most 0.4 mm
+  from a wall (the rim of the plan margin) + 63.9 mm2 of strip, 1.0 to 2.6 mm wide, at Z 7.5
+  (3.0 mm over the floor). Build 2: 13.6 mm2, all at most 0.4 mm from a wall. The strip pass
+  of build 2 cut the strip.
+- Not fixed in P44b. A fix at the source is a contour on each region whose plan dropped cut
+  groups. That is 15 of the 50 planned region-levels of id 2, on regions up to 7 812 mm2. It
+  ships through the door of the strip pass, it is not what build 3 measured, and it needs a
+  new measure. See decision D-10.
+- The one-pass hold is not the cause at level 0.5: it holds 5 centres in the whole By Area
+  job at that level (debug line `One-pass rule: .. z=0.5 held=5`).
+- Evidence: `cli_b3` with `RUST_LOG=info,rs_cam_core::adaptive3d=debug` (scratch
+  `p44/run_b3dbg.log`; its G-code is the same as `out_b3.nc`), and the moves of id 2 inside
+  the place (`p44/box_moves.py`).
+
+Antenna slot, 23.0 mm2 last cut by "none", 21 mm tall. It is the first node column at the
+wall, and no level cuts it:
+
+- 20.4 of the 23.0 mm2 are nodes 0.2 mm from the wall (`p44/place_map.py`, the row "never
+  cut"); the wall of the slot is about 113 mm long, and 113 x 0.2 = 22.6 mm2.
+- The contour line of levels 19.5, 16.55 and 13.5 is at Y 57.40 and 59.60 (X 246.80 to
+  288.20). The tool-centre limit is Y 57.2 and 59.8. So the disc edge stands 0.2 mm from the
+  wall at each level, and the node column on the wall side stays at the stock top (Z 25.5,
+  21.0 mm over the floor 4.5). This is the D19 margin (one planner cell plus the cut
+  tolerance).
+- The other 36.8 mm2 (last cut by id 2): the node columns 0.4 and 0.6 mm from the wall,
+  28.2 mm2 of them at Z 13.5. The lines of levels 8.55, 7.5 and 1.5 are one cell more inside
+  (Y 57.60 and 59.40, X 247.00 to 288.00). The first column stands 17 mm over the cutter of
+  level 8.55, so the one-pass hold removes the centres whose disc covers it. The line
+  positions are measured from the G-code; the one-pass hold as the cause of the second line
+  is a reading of the rule, not a trace.
+- So the rim of place 1 is 0.2 to 0.6 mm wide (58.5 of 59.8 mm2 at most 0.6 mm from a wall).
+  The slot is cut to its floor inside the rim.
+
+### 10.3 The measures (release CLI of the product tree, scratch `p44b/cli_p44b`)
+
+Setup "1 Back", `p44/job_no41.toml` (`p44/meas_p44b.txt`, `p44/places_p44b.txt`). Wood more
+than 0.3 mm over the target where the 6 mm tool fits, after id 2 (mm2):
+
+| Place | HEAD | product | what stays |
+|---|---|---|---|
+| 1 antenna slot | 412.8 | 59.8 | the rim at the walls, 0.2 to 0.6 mm wide (10.2) |
+| 2 control relief | 158.2 | 86.6 | 22.7 rim + 63.9 strip (10.2) |
+| 3 slit slot | 1 781.7 | 121.8 | the rim: 121.7 mm2 at most 0.2 mm from a wall |
+| 4 ESP relief | 59.4 | 59.4 | strips at the walls (no strip pass) |
+| 5 step shelf | 795.1 | 525.7 | strips at the walls |
+| 6 board pocket | 957.4 | 861.0 | strips at the walls |
+| 7 cavity | 5 016.1 | 2 735.8 | strips at the walls |
+| total | 9 193.9 | 4 463.2 | |
+
+End of setup, all toolpaths, id 41 off: over the target 4 834.4 to 3 889.1 mm2; where the tool
+fits 3 149.6 to 2 074.3 mm2. Committed job (id 41 on; `p44/meas_p44bc.txt`, HEAD in
+`p44/places_headc.txt`): over 4 595.2 to 3 767.3 mm2; fits 2 912.0 to 1 954.0 mm2.
+
+| | HEAD | product |
+|---|---|---|
+| id 1 moves; fed; feed time | 36 079; 89.2 m; 801.3 s | the same G-code |
+| id 1 body row, deepest; cleanup deepest; entry | 4.166, 4.166; 4.233; 1.969 | the same |
+| id 2 moves; fed; rapid; feed time | 15 239; 38.8 m; 4.3 m; 579.7 s | 17 294; 44.4 m; 7.4 m; 676.9 s |
+| id 2 body row, deepest | 6.000, 6.130 | 6.000, 6.130 |
+| id 2 cleanup row (bound), deepest | 6.000 (4.620), 6.001 | 5.000 (3.429), 6.001 |
+| id 2 entry row, deepest | 1.885, 1.894 | 1.885, 1.894 |
+| id 2 link row | 6.000 | 6.000 |
+| replay class, id 1 and id 2 (`p43/deepc.py`, pieces) | 0, 0 | 0, 0 |
+| id 2 nodes under the target, 0.1 mm or more inside the disc edge (`p43/gouge.py`) | 8 | 8 |
+| id 2 nodes under the target, nearer to the edge | 265 | 270 |
+| setup "1 Back", id 41 off | 9 682.9 s | 9 813.8 s |
+| setup "1 Back", committed job | 9 715.8 s | 9 847.8 s |
+| collisions, rapid collisions, failed checks (both jobs) | 0, 0, 0 | 0, 0, 0 |
+
+The HEAD run of the committed job on setup "1 Back" was made again in this phase (scratch
+`p44/out_headc`; the output folder of the first run was not in scratch). Its total is the
+9 715.8 s of section 6.2.
+
+Limit rows that change state against HEAD, setup "1 Back" (`p44/rows_back_committed_p44b.txt`
+for the committed job, `p44/rows_scratch_job_p44b.txt` for id 41 off; the same rows in both):
+
+- "Lake outline channel 6 mm" (id 28), entry depth: within to no number (8 061 to 6 545
+  moves).
+- "Lake relief band 6 mm, 11 lakes to Z 13.5" (id 25): chip, depth, spindle power and tool
+  deflection, body and entry (8 rows): within to no number. The stock that it cut is gone;
+  its 7 206 moves stay. The G-code header gets three lines "not measured" for it.
+- With id 41 off, the header loses the line `project.sim_outside_envelope` of "Day strip slit
+  V60" (body 4.5 to 1.83 mm). In the committed job the header loses the line
+  `project.sim_outside_envelope` of "Slit slot rest pocket 6 mm" (id 41). No other header
+  line changes on the back.
+
+No state change, but stated: "Slit slot rest pocket 6 mm" (id 41, committed job) 26 to 44
+moves; its body row stays 2.067 (within 3.0005) and its deepest sample is 3.570 mm (was
+2.067). "Cavity rest pocket 6 mm" 756 to 875 moves.
+
+Setup "3 Front", committed job (`p44/rows_front_p44b.txt`):
+
+| | HEAD | product |
+|---|---|---|
+| setup "3 Front" | 8 762.4 s | 9 053.4 s |
+| collisions, rapid collisions, failed checks | 0, 0, 0 | 0, 0, 0 |
+| id 20 "Front bulk rough 18 mm" (fresh) moves; fed; rapid | 22 842; 55.3 m; 3.9 m | 22 842; 55.2 m; 4.2 m |
+| id 21 "Front 3D rough" moves; fed; rapid; feed time | 36 882; 54.0 m; 15.1 m; 849.6 s | 46 432; 64.8 m; 20.0 m; 1 020.1 s |
+| id 21 body row | | not changed |
+| id 21 cleanup row (bound), deepest | 4.393 (3.138), 5.176 | 3.725 (3.012), 5.130 |
+| id 21 entry row, deepest | 1.996, 1.996 | 1.716, 1.881 |
+| id 21 link row, deepest | 0.480, 0.480 | 0.480, 0.487 |
+| "Front scallop finish" deepest body sample (no bound) | 6.011 | 4.714 |
+
+No row changes state. No depth row is worse; one deepest sample is (the link of id 21, by
+0.007 mm, under its bound 3.0005). The G-code of id 20 is not the same as HEAD: two blocks of
+moves change places (the region order; H1 gives the order more regions), with the same move
+count and the same rows. The front has no model frame in the replay instruments (as P43).
+
+rivmap100 (`planning/fixtures/rivmap100/rivmap100_live_0925.toml`, read in place): the G-code
+of the product is the same as HEAD, byte for byte, the header included (`cmp`; scratch
+`p44b/riv_head.nc` from `cli_head`, made in this phase, and `p44b/riv_p44b.nc`).
+
+### 10.4 The finding (ruling 3)
+
+`LeftStock::stands()` is the one rule: a dropped piece still holds stock, or the one-pass rule
+held the tool off stock that still stands (the two terms of HEAD), or a place with a drop
+record stands. A place with no record does not raise it. `left_stock()` gives `None` when the
+plan recorded nothing, as at HEAD, and reads the standing stock only when it has a record.
+
+- The text lists the places with a record (the 12 largest) and gives one line for the others:
+  "Stock also stands at N more places with no drop record (A mm2 of tool-centre area)".
+- id 1: 5 places with a record (238.5 mm2), 3 with no record (229.5 mm2). id 2: 135 places
+  with a record (3 895.6 mm2), 17 with no record (16.9 mm2). id 20: 81 and 55 (5 265.0 and
+  438.8 mm2). id 21: 534 and 1 250 (44 631.7 and 786.0 mm2). Text: `p44/finding_text_p44b.txt`.
+- The header lines `geom.rough_left_stock` are the same four as at HEAD (ids 1, 2, 20, 21).
+  rivmap100 gets none, as at HEAD. No conflict with "HEAD already raised it" was found.
+- Ruling 5: id 1 (fresh) names a place with "the Geodesic Adaptive field does not fit"
+  (157.5 mm2 at X 125.5 to 140.5, Y 166.5 to 187.5).
+- Limit of the record (D-11): the cut-group filter has no outline record. The reason of a
+  place is that of a recorded piece on its cells, so a rim beside a recorded piece takes its
+  reason (section 0).
+
+### 10.5 The tests (work C), each seen red with its hunk reverted alone
+
+`p44/revert.py` reverts one hunk by hand; `p44/red.sh` runs `--lib _p44`, restores the files
+and compares `git diff` before and after ("tree restored" each time). Record:
+`p44/red_proofs_p44b.txt`.
+
+| Hunk reverted alone | Red tests | Red text |
+|---|---|---|
+| H1 (the bound is back) | `a_small_region_is_cut_when_no_dial_drops_it_p44`, `a_slot_narrower_than_the_field_is_cut_to_its_floor_p44`, `the_forecast_reads_a_slot_region_in_its_own_frame_p44` | "the column is cut"; "the centre line of the slot stands at Z 1.00" |
+| H2 (the forecast insets by R + 0.25) | `the_forecast_reads_a_slot_region_in_its_own_frame_p44` | "the centre line of the slot stands at Z 10.00" |
+| H3 (no region contour) | the three of H1 | "the column is cut"; "the centre line of the slot stands at Z 10.00" |
+| the finding rule (a place with no record raises it) | `stock_with_no_drop_record_does_not_raise_the_finding_p44` | "no drop record: the finding is not raised" |
+
+After the four proofs: `--lib _p44 _p37 _p41 _p42 _p43`, 21 pass, 0 red.
+
+One fact that the build 3 text had wrong: with the bound back, the slot of the fixture is cut
+to Z 1.00, not left at Z 10. The bound drops its region only at the last level. The test text
+now says what the proof showed.
+
+### 10.6 Gates
+
+Each gate ran as `timeout <s> scripts/cargo_lane.sh <args> -j 2` on the product tree
+(`p44/gates_p44b.sh`; logs `p44/gate_p44b_*.log`). The disk had 97 GB free at the end.
+
+| Gate | Result |
+|---|---|
+| `test -p rs_cam_core -q --lib` | 2 862 pass, 1 red: `feeds::envelope::tests::the_envelope_meets_its_time_budget` (known) |
+| op golden `every_op_keeps_its_toolpath_g_opgolden` | red, 52 cells (`p44/golden_p44b_cells.txt`). No new cell and no changed value against the last golden run of P43 (16 adaptive3d, 15 pencil, 6 scallop, 6 steep_shallow, 9 unified_finish). Not blessed |
+| adaptive3d sentries (37 binaries) | 36 green (74 tests). 1 RED, new: `a_derived_rest_rough_cuts_only_the_leftovers_d44` |
+| dressup sentries (19 binaries) | 119 pass, 0 red |
+| other core sentries (20 binaries, `findings_transport_join_h21` included) | 141 pass, 0 red |
+| extra rough and trace sentries (19 binaries, features `test-support,heavy-tests,research`) | 18 green (54 tests). 1 red, known: `a_clearing_cut_holds_the_pass_load_g_adaptpassload` |
+| FM1 `feeds_matrix_instrument_fm1` | 2 pass |
+| `test -p rs_cam_cli -q` | 113 pass, 0 red |
+| `test -p rs_cam_mcp -q` | 39 pass, 0 red |
+| viz `--lib -- --test-threads 2` (no `rs_cam_gui` process) | 705 pass, 0 red |
+| full clippy (the command of the root `CLAUDE.md`) | clean, exit 0 |
+| `cargo fmt -p rs_cam_core -- --check` | clean, exit 0 |
+
+Two comment-only edits came after the gates: the doc of `GEOM_ROUGH_LEFT_STOCK` in
+`diagnostics/ids.rs` and one sentence of `diagnostics/CLAUDE.md` (the finding rule of ruling
+3). After them: `rustfmt --check` of `ids.rs` is clean and `cargo check -p rs_cam_core` is
+clean (exit 0). No test ran again.
+
+### 10.7 Bars
+
+| Bar | Result |
+|---|---|
+| id 1 body row at most 4.666 | HELD: 4.166 (deepest 4.166; cleanup deepest 4.233) |
+| id 2 body and cleanup rows at most 6.5 | HELD: 6.000 and 5.000 (deepest 6.130 and 6.001) |
+| id 2 entry row at most 2.5 | HELD: 1.885 (deepest 1.894) |
+| replay class 0 pieces, ids 1 and 2 | HELD: 0 and 0 |
+| 0 collisions, 0 rapid collisions | HELD: back (both jobs) and front |
+| gouge nodes not more than HEAD | HELD for the class of the bar (8 nodes 0.1 mm or more inside the edge, HEAD 8; the six that the instrument prints have the same coordinates). 5 more nodes nearer to the edge (270, HEAD 265) |
+| rivmap100: the same bytes as HEAD | HELD |
+| bar 1: places 1 and 3 cut to the floor, only the rim stays | Place 3: HELD (121.7 of 121.8 mm2 at most 0.2 mm from a wall). Place 1: cut to the floor; the rim is 0.2 to 0.6 mm wide, wider than the D19 margin by the cell that the one-pass hold keeps (D-12) |
+| front: no depth row worse | HELD for the rows; the deepest link sample of id 21 is 0.007 mm more |
+| gates | Round 1: one new red sentry (D-15). Round 2 (10.10): the sentry is green; each red is known |
+
+### 10.8 Decisions for the lead (P44b)
+
+All of these are ruled (10.10). The text below is the question as it stood after round 1.
+
+- D-10. The control relief (63.9 mm2 of strip). The cut-group filter of F-038 drops 11 of the
+  13 cut groups of a region that H1 now plans, and the rest is a wall strip. Choices: (a) it
+  waits for the strip pass phase; (b) the region contour runs also on a region whose plan
+  dropped cut groups: 15 of the 50 planned region-levels of id 2 dropped groups (231 groups),
+  on regions of 77 to 7 812 mm2; not measured; it ships through the `emit_runs` door, as the
+  strip pass did; (c) a lower `min_region_cut_length_mm` on the job (D-6).
+- D-11. A dropped cut group has no outline record. A place where only that filter dropped
+  the cut reads "no drop record". The control relief has a record only because the forecast
+  drops two corner pieces at level 0.5. Choice: record the outline of the piece with the
+  reason of the dial; then each standing cell of a large planned region takes that reason.
+- D-12. Bar 1, place 1. The rim is 0.2 to 0.6 mm wide: 23.0 mm2 never cut (the D19 margin)
+  and 36.8 mm2 that the one-pass hold keeps beside it at Z 13.5 to 19.5. The line was not
+  moved (ruling 4).
+- D-13. BREAK of the trace vocabulary: the key `dropped_micro_region_count` is deleted (75
+  keys). The alternative is a key that always reads 0.
+- D-14. H1 on a fresh rough changes the region order (id 20: two blocks change places). The
+  op golden cells that move are in 10.6; none is blessed.
+- D-15 (blocks the commit). The rest regions that a rough publishes change (10.0). Choices:
+  (a) pin the D44 sentry again to the two regions (657.7 mm2); then a consumer of a slot
+  region may put its tool centre up to about one tool radius outside the tool-centre region of
+  the slot; (b) record a region with no plan as ONE left piece in its own frame, in the one
+  list `left_pieces`; this changes the zone that the wall contour skips, so it needs a new
+  measure of the three jobs; (c) a third fact for the same ruling: on remaining stock a slot
+  that the region contour cut stays in `left_pieces`, so it is published and the wall contour
+  skips it (from reading the code, not measured). BREAK either way: a rough publishes the
+  small regions that it does not cut. Evidence for (b): with H2 reverted alone and H1 on, the
+  sentry is green (its regions were not printed: `-q` hides the output of a green test).
+- D-16 (does not block). `left_stock::PLACES_LISTED = 12` has no derivation (ruling 6). It
+  came with build 3. It limits only the text of the finding, never a cut.
+- D-7 stands: with this change id 41 is no longer needed for the V-bit load, and "Lake
+  relief band 6 mm, 11 lakes" cuts air (8 rows read no number).
+
+### 10.9 State at hand-off (P44b)
+
+- `crates/` holds the product form. The diff of `crates` and `FEATURE_CATALOG.md`, with the
+  new file `adaptive3d/standing.rs`, is `p44/p44b_product.patch`; `git apply -R --check` of
+  it passes. Nothing is staged and nothing is committed.
+- `target/release/rs_cam_cli` is the build of the product tree, not of HEAD (copy: scratch
+  `p44b/cli_p44b`). No `rs_cam_gui` was built in this phase, so a running GUI is not this
+  tree.
+- Scratch: `p44b/` (builds, runs, gate logs, probes) beside `p44/` (the run outputs
+  `out_p44b`, `out_p44bc`, `outF_p44bc` and their `.nc` and `.npz`). HEAD baselines made in
+  this phase: `p44b/riv_head.nc` (rivmap100) and `p44/out_headc` (the committed job, setup
+  "1 Back"), both from `p44/cli_head`.
+- Do not commit `p37/*.npy` or the `__pycache__` folders. `p44/COMMIT_MSG.txt` has the
+  message and the paths.
+- Round 2: scratch `p44b/cli_p44b2` is the release CLI of the final tree, and
+  `target/release/rs_cam_cli` is that build. The second runs are `out_p44b2`, `out_p44b2c`,
+  `outF_p44b2c` (scratch `p44/`) and `p44b/riv_p44b2.nc`.
+
+### 10.10 Round 2: the lead rulings on D-10 to D-16 (2026-11-21)
+
+Rulings: D-15 choice (b) and (c) with it; D-11 a drop record for a dropped cut group; D-10 the
+control relief strip waits for the strip pass phase; D-12 the antenna rim stays; D-13 the
+metric and the trace key stay deleted; D-16 `PLACES_LISTED = 12` stays as a text cap.
+
+What changed in the code:
+
+- D-15 (b). One frame for every `leave_piece` call. The no-field path of `plan_one_outline`
+  records the part of the region inside the planner outline
+  (`region_polygon.intersection(polygon_for_adaptive)`), which is in tool-centre space, as the
+  forecast path is. It recorded the planner outline (the region grown by about the tool
+  radius) before.
+- D-15 (c). `clear_z_level_slice` keeps, for each region whose plan ships no cut, the ranges
+  of its records in `left_pieces` and `unplanned`. `region_contour_pass` now says for each
+  region whether a run of its line shipped. The records of a region that the contour cut are
+  removed: it is not left, it is not published, and the wall contour does not skip there.
+- D-11. `filter_short_groups` gives the XY box of the cut of each dropped group.
+  `plan_one_outline` records it as `LeftWhy::ShortGroup` (each round of the filter). It is in
+  `unplanned` only, never in `left_pieces`, so it changes no published region and no skip.
+  `left_stock` gives that reason to the standing cells of the box and one cell round it (the
+  box of a straight cut has no area). It is not a standing piece: `standing_pieces` and the
+  two terms of HEAD in `LeftStock::stands` read as before. The place takes `PlaceWhy::ShortGroup`
+  ("the plan dropped cut groups shorter than Min Region Cut Length").
+- D-16. The comment of `PLACES_LISTED` says that it limits the text only and that the text
+  gives the sum of all recorded places.
+- The D44 sentry (`a_derived_rest_rough_cuts_only_the_leftovers_d44`). After the frame fix the
+  rough states 2 regions, 284.5 mm2: the channel 249.1 mm2 (box X -27.75 to 27.75, Y -2.25 to
+  2.25) and a corner 35.4 mm2 (box X -31.75 to -25.75, Y -21.75 to -13.25). The test reads the
+  channel region alone against the math of the fixture (253.0 mm2, plus or minus 20 %, as
+  before). The corner is not a function of the fixture constants: the plan of the first level
+  rounds the corners of the wide pocket, stock stands on a few tool centres there, H1 plans
+  that region at the second level and the field has no room in it. So the test asserts each
+  other region by its box: inside the tool-centre region of the wide pocket (two planner cells
+  of slack), at a corner of it, clear of the channel, and at least one such region. The
+  unchanged sentry was red before the fix (657.7 mm2) and green after it; the new form is
+  green.
+- Lib tests: `a_slot_narrower_than_the_field_is_cut_to_its_floor_p44` also asserts that the
+  cut slot is not a left piece (`no_field == 0`; the control with no region contour has
+  `no_field > 0`). `stock_with_no_drop_record_does_not_raise_the_finding_p44` also asserts
+  the cut-group reason on a box with no area.
+
+Id 20 "Front bulk rough 18 mm" (fresh), why two blocks of moves change places: H1. HEAD
+removed the regions under the bound before `detect_and_order_regions` put the regions of a
+level in nearest-neighbour order. Now those small regions are in that list (the forecast or
+the field drops them after the order is made), so the walk visits the large regions in
+another order. This is from reading the code and from the counts (the 121 dropped
+areas of id 20 at HEAD, 120 under the bound and 1 with no field, are 98 forecast drops and 23
+no-field pieces now); no run with H1
+reverted alone was made on the front. The move count is the same (22 842). The fed length is
+NOT the same: 55 288.0 to 55 236.4 mm (51.6 mm less; the links at the joins differ), rapid
+3 936.5 to 4 247.3 mm, feed time 490.6 to 490.2 s. Each of its 21 limit rows has the same
+value, bound and state (`p44/rows_one_op.py`); only sample counts and sample indexes differ.
+
+The measures again (release CLI of the final tree, scratch `p44b/cli_p44b2`):
+
+| Run | G-code against the first product run | Against HEAD |
+|---|---|---|
+| rivmap100 | the same bytes | the same bytes, header included |
+| setup "1 Back", `p44/job_no41.toml` | the same bytes | as 10.3 |
+| setup "1 Back", committed job | the same bytes | as 10.3 |
+| setup "3 Front", committed job | the same bytes | as 10.3 |
+
+So the rows, the times, the places table, the replay class (0 and 0), the gouge nodes (8) and
+the collisions (0) of 10.3 stand, and they were not run again. Setup totals of the second
+runs: 9 813.8 s, 9 847.8 s and 9 053.4 s, as before.
+
+What does change is the finding text (`p44/finding_text_p44b.txt`, the second runs):
+
+| Rough | Places with a record | Places with no record | Forecast drops; no-field pieces; dropped groups |
+|---|---|---|---|
+| id 1 (fresh) | 5, 238.5 mm2 | 3, 229.5 mm2 | 4; 1; 2 |
+| id 2 | 30, 3 860.5 mm2 | 122, 52.1 mm2 | 53; 4; 231 |
+| id 20 (fresh) | 81, 5 289.8 mm2 | 55, 414.0 mm2 | 98; 23; 87 |
+| id 21 | 607, 45 005.8 mm2 | 1 177, 411.8 mm2 | 1 022; 257; 1 929 |
+
+- id 2: the no-field pieces go from 39 to 4. The other 35 are regions that the region contour
+  cut. The control relief is place 7 (X 159.5 to 168.5, Y 45.9 to 54.1, 45.6 mm2), and its
+  reason is now "the plan dropped cut groups shorter than Min Region Cut Length".
+- The header lines `geom.rough_left_stock` are the same four as at HEAD.
+
+Gates of round 2, after the last code edit (`p44/gate_p44b2_*.log`):
+
+| Gate | Result |
+|---|---|
+| `test -p rs_cam_core -q --lib` | 2 862 pass, 1 red: `feeds::envelope::tests::the_envelope_meets_its_time_budget` (known) |
+| adaptive3d sentries (37 binaries; D44, D48 and D50 included) | 75 pass, 0 red |
+| other core sentries (20 binaries, `findings_transport_join_h21` included) | 141 pass, 0 red |
+| dressup sentries (19 binaries) | 119 pass, 0 red |
+| FM1 `feeds_matrix_instrument_fm1` | 2 pass |
+| op golden | red, 52 cells; the same names and values as round 1 and as the last P43 run. Not blessed |
+| `test -p rs_cam_cli -q` | 113 pass, 0 red |
+| `test -p rs_cam_mcp -q` | 39 pass, 0 red |
+| viz `--lib -- --test-threads 2` (no `rs_cam_gui` process) | 705 pass, 0 red |
+| full clippy (the command of the root `CLAUDE.md`) | clean, exit 0 |
+| `cargo fmt -p rs_cam_core -- --check` | clean, exit 0 |
+
+No file under `crates/` changed after these gates started (the hash of the `crates` diff is
+the same before and after). The disk had 91 GB free at the end.

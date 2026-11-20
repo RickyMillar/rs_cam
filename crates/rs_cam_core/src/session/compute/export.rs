@@ -311,7 +311,7 @@ impl ProjectSession {
                     for &idx in emitted {
                         if let Some(left) = self
                             .result_at(idx)
-                            .and_then(|r| r.stats.rough_left_stock)
+                            .and_then(|r| r.stats.rough_left_stock.as_ref())
                             .filter(|f| f.left.stands())
                         {
                             push(

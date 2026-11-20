@@ -1,0 +1,143 @@
+core: P44: a 3D Rough plans each region where its tool fits; the cut-length dial is the one drop rule; a slot with no room for the field is cut on remaining stock
+
+The operator ruled on 2026-11-20 that a 3D Rough cuts a place that it is told to cut, or
+names the place and the reason. This is the product form of build 3 of P44 (lead rulings of
+2026-11-21): no strip pass, no env switch.
+
+What changes:
+- H1. `detect_and_order_regions` has no small-region bound. The bound was
+  `(2 D)^2 x min(DPP / R, 1)` with a floor of `D^2 / 4`: an area in the material frame, with
+  no derivation, on a region that is a set of tool centres. `LeftWhy::SmallRegion` is deleted.
+- H2. The F-038 forecast reads a region in its own frame: the length of its contour line
+  (`level_contour::contour_line_inset`, one planner cell plus the cut tolerance inside the raw
+  outline). It moved the outline inside by the tool radius plus 0.25 mm before, a second inset
+  by the tool radius, and read a slot region of any length as 0.
+- H3. `level_contour::region_contour_pass`: on remaining stock (`OnePass::on`) a region whose
+  plan ships no cut (no room for the geodesic field) gets one pass along its contour line,
+  with the reads, the rounds, the one-pass guard, the load cap and the emission of the P42
+  wall pass (`contour_rounds`, `ContourRule::Region`). On a fresh block such a region stays
+  (a coarse planner cell cannot read a sliver beside the line: 10.3 mm deep in build 1), and
+  the finding names it.
+- H5. `standing.rs` reads the stock that stands where the tool fits at the end of the plan.
+  `geom.rough_left_stock` lists each place that has a drop record (position, area, height,
+  reason; the 12 largest) and gives one count and one area for the places with no record.
+  A place with no record does not raise the finding alone (`LeftStock::stands`).
+- A left piece is in tool-centre space at every `leave_piece` call (D48, lead ruling D-15):
+  the no-field path records the part of the region inside the planner outline, not the
+  planner outline. On remaining stock a region that the region contour cut is removed from
+  `left_pieces` and from the drop record: it is not left.
+- A cut group that the F-038 group filter drops gets a drop record with the box of its cut
+  (`LeftWhy::ShortGroup`, lead ruling D-11). The finding names such a place by that reason
+  (`PlaceWhy::ShortGroup`). The record moves no tool and is not a left piece.
+- The strip pass of builds 1 and 2 is NOT in this commit (4 replay pieces at the disc edge).
+  The patches stay in planning/feeds_contract_2026-11-03/phases/p44/not_landed/.
+
+BREAK:
+- A 3D Rough (fresh or remaining stock) plans the small regions that it dropped before. The
+  one rule that drops a region is `min_region_cut_length_mm`. On a fresh rough the region
+  order can change (Wanaka front, id 20: two blocks of moves change places).
+- A rest rough cuts a slot region along its contour line. Its G-code and its time change.
+- `LeftStock` and `RoughLeftStockFinding` are no longer `Copy`. `LeftStock::small_regions`
+  is deleted; `places`, `places_total`, `places_area_mm2`, `unrecorded_places`,
+  `unrecorded_area_mm2` and `strips_read` are new. The text of `geom.rough_left_stock`
+  changes.
+- `ZLevelPlanMetrics::dropped_micro_region_count` and the trace key
+  `dropped_micro_region_count` are deleted (the semantic key vocabulary has 75 keys, was 76).
+- `Produced::rest_regions` of a Geodesic Adaptive rough changes. It states a small region
+  that it plans and cannot cut (HEAD dropped it under the bound and did not state it). A
+  piece with no room for the field is stated in tool-centre space (HEAD stated the outline of
+  the 2D planner, about one tool radius larger). On remaining stock a region that the region
+  contour cut is not stated. The sentry `a_derived_rest_rough_cuts_only_the_leftovers_d44`
+  now reads the channel by math and each corner region by its box.
+- `LeftWhy::ShortGroup` and `PlaceWhy::ShortGroup` are new variants.
+- The op golden is not blessed in this commit. Its red list is the 52 cells of the last P43 run,
+  names and values; no cell is new.
+
+Measured (release CLI; planning/rivmap_block_job/nz_wanaka_21_lead_proposal.toml; HEAD to
+this commit):
+- Setup "1 Back", id 41 off, wood more than 0.3 mm over the target where the 6 mm tool fits,
+  after the two roughs: 9 193.9 to 4 463.2 mm2. Antenna slot 412.8 to 59.8, slit slot 1 781.7
+  to 121.8 (the rim of the plan margin at the walls), control relief 158.2 to 86.6 (a strip
+  of 63.9 mm2 stays: the cut-group filter drops 11 of 13 groups of its region; the strip
+  is left to the strip pass phase, and the finding names it by that reason).
+- id 2 "Back rest 6 mm": 15 239 to 17 294 moves, fed 38.8 to 44.4 m, feed time 579.7 to
+  676.9 s. Rows: body 6.000 (deepest 6.130), cleanup 5.000 (deepest 6.001), entry 1.885.
+  id 1: the same G-code.
+- Replay class (a node 0.1 mm or more inside the disc edge over the one-pass bar): 0 pieces
+  for ids 1 and 2, as HEAD. Nodes under the target 0.1 mm or more inside the edge: 8, as HEAD.
+- Setup "1 Back" 9 715.8 to 9 847.8 s; setup "3 Front" 8 762.4 to 9 053.4 s (id 21: 36 882 to
+  46 432 moves; id 20, fresh: the same 22 842 moves in another region order, fed 55 288.0 to
+  55 236.4 mm, each row value, bound and state the same). 0 collisions, 0 rapid collisions. Row states that change: "Lake relief band
+  6 mm, 11 lakes" (8 rows) and the entry of "Lake outline channel 6 mm" read no number.
+- rivmap100 (planning/fixtures/rivmap100/rivmap100_live_0925.toml): the same G-code bytes.
+
+Tests: `--lib _p44` (the bound, the forecast frame, the slot, the finding rule, the cut-group
+reason, a cut region is not left). The four hunk tests were seen red with their hunk reverted
+alone (phases/p44/red_proofs_p44b.txt). The D44 sentry was red before the frame fix (657.7 mm2
+in 2 regions) and is green after it (284.5 mm2: the channel 249.1, a corner 35.4).
+Gates (logs phases/p44/gate_p44b2_*.log): core --lib 2 862 pass, 1 known red (the
+envelope time budget); adaptive3d sentries 75 pass (D44, D48, D50 included); other core
+sentries 141 pass (findings_transport_join_h21 included); dressup 119 pass; FM1 2 pass;
+rs_cam_cli 113 pass; rs_cam_mcp 39 pass; viz --lib 705 pass; full clippy clean; cargo fmt
+check clean; op golden red on the 52 known cells.
+
+Record: planning/feeds_contract_2026-11-03/phases/P44_REST_ROUGH_CUTS_WHAT_IT_IS_TOLD_2026-11-20.md
+section 10.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+FEATURE_CATALOG.md
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/left_stock.rs
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/mod.rs
+crates/rs_cam_core/src/adaptive3d/one_pass.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/standing.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/compute/annotate.rs
+crates/rs_cam_core/src/compute/execute/findings.rs
+crates/rs_cam_core/src/compute/toolpath_stats.rs
+crates/rs_cam_core/src/diagnostics/CLAUDE.md
+crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+crates/rs_cam_core/src/diagnostics/ids.rs
+crates/rs_cam_core/src/session/compute/export.rs
+crates/rs_cam_core/src/trace/narrate.rs
+crates/rs_cam_core/src/trace/semantic_trace.rs
+crates/rs_cam_core/tests/a_derived_rest_rough_cuts_only_the_leftovers_d44.rs
+crates/rs_cam_core/tests/findings_transport_join_h21.rs
+planning/feeds_contract_2026-11-03/phases/P44_REST_ROUGH_CUTS_WHAT_IT_IS_TOLD_2026-11-20.md
+planning/feeds_contract_2026-11-03/phases/p44/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p44/p44b_product.patch
+planning/feeds_contract_2026-11-03/phases/p44/box_moves.py
+planning/feeds_contract_2026-11-03/phases/p44/place_map.py
+planning/feeds_contract_2026-11-03/phases/p44/rim_split.py
+planning/feeds_contract_2026-11-03/phases/p44/revert.py
+planning/feeds_contract_2026-11-03/phases/p44/red.sh
+planning/feeds_contract_2026-11-03/phases/p44/probe_d44.sh
+planning/feeds_contract_2026-11-03/phases/p44/gates_p44b.sh
+planning/feeds_contract_2026-11-03/phases/p44/rows_one_op.py
+planning/feeds_contract_2026-11-03/phases/p44/red_proofs_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/meas_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/meas_p44bc.txt
+planning/feeds_contract_2026-11-03/phases/p44/places_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/deepc1_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/deepc2_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/gouge2_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/finding_text_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_scratch_job_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_back_committed_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/rows_front_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p44/golden_p44b_cells.txt
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_lib.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_golden.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_a3d.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_dressup.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_other.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b_more.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_fm1.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_cli.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_mcp.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_viz.log
+planning/feeds_contract_2026-11-03/phases/p44/gate_p44b2_clippy.log

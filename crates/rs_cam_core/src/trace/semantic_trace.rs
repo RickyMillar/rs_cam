@@ -167,8 +167,6 @@ pub enum SemanticKey {
     ContourTotal,
     /// `cycle_index`
     CycleIndex,
-    /// `dropped_micro_region_count`
-    DroppedMicroRegionCount,
     /// `entry_x`
     EntryX,
     /// `entry_y`
@@ -291,10 +289,10 @@ pub enum SemanticKey {
 
 impl SemanticKey {
     /// Every variant, in declaration order (alphabetical by wire key).
-    pub const ALL: [Self; 76] = crate::all_variants!(SemanticKey:
+    pub const ALL: [Self; 75] = crate::all_variants!(SemanticKey:
         AgentWalkCutLengthMm, AngleDeg, AreaMm2, Band, BarrierCount, CapSource, CellCount, CenterX, CenterY,
         ChainIndex, ChainTotal, Containment, Continuous, ContourIndex, ContourTotal, CycleIndex,
-        DroppedMicroRegionCount, EntryX, EntryY, EntryZ, ExitReason, FeedFactor, HoleIndex, IdleCount,
+        EntryX, EntryY, EntryZ, ExitReason, FeedFactor, HoleIndex, IdleCount,
         IsCenterline, KeepOutCount, Kind, LeadInFeedRate, LeadOutFeedRate, LevelIndex, LevelTotal,
         LineIndex, LineTotal, LinkFeedRate, LowerLevelIndex, LowerZ, MarchingSquaresRegions,
         MaxAngleDeg, MaxFeedRate, MaxLinkDistance, MoveScope, NominalFeedRate, OffsetIndex,
@@ -326,7 +324,6 @@ impl SemanticKey {
             Self::ContourIndex => "contour_index",
             Self::ContourTotal => "contour_total",
             Self::CycleIndex => "cycle_index",
-            Self::DroppedMicroRegionCount => "dropped_micro_region_count",
             Self::EntryX => "entry_x",
             Self::EntryY => "entry_y",
             Self::EntryZ => "entry_z",
@@ -1212,9 +1209,13 @@ mod tests {
     /// `cap_source` and `feed_factor`, the parameters of the new `FeedCap`
     /// item that names the planner rule of a capped 3D Rough run
     /// (`adaptive3d::FeedCapSource`). No existing key moves.
+    ///
+    /// P44 (2026-11-21) removes one key, 76 to 75:
+    /// `dropped_micro_region_count`. The small-region bound of the 3D Rough
+    /// is gone, so the count had no source.
     #[test]
     fn the_semantic_key_wire_vocabulary_is_pinned() {
-        const WIRE: [&str; 76] = [
+        const WIRE: [&str; 75] = [
             "agent_walk_cut_length_mm",
             "angle_deg",
             "area_mm2",
@@ -1231,7 +1232,6 @@ mod tests {
             "contour_index",
             "contour_total",
             "cycle_index",
-            "dropped_micro_region_count",
             "entry_x",
             "entry_y",
             "entry_z",

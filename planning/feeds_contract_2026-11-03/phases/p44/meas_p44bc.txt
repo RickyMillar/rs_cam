@@ -1,0 +1,40 @@
+total_runtime_s 9847.8 collisions 0 rapid 0 failed 0
+1 Back bulk rough 18 mm moves 36079 | body 4.166/2.345=1.78 (exceeds) deepest 4.166; entry 1.969/2.345=0.84 (within) deepest 1.969; cleanup 4.166/2.523=1.65 (exceeds) deepest 4.233; link 4.166/2.369=1.76 (exceeds) deepest 4.166
+2 Back rest 6 mm (cavity, hollow, la moves 17294 | body 6.000/3.197=1.88 (exceeds) deepest 6.130; entry 1.885/3.001=0.63 (within) deepest 1.894; cleanup 5.000/3.429=1.46 (exceeds) deepest 6.001; link 6.000/3.413=1.76 (exceeds) deepest 6.000
+row states of the setup: {'exceeds': 6, 'no_number': 175, 'not_applicable': 47, 'within': 93}
+== after id 2: wood more than 0.3 mm over the target, by place (mm2)
+place                            over     fits   corner  tallest  at (x, y, stock z, target z) ; fits area by the last op that cut the node
+1 antenna slot                   62.5     59.8      2.7    21.00  (np.float64(246.6), np.float64(54.2), 25.5, 4.5) ; {'none': 23.0, 'Back rest 6 mm [cavity, holl': 36.8}
+2 control relief                 90.4     86.6      3.8     4.00  (np.float64(175.0), np.float64(54.4), 8.5, 4.5) ; {'Back rest 6 mm [cavity, holl': 86.6}
+3 slit slot                    1544.2    121.8   1422.4     3.57  (np.float64(128.4), np.float64(91.6), 8.4, 4.83) ; {'Back rest 6 mm [cavity, holl': 121.8}
+4 ESP relief                     60.3     59.4      0.9    20.70  (np.float64(141.6), np.float64(39.2), 25.5, 4.8) ; {'none': 31.5, 'Back bulk rough 18 mm': 10.6, 'Back rest 6 mm [cavity, holl': 17.3}
+5 step shelf                    528.6    525.7      2.9     8.87  (np.float64(349.8), np.float64(118.4), 25.37, 16.5) ; {'none': 222.4, 'Back bulk rough 18 mm': 272.9, 'Back rest 6 mm [cavity, holl': 30.4}
+6 board pocket                  909.6    861.0     48.6    17.10  (np.float64(46.8), np.float64(89.0), 25.5, 8.4) ; {'none': 369.2, 'Back bulk rough 18 mm': 295.8, 'Back rest 6 mm [cavity, holl': 196.0}
+7 cavity                       5277.0   2735.8   2541.1    12.27  (np.float64(94.2), np.float64(425.2), 25.5, 13.18) ; {'none': 1147.8, 'Back bulk rough 18 mm': 1254.8, 'Back rest 6 mm [cavity, holl': 333.2}
+other (outside the seven)        92.2     13.2     79.0    17.10  (np.float64(46.4), np.float64(89.2), 25.5, 8.4) ; {'none': 6.0, 'Back rest 6 mm [cavity, holl': 7.2}
+total                          8564.6   4463.2   4101.4
+== end of setup: wood more than 0.3 mm over the target, by place (mm2)
+place                            over     fits   corner  tallest  at (x, y, stock z, target z) ; fits area by the last op that cut the node
+1 antenna slot                   62.5     59.5      3.0    21.00  (np.float64(246.6), np.float64(54.2), 25.5, 4.5) ; {'none': 22.7, 'Back rest 6 mm [cavity, holl': 36.8, 'ANTENNA_D5.00 pocket 2 mm': 0.1}
+2 control relief                 90.4     86.6      3.8     4.00  (np.float64(175.0), np.float64(54.4), 8.5, 4.5) ; {'Back rest 6 mm [cavity, holl': 86.6}
+3 slit slot                       2.8      1.5      1.3     3.57  (np.float64(51.8), np.float64(91.6), 8.4, 4.83) ; {'Back rest 6 mm [cavity, holl': 1.5}
+4 ESP relief                     60.3     59.4      0.9    20.70  (np.float64(141.6), np.float64(39.2), 25.5, 4.8) ; {'none': 31.5, 'Back bulk rough 18 mm': 10.6, 'Back rest 6 mm [cavity, holl': 17.3}
+5 step shelf                    419.4    415.2      4.2     5.00  (np.float64(46.6), np.float64(101.2), 25.5, 20.5) ; {'none': 222.4, 'Back bulk rough 18 mm': 159.8, 'Back rest 6 mm [cavity, holl': 30.4, 'Cavity rest pocket 6 mm': 2.7}
+6 board pocket                  870.0    857.4     12.6    17.10  (np.float64(46.8), np.float64(89.0), 25.5, 8.4) ; {'none': 365.6, 'Back bulk rough 18 mm': 294.0, 'Back rest 6 mm [cavity, holl': 196.0, 'ANTENNA_D5.00 pocket 2 mm': 1.8}
+7 cavity                       2169.7    461.2   1708.5     6.39  (np.float64(240.0), np.float64(186.8), 16.5, 7.9) ; {'Back bulk rough 18 mm': 411.4, 'Back rest 6 mm [cavity, holl': 11.0, 'Cavity rest pocket 6 mm': 27.1, 'River channel 6 mm, pass 7 o': 0.1, 'V rivers and lakes': 11.6}
+other (outside the seven)        92.2     13.2     79.0    17.10  (np.float64(46.4), np.float64(89.2), 25.5, 8.4) ; {'none': 6.0, 'Back rest 6 mm [cavity, holl': 7.2}
+total                          3767.3   1954.0   1813.2
+Back bulk rough 18 mm                              fed 89163.6 mm, feed time 801.3 s, rapid 2594.2 mm
+Back rest 6 mm [cavity, hollow, lakes, pockets]    fed 44404.3 mm, feed time 676.9 s, rapid 7363.3 mm
+1 Back bulk rough 18 mm moves 36079 {}
+2 Back rest 6 mm (cavity, hollow, lakes, p moves 17294 {}
+setup total_runtime_s 9847.773406766377
+out_p44bc.nc 'Back bulk' bar 4.666 tol 0.1: pieces with a node over the bar 2 (11 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_p44bc.nc 'Back rest' bar 6.5 tol 0.1: pieces with a node over the bar 2 (4 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+   node (116.8,41.0) depth 2.40 inside 0.000 piece 19343 (135.5, 50.0, 25.439) -> (115.25, 50.0, 22.908)
+   node (117.0,41.0) depth 2.37 inside 0.000 piece 19343 (135.5, 50.0, 25.439) -> (115.25, 50.0, 22.908)
+   node (144.6,202.2) depth 2.24 inside 0.088 piece 13271 (146.131, 204.673, 12.47) -> (146.35, 204.72, 8.55)
+   node (119.4,193.8) depth 2.23 inside 0.112 piece 14255 (116.35, 194.171, 8.55) -> (116.537, 194.154, 12.198)
+26
+(WARNING Part geom.rough_left_stock Back bulk rough 18 mm: Stock found and no cut planned: check the stock)
+(WARNING Part geom.rough_left_stock Back rest 6 mm [cavity, hollow, lakes, pockets]: Stock found and no cut planned: check the stock)

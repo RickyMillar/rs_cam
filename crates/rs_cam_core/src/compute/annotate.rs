@@ -510,10 +510,6 @@ fn set_z_level_plan_metrics(
         metrics.region_areas_mm2.clone(),
     );
     scope.set_param(
-        SemanticKey::DroppedMicroRegionCount,
-        metrics.dropped_micro_region_count,
-    );
-    scope.set_param(
         SemanticKey::PerimeterSweepLengthMm,
         metrics.perimeter_sweep_length_mm,
     );

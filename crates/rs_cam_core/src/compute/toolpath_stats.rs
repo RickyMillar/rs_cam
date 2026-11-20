@@ -767,17 +767,19 @@ pub struct RestLevelsFinding {
 
 /// P37: the stock that a 3D Rough held as material and did not plan.
 ///
-/// The level plan drops a region under its small-region bound, a region
-/// with a short F-038 forecast and a piece where the geodesic field does not
-/// fit. A lower level can still cut such a piece, so the planner reads each
-/// one on its own stock at the end of the plan
-/// ([`crate::adaptive3d::LeftStock`]). The finding is raised when a piece
-/// still holds material there.
+/// The level plan drops a region with a short F-038 forecast and a piece
+/// where the geodesic field does not fit. A lower level can still cut such
+/// a piece, so the planner reads each one on its own stock at the end of
+/// the plan ([`crate::adaptive3d::LeftStock`]).
 ///
-/// It is not the whole stock that stays: stock that never made a region
-/// (a strip narrower than the tool radius at a wall) is not in it. Only the
-/// simulation reads that.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// P44: the planner also reads the stock that stands where its tool fits at
+/// the end of the plan, and names each place that has a drop record
+/// (`LeftStock::places`: position, area, height, reason). On remaining
+/// stock the read includes the strips beside the walls
+/// (`LeftStock::strips_read`). The places with no record are one count and
+/// one area in the text; they do not raise the finding alone
+/// (`LeftStock::stands`, lead ruling 2026-11-21).
+#[derive(Debug, Clone, PartialEq)]
 pub struct RoughLeftStockFinding {
     pub left: crate::adaptive3d::LeftStock,
     /// The rest analysis of this op is on, so it publishes its rest regions
@@ -790,24 +792,85 @@ pub struct RoughLeftStockFinding {
 
 impl std::fmt::Display for RoughLeftStockFinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::adaptive3d::PlaceWhy;
         let l = &self.left;
+        // P44: each place where the tool fits, stock stands at the end of
+        // the plan and a drop record says why, with its position, area,
+        // height and reason.
+        if l.places_total > 0 {
+            write!(
+                f,
+                "At the end of its plan the tool of this operation fits and stock still \
+                 stands at {} {} that the plan did not cut ({:.1} mm² of tool-centre area). ",
+                l.places_total,
+                if l.places_total == 1 {
+                    "place"
+                } else {
+                    "places"
+                },
+                l.places_area_mm2,
+            )?;
+            if l.places_total > l.places.len() {
+                write!(f, "The {} largest, in the setup frame: ", l.places.len())?;
+            } else {
+                f.write_str("In the setup frame: ")?;
+            }
+            for (k, p) in l.places.iter().enumerate() {
+                let why = match p.why {
+                    PlaceWhy::ShortForecast => "a cut there is shorter than Min Region Cut Length",
+                    PlaceWhy::NoField => "the Geodesic Adaptive field does not fit",
+                    PlaceWhy::ShortGroup => {
+                        "the plan dropped cut groups shorter than Min Region Cut Length"
+                    }
+                    PlaceWhy::OnePassHold => {
+                        "the tool stays off stock that stands more than one Depth/Pass above \
+                         the cutter"
+                    }
+                };
+                write!(
+                    f,
+                    "({}) X{:.1}..{:.1} Y{:.1}..{:.1}, {:.1} mm², {:.2} mm above the cutter \
+                     at X{:.1} Y{:.1}: {why}. ",
+                    k + 1,
+                    p.lo[0],
+                    p.hi[0],
+                    p.lo[1],
+                    p.hi[1],
+                    p.area_mm2,
+                    p.tallest_mm,
+                    p.at[0],
+                    p.at[1],
+                )?;
+            }
+        }
         let [x, y, z] = l.tallest_at;
-        let dropped = l.small_regions + l.short_forecast + l.no_field;
-        write!(
-            f,
-            "This operation found stock in {dropped} areas, counted at each level, and planned \
-             no cut there: {} under the small-area bound, {} with a cut length under Min Region \
-             Cut Length, {} where the Geodesic Adaptive field does not fit. At the end of its \
-             plan {} of them still hold stock on {:.1} mm² (tool-centre area). The tallest \
-             stands {:.2} mm above the level floor at X{x:.2} Y{y:.2} in the setup frame (stock \
-             top Z {z:.3}).",
-            l.small_regions,
-            l.short_forecast,
-            l.no_field,
-            l.standing_pieces,
-            l.standing_area_mm2,
-            l.tallest_mm,
-        )?;
+        // P44: the places with no drop record, as one sum.
+        if l.unrecorded_places > 0 {
+            write!(
+                f,
+                "Stock also stands at {} more {} with no drop record ({:.1} mm² of tool-centre \
+                 area): the margin of a plan at a wall, or a strip that made no region. ",
+                l.unrecorded_places,
+                if l.unrecorded_places == 1 {
+                    "place"
+                } else {
+                    "places"
+                },
+                l.unrecorded_area_mm2,
+            )?;
+        }
+        let dropped = l.short_forecast + l.no_field;
+        if dropped > 0 {
+            write!(
+                f,
+                "The plan found stock in {dropped} areas, counted at each level, and planned \
+                 no cut there: {} with a cut length under Min Region Cut Length, {} where the \
+                 Geodesic Adaptive field does not fit. {} of them still hold stock at their \
+                 own position on {:.1} mm² (tool-centre area); the tallest stands {:.2} mm \
+                 above the level floor at X{x:.2} Y{y:.2} (stock top Z {z:.3}).",
+                l.short_forecast, l.no_field, l.standing_pieces, l.standing_area_mm2, l.tallest_mm,
+            )?;
+        }
         if l.held_off_area_mm2 > 0.0 {
             let [x, y, z] = l.held_off_at;
             write!(
@@ -844,10 +907,18 @@ impl std::fmt::Display for RoughLeftStockFinding {
                  Profile on the outline of the walls.",
             )?;
         }
-        f.write_str(
-            " Stock in a strip narrower than the tool radius at a wall is not counted here. \
-             Check the simulated stock.",
-        )
+        if l.strips_read {
+            f.write_str(
+                " The places include the strips beside the walls. A strip narrower than one \
+                 planner cell is not counted. Check the simulated stock.",
+            )
+        } else {
+            f.write_str(
+                " Stock in a strip narrower than the tool radius at a wall is not counted \
+                 here (the planner cell of a fresh block cannot read it). Check the simulated \
+                 stock.",
+            )
+        }
     }
 }
 

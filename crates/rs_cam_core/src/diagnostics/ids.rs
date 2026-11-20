@@ -452,10 +452,12 @@ diag_ids! {
     /// machined stock, so it cut the whole outline at every level. A REPORT:
     /// the fallback cuts more, never less.
     pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback" => warn(Danger::Part);
-    /// P37: a 3D Rough held stock as material and planned no cut there (a
-    /// small region, a short forecast, a piece with no geodesic field), and
-    /// the stock still stands at the end of its plan. A REPORT: the op does
-    /// not know what a later toolpath cuts.
+    /// P37, P44: at the end of its plan the tool of a 3D Rough fits and
+    /// stock still stands at one place or more that has a drop record (a
+    /// cut shorter than the cut-length dial, a piece with no geodesic
+    /// field, the one-pass hold); the text names each such place and sums
+    /// the places with no record, which do not raise it alone. A REPORT:
+    /// the op does not know what a later toolpath cuts.
     pub const GEOM_ROUGH_LEFT_STOCK: &str = "geom.rough_left_stock" => warn(Danger::Part);
     /// An operation sized an offset stepover from the canonical reach policy
     /// rather than from any dial, and the value differs from the envelope-scaled

@@ -2610,65 +2610,17 @@ fn detect_and_order_regions(
     region_areas_mm2.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     region_areas_mm2.truncate(10);
 
-    // Fusion-style "ignore stock smaller than X" filter. Heightmap-style
-    // models (e.g. terrain.stl) emit many micro-peaks at top Z levels
-    // — each becomes its own region with its own perimeter sweep + 2D
-    // adaptive entry/exit. The cutter spends most of its in-cut time
-    // travelling between them, technically at feed_rate but barely
-    // engaging material. On wanaka this drove 81% air-cut at every Z.
-    //
-    // Nominal threshold = (2 × tool_diameter)² ≈ "the tool footprint plus
-    // an offset ring fits". Anything smaller is sub-tool noise the cutter
-    // can't address efficiently anyway.
-    //
-    // DPP scaling: the threshold has to scale with depth-per-pass because
-    // at small DPP the same real island gets sliced into many thin layers,
-    // and the perimeter sweep erodes its area progressively at each level
-    // until it drops below the threshold — at which point the unmilled
-    // core is never addressed (the level skips it, and the next level sees
-    // an even smaller region). Without DPP scaling, small-DPP roughing
-    // leaves visible unmilled islands. We scale linearly with
-    // DPP / baseline_dpp where baseline = tool_radius (a reasonable max
-    // aggressive rough), with a floor of (tool_diameter/2)² so even very
-    // small DPP still drops obvious sub-tool noise.
-    let tool_diameter = ctx.tool_radius * 2.0;
-    let baseline_dpp = ctx.tool_radius.max(0.5);
-    let nominal_min_area = (tool_diameter * 2.0).powi(2);
-    let dpp_factor = (ctx.depth_per_pass / baseline_dpp).clamp(0.0, 1.0);
-    let area_floor = tool_diameter.powi(2) * 0.25;
-    let min_region_area_mm2 = (nominal_min_area * dpp_factor).max(area_floor);
+    // P44: no small-region bound. A region is a set of tool centres (the
+    // grid reads the drop-cutter floor), so every region is a place where
+    // the tool fits and stock stands. The bound that stood here,
+    // `(2 D)^2 x min(DPP / R, 1)` with a floor of `D^2 / 4`, was an area in
+    // the material frame with no derivation: it dropped a slot nine
+    // millimetres wide under a six millimetre tool, at each level, with no
+    // cut (Wanaka back, the antenna slot). The one rule that drops a region
+    // is the F-038 forecast against the operator dial
+    // `min_region_cut_length_mm` (`clear_one_region`).
     let region_count_before = regions.len();
-    // P37: a dropped region is recorded with its level, so the op can state
-    // the stock it held and did not plan (`left_stock`). It is not a left
-    // piece: the rest regions and the wall-contour skip do not read it.
-    let (kept, small): (Vec<_>, Vec<_>) = regions
-        .into_iter()
-        .partition(|r| r.area().abs() >= min_region_area_mm2);
-    let mut regions = kept;
-    ctx.unplanned
-        .borrow_mut()
-        .extend(
-            small
-                .into_iter()
-                .map(|outline| super::left_stock::Unplanned {
-                    z_level,
-                    outline,
-                    why: super::LeftWhy::SmallRegion,
-                }),
-        );
-    let dropped_micro = region_count_before - regions.len();
-    if dropped_micro > 0 {
-        debug!(
-            z = z_level,
-            dropped = dropped_micro,
-            kept = regions.len(),
-            threshold_mm2 = min_region_area_mm2,
-            "Dropped sub-tool regions (Fusion-style ignore-features filter)"
-        );
-    }
-    if regions.is_empty() {
-        return None;
-    }
+    let mut regions = regions;
 
     // Nearest-neighbor region ordering. Marching squares yields regions
     // in scan order (row-major), so the cutter can rapid back and forth
@@ -2694,7 +2646,6 @@ fn detect_and_order_regions(
         available: true,
         marching_squares_regions: region_count_before,
         region_areas_mm2,
-        dropped_micro_region_count: dropped_micro,
         perimeter_sweep_length_mm: 0.0,
         agent_walk_cut_length_mm: 0.0,
         residual_cleanup_cell_count: 0,
@@ -2989,9 +2940,9 @@ fn leave_piece(
             why,
         });
     let why = match why {
-        super::LeftWhy::SmallRegion => "small region",
         super::LeftWhy::ShortForecast => "F-038 forecast",
         super::LeftWhy::NoField => "no field",
+        super::LeftWhy::ShortGroup => "F-038 cut group",
     };
     tracing::info!(
         z = z_level,
@@ -3019,6 +2970,7 @@ fn plan_one_outline(
     ctx: &ClearZLevelContext<'_>,
     params_2d: &crate::adaptive::AdaptiveParams,
     polygon_for_adaptive: &crate::polygon::Polygon2,
+    region_polygon: &crate::polygon::Polygon2,
     (z_level, region_idx): (f64, usize),
     dropped_short_regions: &mut usize,
     cancel: &dyn CancelCheck,
@@ -3032,13 +2984,14 @@ fn plan_one_outline(
     let Some(plan) =
         crate::adaptive::geodesic::slice_segments(polygon_for_adaptive, params_2d, cancel)?
     else {
-        leave_piece(
-            ctx,
-            z_level,
-            region_idx,
-            polygon_for_adaptive,
-            super::LeftWhy::NoField,
-        );
+        // P44b (lead ruling D-15): a left piece is in tool-centre space
+        // (`rest_regions.rs`, D48), the frame of the forecast path. The
+        // outline of the 2D planner is the region grown by about the tool
+        // radius, so the piece that is left is the part of the region
+        // inside that outline.
+        for piece in region_polygon.intersection(polygon_for_adaptive) {
+            leave_piece(ctx, z_level, region_idx, &piece, super::LeftWhy::NoField);
+        }
         return Ok((Vec::new(), Vec::new()));
     };
     let (segs_2d_raw, turns) = (plan.segments, plan.turns);
@@ -3066,6 +3019,24 @@ fn plan_one_outline(
     let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
         let (kept_segs, dropped_first, group_total) =
             filter_short_groups(segs_2d_raw, ctx.min_region_cut_length_mm, params_2d);
+        // P44b (lead ruling D-11): each dropped cut group is recorded with
+        // the box of its cut (`LeftWhy::ShortGroup`), so the finding names
+        // the place by this reason. The record is evidence only: it is not
+        // a left piece (no rest region, no skip of the wall contour).
+        let record_groups = |boxes: &[[P2; 2]]| {
+            ctx.unplanned
+                .borrow_mut()
+                .extend(boxes.iter().map(|[lo, hi]| super::left_stock::Unplanned {
+                    z_level,
+                    outline: crate::polygon::Polygon2::new(vec![
+                        *lo,
+                        P2::new(hi.x, lo.y),
+                        *hi,
+                        P2::new(lo.x, hi.y),
+                    ]),
+                    why: super::LeftWhy::ShortGroup,
+                }));
+        };
         // Research C22a: the cleanup replayed its kept plan
         // (`replay_kept_segments`) BEFORE this filter, so a link or a cut
         // after a dropped group was admitted on that group's stamps. The
@@ -3074,7 +3045,9 @@ fn plan_one_outline(
         // has read the plan that goes out. Each round drops at least one
         // group, so the rounds are at most the groups there were.
         let mut kept = kept_segs;
-        let mut dropped_round = dropped_first;
+        record_groups(&dropped_first);
+        let mut dropped_round = dropped_first.len();
+        let dropped_first = dropped_round;
         let mut dropped_more = 0usize;
         let mut rounds = 0usize;
         while dropped_round > 0 && rounds < group_total {
@@ -3087,8 +3060,9 @@ fn plan_one_outline(
             let (next, dropped, _) =
                 filter_short_groups(replayed, ctx.min_region_cut_length_mm, params_2d);
             kept = next;
-            dropped_round = dropped;
-            dropped_more += dropped;
+            record_groups(&dropped);
+            dropped_round = dropped.len();
+            dropped_more += dropped.len();
             rounds += 1;
         }
         let dropped_groups = dropped_first + dropped_more;
@@ -3163,7 +3137,7 @@ fn filter_short_groups(
     segs_2d_raw: Vec<crate::adaptive::AdaptiveSegment>,
     min_cut_mm: f64,
     params_2d: &crate::adaptive::AdaptiveParams,
-) -> (Vec<crate::adaptive::AdaptiveSegment>, usize, usize) {
+) -> (Vec<crate::adaptive::AdaptiveSegment>, Vec<[P2; 2]>, usize) {
     let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
     let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
     for s in segs_2d_raw {
@@ -3176,7 +3150,8 @@ fn filter_short_groups(
         groups.push(current);
     }
     let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-    let mut dropped_groups: usize = 0;
+    // The XY box (low corner, high corner) of the cut of each dropped group.
+    let mut dropped_groups: Vec<[P2; 2]> = Vec::new();
     let group_total = groups.len();
     for (gi, group) in groups.into_iter().enumerate() {
         let mut cut_len = 0.0_f64;
@@ -3201,7 +3176,19 @@ fn filter_short_groups(
                 .iter()
                 .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
         if drop {
-            dropped_groups += 1;
+            let (mut lo, mut hi) = (
+                P2::new(f64::INFINITY, f64::INFINITY),
+                P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
+            );
+            for seg in &group {
+                if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                    for p in path_2d {
+                        lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
+                        hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
+                    }
+                }
+            }
+            dropped_groups.push([lo, hi]);
             continue;
         }
         kept_segs.extend(group);
@@ -3543,7 +3530,7 @@ fn clear_one_region(
     region_polygon: &crate::polygon::Polygon2,
     region_idx: usize,
     cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
+) -> Result<RegionPlan, Cancelled> {
     let sink = &mut emission.sink;
     let level_metrics = &mut *emission.level_metrics;
     let cut_count = &mut *emission.cut_count;
@@ -3585,11 +3572,21 @@ fn clear_one_region(
     // C38 §16: Geodesic Adaptive takes this forecast too. It clears the
     // body only, and the strips the forecast reads as 0 go to the job's
     // edge contour pass.
+    //
+    // P44: the forecast reads the region in its own frame. The region is
+    // the set of tool centres, so the least cut of its plan is its contour
+    // line (`level_contour::contour_line_inset`: one planner cell plus the
+    // cut tolerance inside the raw outline), the line that the region
+    // contour ships when the field has no room. The forecast before P44
+    // moved the outline inside by the tool radius plus 0.25 mm: a second
+    // inset by the tool radius, which read a slot region of any length as 0.
     if ctx.min_region_cut_length_mm > 0.0 {
-        const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
         let inset_polygons_forecast = crate::polygon::offset_polygon(
             region_polygon,
-            ctx.tool_radius + PERIMETER_INSET_MARGIN_MM_FORECAST,
+            super::level_contour::contour_line_inset(
+                sink.material_stock.z_grid.cell_size,
+                ctx.cut_tolerance,
+            ),
         );
         let mut forecast_mm: f64 = 0.0;
         for inset in &inset_polygons_forecast {
@@ -3660,7 +3657,7 @@ fn clear_one_region(
                 scope.set_counter("skipped_f038", 1.0);
                 scope.set_counter("forecast_cut_length_mm", forecast_mm);
             }
-            return Ok(());
+            return Ok(RegionPlan::DroppedByForecast);
         }
     }
 
@@ -3773,7 +3770,24 @@ fn clear_one_region(
         Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
         None => planner_outlines(region_polygon, params_2d),
     };
-    plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)
+    plan_and_emit_region(
+        ctx,
+        plan,
+        emission,
+        (region_polygon, &outlines),
+        region_idx,
+        cancel,
+    )?;
+    Ok(RegionPlan::Planned)
+}
+
+/// What `clear_one_region` did with a region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegionPlan {
+    /// The region went to the plan (the plan can still ship no cut).
+    Planned,
+    /// The F-038 forecast is under `min_region_cut_length_mm`: no cut.
+    DroppedByForecast,
 }
 
 /// The region body after the perimeter sweep: the geodesic plan of each of
@@ -3787,7 +3801,7 @@ fn plan_and_emit_region(
     ctx: &ClearZLevelContext<'_>,
     plan: &RegionClearPlan<'_>,
     emission: &mut LevelEmission<'_>,
-    outlines: &[crate::polygon::Polygon2],
+    (region_polygon, outlines): (&crate::polygon::Polygon2, &[crate::polygon::Polygon2]),
     region_idx: usize,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -3817,6 +3831,7 @@ fn plan_and_emit_region(
             ctx,
             params_2d,
             outline,
+            region_polygon,
             (z_level, region_idx),
             dropped_short_regions,
             cancel,
@@ -4493,6 +4508,13 @@ pub(super) fn clear_z_level_slice(
     let region_total = regions.len();
     // P42: the regions whose plan cut a segment; the wall pass runs on them.
     let mut planned_regions: Vec<&crate::polygon::Polygon2> = Vec::new();
+    // P44: the regions that passed the forecast and whose plan shipped no
+    // cut; the region contour runs on them.
+    let mut uncut_regions: Vec<&crate::polygon::Polygon2> = Vec::new();
+    // P44b (lead ruling D-15 c): the records that each such region made
+    // (the ranges in `ctx.left_pieces` and `ctx.unplanned`). A region that
+    // the region contour then cuts is not left.
+    let mut uncut_records: Vec<[std::ops::Range<usize>; 2]> = Vec::new();
     let mut emission = LevelEmission {
         sink: LevelSink {
             segments,
@@ -4516,7 +4538,8 @@ pub(super) fn clear_z_level_slice(
     };
     for (region_idx, region_polygon) in regions.iter().enumerate() {
         let cuts_before = *emission.cut_count;
-        clear_one_region(
+        let records_before = [ctx.left_pieces.borrow().len(), ctx.unplanned.borrow().len()];
+        let outcome = clear_one_region(
             ctx,
             &plan,
             &mut emission,
@@ -4526,6 +4549,12 @@ pub(super) fn clear_z_level_slice(
         )?;
         if *emission.cut_count > cuts_before {
             planned_regions.push(region_polygon);
+        } else if outcome == RegionPlan::Planned {
+            uncut_regions.push(region_polygon);
+            uncut_records.push([
+                records_before[0]..ctx.left_pieces.borrow().len(),
+                records_before[1]..ctx.unplanned.borrow().len(),
+            ]);
         }
     }
 
@@ -4564,6 +4593,33 @@ pub(super) fn clear_z_level_slice(
         replaced_entries,
     );
     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
+    // P44: the region contour of the level (`region_contour_pass`): a
+    // region that the 2D plan cannot take (the field has no room in a slot
+    // region) is cut along its contour line, one Depth/Pass at most.
+    let (contour, contour_cut) = super::level_contour::region_contour_pass(
+        ctx,
+        material_stock,
+        surface_hm,
+        super::level_contour::WallLevel {
+            z_level,
+            next_level_z,
+        },
+        &uncut_regions,
+        segments,
+        cursor,
+    );
+    // The ranges are in ascending order and the contour only appends to
+    // `ctx.unplanned`, so a removal from the last range first keeps the
+    // other ranges true.
+    for ([left, unplanned], _) in uncut_records
+        .into_iter()
+        .zip(contour_cut)
+        .rev()
+        .filter(|(_, cut)| *cut)
+    {
+        ctx.left_pieces.borrow_mut().drain(left);
+        ctx.unplanned.borrow_mut().drain(unplanned);
+    }
     // P42: the wall pass of the level, after its plan (`region_wall_pass`):
     // the strip that the margin of the plan leaves at each wall of a
     // planned region goes down one pass at this level. P43: a fresh rough
@@ -4583,6 +4639,7 @@ pub(super) fn clear_z_level_slice(
     );
     if let Some(scope) = level_scope.as_ref() {
         scope.set_counter("wall_pass_runs", wall.runs as f64);
+        scope.set_counter("region_contour_runs", contour.runs as f64);
         scope.set_counter("cut_segments", cut_count as f64);
         scope.set_counter(
             "perimeter_sweep_length_mm",

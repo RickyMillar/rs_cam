@@ -784,7 +784,7 @@ struct WallRead {
     strip_top: f64,
     /// A material cell within one planner cell of the disc stands more
     /// than the one-pass limit above the cutter: stock that a plan holds
-    /// (the one-pass rule, the small-region bound, another By Area job).
+    /// (the one-pass rule, the cut-length dial, another By Area job).
     /// The plan keeps one planner cell off such stock (the margin that the
     /// one-pass rule counts on); so does the wall pass.
     beside_held_stock: bool,
@@ -792,6 +792,13 @@ struct WallRead {
     /// plus the stock to leave over the strip cells (a centre on a strip
     /// cell stands on the wall). `-inf`: no strip.
     wall_top: f64,
+    /// P44: the strip read without the material test: the highest stock
+    /// over the cells that the disc covers in full and that stand more than
+    /// one planner cell above the cutter, a material cell of the level or
+    /// not. `-inf`: none. The region contour reads it
+    /// ([`ContourRule::Region`]). `WallRule::FreshStock`: `-inf` (a coarse
+    /// planner cell cannot read it, and no region contour runs).
+    disc_top: f64,
 }
 
 /// [`WallRead`] at `p` with the level floor `floor`.
@@ -922,6 +929,7 @@ fn wall_read(
     // the disc covers it in full (the coverage of the stamp), it stands
     // more than one planner cell above the cutter, and it is not a material
     // cell of the level.
+    let mut disc_top = f64::NEG_INFINITY;
     for (row, col, du, dv, over) in inside {
         if over <= z + cs {
             continue;
@@ -929,6 +937,7 @@ fn wall_read(
         if TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs) < 1.0 {
             continue;
         }
+        disc_top = disc_top.max(over);
         if super::clearing::cell_has_material(
             stock,
             surface_hm,
@@ -982,6 +991,7 @@ fn wall_read(
         strip_top,
         beside_held_stock,
         wall_top,
+        disc_top,
     }
 }
 
@@ -1078,6 +1088,152 @@ pub(super) fn region_wall_pass(
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
 ) -> LevelContourStats {
+    let Some(wall) = ctx.wall_pass.as_ref() else {
+        return LevelContourStats {
+            min_factor: 1.0,
+            ..LevelContourStats::default()
+        };
+    };
+    #[cfg(test)]
+    if WALL_PASS_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
+        return LevelContourStats {
+            min_factor: 1.0,
+            ..LevelContourStats::default()
+        };
+    }
+    contour_rounds(
+        ctx,
+        material_stock,
+        surface_hm,
+        level,
+        regions,
+        ContourRule::Wall(wall.rule),
+        segments,
+        cursor,
+        &mut Vec::new(),
+    )
+}
+
+/// P44: what a contour of [`contour_rounds`] is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ContourRule {
+    /// The wall pass of a planned region ([`region_wall_pass`]): only the
+    /// strip at a wall deeper than one pass ([`wall_point_ships`]).
+    Wall(WallRule),
+    /// P44: the contour of a region that no plan cuts
+    /// ([`region_contour_pass`]). A point ships where stock stands in the
+    /// disc more than one planner cell above the cutter
+    /// (`WallRead::disc_top`), a material cell of the level or not. No test
+    /// of the wall height: the contour is the only cut of the region. A run
+    /// shorter than
+    /// `min_region_cut_length_mm` is not cut (the operator dial of F-038)
+    /// and is recorded (`LeftWhy::ShortForecast`).
+    Region,
+}
+
+/// P44: the distance (mm) of a contour line inside the raw outline of a
+/// region of the level grid: one planner cell plus the cut tolerance. One
+/// planner cell is the least distance of a centre from the raw boundary
+/// (`clearing::grown_outlines`, D19: nearer, the lift reads the rim); the
+/// simplification of the line can move it back out by the cut tolerance.
+/// The wall pass on remaining stock, the region contour and the F-038
+/// forecast read this ONE value.
+pub(super) fn contour_line_inset(cell: f64, cut_tolerance: f64) -> f64 {
+    cell + cut_tolerance.max(0.0)
+}
+
+/// P44: the region contour of a level. A region of the level whose plan
+/// ships no cut (the geodesic field has no room in it: a slot region
+/// narrower than the starter pocket) gets one pass along its contour line
+/// ([`contour_line_inset`]), with the reads, the rounds, the one-pass guard,
+/// the load cap and the emission of the wall pass ([`contour_rounds`],
+/// [`ContourRule::Region`]). `clear_z_level_slice` calls it after the plan of
+/// the level, before the wall pass; such a region is not a planned region,
+/// so the wall pass does not trace it again. The second value says, for
+/// each region of `regions`, whether a run of its line shipped: such a
+/// region is cut, so it is not a left piece (P44b, lead ruling D-15 c).
+///
+/// On with the guard of the one-pass rule (`OnePass::on`:
+/// `OnePassHold::RemainingStock`). On a fresh block a region with no room
+/// for the field stays, and the record names it (`LeftWhy::NoField`).
+pub(super) fn region_contour_pass(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    level: WallLevel,
+    regions: &[&crate::polygon::Polygon2],
+    segments: &mut Vec<Adaptive3dSegment>,
+    cursor: &mut PlannerCursor,
+) -> (LevelContourStats, Vec<bool>) {
+    // The region contour is part of the one-pass rule on remaining stock
+    // (ruling D-4 of P42: no dial of its own). It reads the stock in the
+    // disc on the simulation cell. On a fresh block the planner cell is
+    // coarse (a sixth of the tool radius): it cannot read a sliver that the
+    // levels above left beside the line, and a contour there cut 10.3 mm
+    // deep at 4.166 mm per pass (P44, build 1, the Wanaka back bulk rough).
+    let none = || {
+        (
+            LevelContourStats {
+                min_factor: 1.0,
+                ..LevelContourStats::default()
+            },
+            vec![false; regions.len()],
+        )
+    };
+    if !ctx.one_pass.on {
+        return none();
+    }
+    #[cfg(test)]
+    if REGION_CONTOUR_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
+        return none();
+    }
+    let mut shipped: Vec<P2> = Vec::new();
+    let stats = contour_rounds(
+        ctx,
+        material_stock,
+        surface_hm,
+        level,
+        regions,
+        ContourRule::Region,
+        segments,
+        cursor,
+        &mut shipped,
+    );
+    // A region is cut when a run of its line shipped (the line stands
+    // inside the outline of its region).
+    let cut = regions
+        .iter()
+        .map(|region| shipped.iter().any(|p| region.contains_point(p)))
+        .collect();
+    (stats, cut)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test control only: no region contour, so that a test can show that
+    /// its claim needs it.
+    pub(super) static REGION_CONTOUR_OFF_FOR_CONTROL: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// The rounds of a contour along `regions` ([`region_wall_pass`] has the
+/// rules of the wall pass; [`ContourRule`] says what differs for a region
+/// contour). `shipped` gets the first point of each run that ships.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+fn contour_rounds(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    level: WallLevel,
+    regions: &[&crate::polygon::Polygon2],
+    contour: ContourRule,
+    segments: &mut Vec<Adaptive3dSegment>,
+    cursor: &mut PlannerCursor,
+    shipped: &mut Vec<P2>,
+) -> LevelContourStats {
     let WallLevel {
         z_level,
         next_level_z,
@@ -1086,27 +1242,31 @@ pub(super) fn region_wall_pass(
         min_factor: 1.0,
         ..LevelContourStats::default()
     };
-    let Some(wall) = ctx.wall_pass.as_ref() else {
-        return stats;
-    };
-    #[cfg(test)]
-    if WALL_PASS_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
-        return stats;
-    }
     let cell = material_stock.z_grid.cell_size;
-    if cell <= 0.0 {
+    if cell <= 0.0 || regions.is_empty() {
         return stats;
     }
-    let rule = wall.rule;
+    // The reads of a point: the rule of the wall pass of the op.
+    let rule = match contour {
+        ContourRule::Wall(rule) => rule,
+        // A region contour runs only on remaining stock (`OnePass::on`).
+        ContourRule::Region => WallRule::RemainingStock,
+    };
+    let link_kinematics = ctx
+        .wall_pass
+        .as_ref()
+        .and_then(|wall| wall.link_kinematics.as_ref());
     // The polygons whose rings are the wall line.
-    let lines: Vec<crate::polygon::Polygon2> = match rule {
+    let lines: Vec<crate::polygon::Polygon2> = match (contour, rule) {
         // One planner cell inside the raw outline after the simplification
         // (which can move the line back out by its tolerance): the least
         // distance of a centre from the raw boundary (`grown_outlines`,
         // D19: nearer, the lift reads the rim).
-        WallRule::RemainingStock => regions
+        (ContourRule::Region, _) | (ContourRule::Wall(_), WallRule::RemainingStock) => regions
             .iter()
-            .flat_map(|region| crate::polygon::offset_polygon(region, cell + ctx.cut_tolerance))
+            .flat_map(|region| {
+                crate::polygon::offset_polygon(region, contour_line_inset(cell, ctx.cut_tolerance))
+            })
             .collect(),
         // P43: one planner cell less `fresh_line_shift` inside the raw
         // outline: nearer to the wall than each plan line, and the same
@@ -1116,7 +1276,7 @@ pub(super) fn region_wall_pass(
         // outline and take that band in one cut (measured on the Wanaka
         // front: 5.73 mm at 4.166 mm per pass). The band is under one tool
         // diameter wide; the load cap of the run holds its feed.
-        WallRule::FreshStock => {
+        (ContourRule::Wall(_), WallRule::FreshStock) => {
             let inset = cell - fresh_line_shift(cell, ctx.cut_tolerance);
             regions
                 .iter()
@@ -1158,6 +1318,7 @@ pub(super) fn region_wall_pass(
                         strip_top: f64::NEG_INFINITY,
                         beside_held_stock: false,
                         wall_top: f64::NEG_INFINITY,
+                        disc_top: f64::NEG_INFINITY,
                     }
                 };
                 let point = P3::new(p.x, p.y, read.z);
@@ -1168,8 +1329,13 @@ pub(super) fn region_wall_pass(
                 let next_floor = next_level_z.map_or(floor, |z| {
                     super::clearing::lift_to_level(ctx, surface_hm, z, p).z
                 });
-                let stands = match rule {
-                    WallRule::RemainingStock => {
+                // P44: the stock that a region contour reads at the point.
+                let region_top = read.disc_top;
+                let stands = match (contour, rule) {
+                    (ContourRule::Region, _) => {
+                        region_top > read.z + cell && region_top < wp.cut_from - cell
+                    }
+                    (ContourRule::Wall(_), WallRule::RemainingStock) => {
                         read.strip_top > read.z + cell
                             && read.strip_top < wp.cut_from - cell
                             && wall_point_ships(
@@ -1187,7 +1353,7 @@ pub(super) fn region_wall_pass(
                     // cuts under this floor at the point: on the tread of a
                     // draped slope the two floors are the same, and the
                     // cells uphill under the disc are the part, not a strip.
-                    WallRule::FreshStock => {
+                    (ContourRule::Wall(_), WallRule::FreshStock) => {
                         wp.cut_from.is_infinite()
                             && wall_point_ships(
                                 &ctx.one_pass,
@@ -1212,7 +1378,28 @@ pub(super) fn region_wall_pass(
                             .blocks(material_stock, ctx.one_pass_tool(), point));
                 standing.push(stands && !blocked);
                 refused.push(blocked);
-                points.push((point, read.strip_top));
+                points.push((
+                    point,
+                    match contour {
+                        ContourRule::Region => region_top,
+                        ContourRule::Wall(_) => read.strip_top,
+                    },
+                ));
+            }
+            // P44: a point of a region contour takes the highest Z of its
+            // own read and of its two neighbours on the ring. The Z of a
+            // point holds one Depth/Pass under the stock in ITS disc; the
+            // move to a neighbour with a higher Z would pass under the
+            // stock of that neighbour at the lower Z (measured: 9.7 mm deep
+            // at the disc edge, at 6 mm per pass).
+            if contour == ContourRule::Region && points.len() >= 3 {
+                let n = points.len();
+                let own: Vec<f64> = points.iter().map(|(p, _)| p.z).collect();
+                for (i, (point, _)) in points.iter_mut().enumerate() {
+                    let before = own.get((i + n - 1) % n).copied().unwrap_or(point.z);
+                    let after = own.get((i + 1) % n).copied().unwrap_or(point.z);
+                    point.z = point.z.max(before).max(after);
+                }
             }
             let path: Vec<P3> = points.iter().map(|(p, _)| *p).collect();
             let mut flags = merge_short_gaps(
@@ -1221,7 +1408,7 @@ pub(super) fn region_wall_pass(
                 ctx.feed_rate,
                 ctx.plunge_rate,
                 ctx.safe_z,
-                wall.link_kinematics.as_ref(),
+                link_kinematics,
             );
             // No merge feeds through a point that the clip or the one-pass
             // rule refuses.
@@ -1230,13 +1417,33 @@ pub(super) fn region_wall_pass(
             }
             for ((wp, &cut), (point, strip_top)) in ring.iter_mut().zip(&standing).zip(&points) {
                 if cut {
-                    wp.cut_from = match rule {
-                        WallRule::RemainingStock => *strip_top,
-                        WallRule::FreshStock => point.z,
+                    wp.cut_from = match (contour, rule) {
+                        (ContourRule::Region, _)
+                        | (ContourRule::Wall(_), WallRule::RemainingStock) => *strip_top,
+                        (ContourRule::Wall(_), WallRule::FreshStock) => point.z,
                     };
                 }
             }
-            runs.extend(standing_runs(&path, &flags));
+            for run in standing_runs(&path, &flags) {
+                // P44: the operator dial of F-038 on a region contour: a run
+                // under the least cut length is not worth its entry.
+                if contour == ContourRule::Region
+                    && crate::geo::polyline_length(&run) < ctx.min_region_cut_length_mm
+                {
+                    if let Some(outline) = run_box(&run, cell) {
+                        ctx.unplanned
+                            .borrow_mut()
+                            .push(super::left_stock::Unplanned {
+                                z_level,
+                                outline,
+                                why: super::LeftWhy::ShortForecast,
+                            });
+                    }
+                    continue;
+                }
+                shipped.extend(run.first().map(|p| P2::new(p.x, p.y)));
+                runs.push(run);
+            }
         }
         if runs.is_empty() {
             break;
@@ -1270,9 +1477,27 @@ pub(super) fn region_wall_pass(
         z = z_level,
         runs = stats.runs,
         peak_load = stats.peak_load,
+        contour = ?contour,
         "P42 wall pass of the level"
     );
     stats
+}
+
+/// The XY box of a run, one planner cell larger on each side, as a polygon:
+/// the outline of the record of a run that the contour did not cut.
+fn run_box(run: &[P3], cell: f64) -> Option<crate::polygon::Polygon2> {
+    let first = run.first()?;
+    let (mut lo, mut hi) = (P2::new(first.x, first.y), P2::new(first.x, first.y));
+    for p in run {
+        lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
+        hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
+    }
+    Some(crate::polygon::Polygon2::new(vec![
+        P2::new(lo.x - cell, lo.y - cell),
+        P2::new(hi.x + cell, lo.y - cell),
+        P2::new(hi.x + cell, hi.y + cell),
+        P2::new(lo.x - cell, hi.y + cell),
+    ]))
 }
 
 /// C4b (the F9 fix): whether a wall-cleanup point `p` at `z_level` of the

@@ -1,0 +1,22 @@
+== after id 2: wood more than 0.3 mm over the target, by place (mm2)
+place                            over     fits   corner  tallest  at (x, y, stock z, target z) ; fits area by the last op that cut the node
+1 antenna slot                   62.5     59.8      2.7    21.00  (np.float64(246.6), np.float64(54.2), 25.5, 4.5) ; {'none': 23.0, 'Back rest 6 mm [cavity, holl': 36.8}
+2 control relief                 90.4     86.6      3.8     4.00  (np.float64(175.0), np.float64(54.4), 8.5, 4.5) ; {'Back rest 6 mm [cavity, holl': 86.6}
+3 slit slot                    1544.2    121.8   1422.4     3.57  (np.float64(128.4), np.float64(91.6), 8.4, 4.83) ; {'Back rest 6 mm [cavity, holl': 121.8}
+4 ESP relief                     60.3     59.4      0.9    20.70  (np.float64(141.6), np.float64(39.2), 25.5, 4.8) ; {'none': 31.5, 'Back bulk rough 18 mm': 10.6, 'Back rest 6 mm [cavity, holl': 17.3}
+5 step shelf                    528.6    525.7      2.9     8.87  (np.float64(349.8), np.float64(118.4), 25.37, 16.5) ; {'none': 222.4, 'Back bulk rough 18 mm': 272.9, 'Back rest 6 mm [cavity, holl': 30.4}
+6 board pocket                  909.6    861.0     48.6    17.10  (np.float64(46.8), np.float64(89.0), 25.5, 8.4) ; {'none': 369.2, 'Back bulk rough 18 mm': 295.8, 'Back rest 6 mm [cavity, holl': 196.0}
+7 cavity                       5277.0   2735.8   2541.1    12.27  (np.float64(94.2), np.float64(425.2), 25.5, 13.18) ; {'none': 1147.8, 'Back bulk rough 18 mm': 1254.8, 'Back rest 6 mm [cavity, holl': 333.2}
+other (outside the seven)        92.2     13.2     79.0    17.10  (np.float64(46.4), np.float64(89.2), 25.5, 8.4) ; {'none': 6.0, 'Back rest 6 mm [cavity, holl': 7.2}
+total                          8564.6   4463.2   4101.4
+== end of setup: wood more than 0.3 mm over the target, by place (mm2)
+place                            over     fits   corner  tallest  at (x, y, stock z, target z) ; fits area by the last op that cut the node
+1 antenna slot                   62.5     59.5      3.0    21.00  (np.float64(246.6), np.float64(54.2), 25.5, 4.5) ; {'none': 22.7, 'Back rest 6 mm [cavity, holl': 36.8, 'ANTENNA_D5.00 pocket 2 mm': 0.1}
+2 control relief                 90.4     86.6      3.8     4.00  (np.float64(175.0), np.float64(54.4), 8.5, 4.5) ; {'Back rest 6 mm [cavity, holl': 86.6}
+3 slit slot                     124.7    121.8      2.9     3.57  (np.float64(128.4), np.float64(91.6), 8.4, 4.83) ; {'Back rest 6 mm [cavity, holl': 121.8}
+4 ESP relief                     60.3     59.4      0.9    20.70  (np.float64(141.6), np.float64(39.2), 25.5, 4.8) ; {'none': 31.5, 'Back bulk rough 18 mm': 10.6, 'Back rest 6 mm [cavity, holl': 17.3}
+5 step shelf                    419.4    415.2      4.2     5.00  (np.float64(46.6), np.float64(101.2), 25.5, 20.5) ; {'none': 222.4, 'Back bulk rough 18 mm': 159.8, 'Back rest 6 mm [cavity, holl': 30.4, 'Cavity rest pocket 6 mm': 2.7}
+6 board pocket                  870.0    857.4     12.6    17.10  (np.float64(46.8), np.float64(89.0), 25.5, 8.4) ; {'none': 365.6, 'Back bulk rough 18 mm': 294.0, 'Back rest 6 mm [cavity, holl': 196.0, 'ANTENNA_D5.00 pocket 2 mm': 1.8}
+7 cavity                       2169.7    461.2   1708.5     6.39  (np.float64(240.0), np.float64(186.8), 16.5, 7.9) ; {'Back bulk rough 18 mm': 411.4, 'Back rest 6 mm [cavity, holl': 11.0, 'Cavity rest pocket 6 mm': 27.1, 'River channel 6 mm, pass 7 o': 0.1, 'V rivers and lakes': 11.6}
+other (outside the seven)        92.2     13.2     79.0    17.10  (np.float64(46.4), np.float64(89.2), 25.5, 8.4) ; {'none': 6.0, 'Back rest 6 mm [cavity, holl': 7.2}
+total                          3889.1   2074.3   1814.8

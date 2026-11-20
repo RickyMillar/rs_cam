@@ -211,7 +211,7 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
 /// Silent when the planner dropped nothing, and when every dropped piece is
 /// cut by a lower level of the same op.
 fn rough_left_stock(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    let Some(finding) = stats.rough_left_stock.filter(|f| f.left.stands()) else {
+    let Some(finding) = stats.rough_left_stock.as_ref().filter(|f| f.left.stands()) else {
         return Vec::new();
     };
     vec![Diagnostic {
@@ -1260,7 +1260,19 @@ mod tests {
         ToolpathStats {
             rough_left_stock: Some(crate::compute::toolpath_stats::RoughLeftStockFinding {
                 left: crate::adaptive3d::LeftStock {
-                    small_regions: 5,
+                    places: vec![crate::adaptive3d::LeftPlace {
+                        lo: [10.0, 30.0],
+                        hi: [14.0, 38.0],
+                        area_mm2: 21.5,
+                        tallest_mm: 9.0,
+                        at: [12.0, 34.0],
+                        why: crate::adaptive3d::PlaceWhy::ShortForecast,
+                    }],
+                    places_total: if standing_pieces > 0 { 6 } else { 0 },
+                    places_area_mm2: 61.5,
+                    unrecorded_places: 8,
+                    unrecorded_area_mm2: 12.5,
+                    strips_read: true,
                     short_forecast: 3,
                     no_field: 2,
                     dropped_cut_groups: 7,
@@ -1290,12 +1302,20 @@ mod tests {
         assert_eq!(out[0].severity, Severity::Caution);
         let m = &out[0].message;
         for needle in [
-            "10 areas",
-            "5 under the small-area bound",
+            // P44: each place, with its position, area, height and reason.
+            "stock still stands at 6 places that the plan did not cut (61.5 mm² of \
+             tool-centre area)",
+            "The 1 largest, in the setup frame",
+            "(1) X10.0..14.0 Y30.0..38.0, 21.5 mm², 9.00 mm above the cutter at X12.0 Y34.0: \
+             a cut there is shorter than Min Region Cut Length",
+            "Stock also stands at 8 more places with no drop record (12.5 mm² of tool-centre \
+             area)",
+            "5 areas",
             "3 with a cut length under Min Region Cut Length",
             "2 where the Geodesic Adaptive field does not fit",
-            "4 of them still hold stock on 61.5 mm²",
-            "9.00 mm above the level floor at X12.00 Y34.00 in the setup frame (stock top Z 25.500)",
+            "4 of them still hold stock at their own position on 61.5 mm²",
+            "9.00 mm above the level floor at X12.00 Y34.00 (stock top Z 25.500)",
+            "The places include the strips beside the walls",
             "dropped 7 cut groups",
             "No toolpath reads these areas",
             "a Pocket from remaining stock or a Profile on the outline of the walls",

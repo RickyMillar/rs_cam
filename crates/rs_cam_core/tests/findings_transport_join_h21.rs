@@ -308,7 +308,19 @@ fn every_finding_recorded() -> GenerationFindings {
         // P37. Every counter differs, so a swapped field reads wrong.
         rough_left_stock: Some(RoughLeftStockFinding {
             left: rs_cam_core::adaptive3d::LeftStock {
-                small_regions: 5,
+                places: vec![rs_cam_core::adaptive3d::LeftPlace {
+                    lo: [10.0, 30.0],
+                    hi: [14.0, 38.0],
+                    area_mm2: 21.5,
+                    tallest_mm: 9.0,
+                    at: [12.0, 34.0],
+                    why: rs_cam_core::adaptive3d::PlaceWhy::ShortForecast,
+                }],
+                places_total: 6,
+                places_area_mm2: 61.5,
+                unrecorded_places: 8,
+                unrecorded_area_mm2: 12.5,
+                strips_read: true,
                 short_forecast: 3,
                 no_field: 2,
                 dropped_cut_groups: 7,

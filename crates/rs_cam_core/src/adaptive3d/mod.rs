@@ -37,8 +37,9 @@ mod region_map;
 mod rest_region_filter;
 mod rest_regions;
 mod search;
+mod standing;
 pub use intended_floor::{FloorGrid, intended_floor_grid};
-pub use left_stock::{LeftStock, LeftWhy};
+pub use left_stock::{LeftPlace, LeftStock, LeftWhy, PLACES_LISTED, PlaceWhy};
 use path::adaptive_3d_segments;
 #[cfg(test)]
 use path::segments_to_toolpath;
@@ -571,14 +572,13 @@ pub struct ZLevelPlanMetrics {
     pub available: bool,
     pub marching_squares_regions: usize,
     pub region_areas_mm2: Vec<f64>,
-    pub dropped_micro_region_count: usize,
     pub perimeter_sweep_length_mm: f64,
     pub agent_walk_cut_length_mm: f64,
     pub residual_cleanup_cell_count: usize,
     /// F-038: number of regions whose forecast cut length fell below
     /// `min_region_cut_length_mm` and were dropped from the slice
-    /// emission. Parallel to `dropped_micro_region_count` (which is the
-    /// Fusion-style area filter) but gated on length, not area.
+    /// emission. P44: the one rule that drops a region (the area bound is
+    /// gone).
     pub dropped_short_region_count: usize,
 }
 

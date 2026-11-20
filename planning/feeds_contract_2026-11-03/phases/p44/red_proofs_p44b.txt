@@ -1,0 +1,24 @@
+== H1 reverted alone (revert.py H1), lib _p44
+adaptive3d::tests::a_small_region_is_cut_when_no_dial_drops_it_p44 --- FAILED
+adaptive3d::tests::a_slot_narrower_than_the_field_is_cut_to_its_floor_p44 --- FAILED
+adaptive3d::tests::the_forecast_reads_a_slot_region_in_its_own_frame_p44 --- FAILED
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 2871 filtered out; finished in 10.63s
+the column is cut
+the centre line of the slot stands at Z 1.00; the floor of the plan is 0.5         
+the centre line of the slot stands at Z 1.00
+== H2 reverted alone (revert.py H2), lib _p44
+adaptive3d::tests::the_forecast_reads_a_slot_region_in_its_own_frame_p44 --- FAILED
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 2871 filtered out; finished in 16.24s
+the centre line of the slot stands at Z 10.00
+== H3 reverted alone (revert.py H3), lib _p44
+adaptive3d::tests::a_small_region_is_cut_when_no_dial_drops_it_p44 --- FAILED
+adaptive3d::tests::a_slot_narrower_than_the_field_is_cut_to_its_floor_p44 --- FAILED
+adaptive3d::tests::the_forecast_reads_a_slot_region_in_its_own_frame_p44 --- FAILED
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 2871 filtered out; finished in 7.95s
+the column is cut
+the centre line of the slot stands at Z 10.00; the floor of the plan is 0.5         
+the centre line of the slot stands at Z 10.00
+== RULE reverted alone (revert.py RULE), lib _p44
+adaptive3d::tests::stock_with_no_drop_record_does_not_raise_the_finding_p44 --- FAILED
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 2871 filtered out; finished in 16.18s
+no drop record: the finding is not raised

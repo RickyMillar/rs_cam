@@ -408,7 +408,6 @@ struct ZLevelSummary {
     cut_run_ids: BTreeSet<usize>,
     marching_square_regions: Option<usize>,
     region_areas_mm2: Vec<f64>,
-    dropped_micro_regions: Option<usize>,
     perimeter_sweep_length_mm: Option<f64>,
     agent_walk_cut_length_mm: Option<f64>,
     residual_cleanup_cell_count: Option<usize>,
@@ -425,7 +424,6 @@ impl ZLevelSummary {
             cut_run_ids: BTreeSet::new(),
             marching_square_regions: None,
             region_areas_mm2: Vec::new(),
-            dropped_micro_regions: None,
             perimeter_sweep_length_mm: None,
             agent_walk_cut_length_mm: None,
             residual_cleanup_cell_count: None,
@@ -1553,11 +1551,6 @@ fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSeman
         {
             level.region_areas_mm2 = areas.iter().filter_map(|value| value.as_f64()).collect();
         }
-        level.dropped_micro_regions = item
-            .params
-            .get(SemanticKey::DroppedMicroRegionCount)
-            .and_then(|value| value.as_u64())
-            .and_then(|value| usize::try_from(value).ok());
         level.perimeter_sweep_length_mm = item
             .params
             .get(SemanticKey::PerimeterSweepLengthMm)
@@ -1673,11 +1666,6 @@ fn append_z_level_lines(
             && length > 0.0
         {
             output.push_str(&format!(", agent walk {:.0}mm", length));
-        }
-        if let Some(dropped) = level.dropped_micro_regions
-            && dropped > 0
-        {
-            output.push_str(&format!(", dropped {dropped} sub-tool region(s)"));
         }
         if !level.region_areas_mm2.is_empty() {
             let areas: Vec<_> = level

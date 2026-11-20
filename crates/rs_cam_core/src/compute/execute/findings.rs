@@ -411,7 +411,7 @@ impl RecordFindings for DerivedStepoverFinding {
 /// operation, so the report overwrites.
 impl RecordFindings for RoughLeftStockFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
-        findings.rough_left_stock = Some(*self);
+        findings.rough_left_stock = Some(self.clone());
     }
 }
 

@@ -1,0 +1,87 @@
+
+running 2 tests
+i 1/2
+every_op_keeps_its_toolpath --- FAILED
+
+failures:
+
+---- every_op_keeps_its_toolpath stdout ----
+unified_finish/claims: 2648 moves, rest output true
+unified_finish/claims_rest_clip: 10156 moves, rest output true
+unified_finish/no_c2_no_hookup: 1686 moves, rest output false
+pencil/rest_depth: 458 moves, rest output true
+pencil/rest_depth_rest: 2717 moves, rest output true
+pencil/curvature: 159 moves, rest output false
+adaptive3d/by_area_helix_cp: 655 moves, 6 rapids, ok
+adaptive3d/ramp_geodesic: 1111 moves, 9 rapids, ok
+project_curve/square: 68 moves, 3 rapids, ok
+project_curve/side_inside: 15 moves, 3 rapids, ok
+project_curve/point: 98 moves, 3 rapids, ok
+project_curve/split: 46 moves, 9 rapids, ok
+project_curve/split_chained: 48 moves, 3 rapids, ok
+project_curve/from_below_topup: 95 moves, 3 rapids, ok
+project_curve/from_below_flipped: 95 moves, 3 rapids, ok
+
+thread 'every_op_keeps_its_toolpath' (3803828) panicked at crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs:1498:5:
+the generated toolpaths moved (52 changes). Re-bless with RS_CAM_BLESS_OPGOLDEN=1 only for an intended change:
+adaptive3d/by_area_helix_cp  cutting_length_mm  2397.741 -> 2398.184
+adaptive3d/by_area_helix_cp  linear_count  386 -> 390
+adaptive3d/by_area_helix_cp  move_count  651 -> 655
+adaptive3d/by_area_helix_cp  moves_hash  "53ac4fc26e5fc900" -> "089bb9910e989a1d"
+adaptive3d/by_area_helix_cp  spans_hash  "7cf02096aabac105" -> "1e2126ac11adcfd2"
+adaptive3d/fresh  cutting_length_mm  1955.852 -> 1956.295
+adaptive3d/fresh  linear_count  356 -> 360
+adaptive3d/fresh  move_count  368 -> 372
+adaptive3d/fresh  moves_hash  "ec929dc206dee4db" -> "a6f16e507eee5956"
+adaptive3d/fresh  spans_hash  "4e43789fa0f1e0cc" -> "119d57a9e7dd164e"
+adaptive3d/ramp_geodesic  cutting_length_mm  2283.957 -> 2296.031
+adaptive3d/ramp_geodesic  gcode_hash  "2ae632031de60cab" -> "1bfe3e7a254d48a3"
+adaptive3d/ramp_geodesic  linear_count  1091 -> 1089
+adaptive3d/ramp_geodesic  move_count  1113 -> 1111
+adaptive3d/ramp_geodesic  moves_hash  "be39e8dff5872a09" -> "30814f8ee1004814"
+adaptive3d/ramp_geodesic  spans_hash  "3398534541b08672" -> "8875c9681caa5486"
+pencil/rest  cutting_length_mm  1421.249 -> 1421.329
+pencil/rest  moves_hash  "b4fa72c97e502152" -> "349c03c3a73a21fe"
+pencil/rest  rapid_length_mm  461.27 -> 461.19
+pencil/rest_depth_rest  arc_count  628 -> 569
+pencil/rest_depth_rest  bbox_max  [12.9172, 14.2969, 13.0] -> [14.327, 13.5, 13.0]
+pencil/rest_depth_rest  bbox_min  [-11.8523, -13.3592, 0.0] -> [-12.1777, -14.3195, 0.0]
+pencil/rest_depth_rest  cutting_length_mm  1906.203 -> 1938.505
+pencil/rest_depth_rest  linear_count  1864 -> 1880
+pencil/rest_depth_rest  move_count  2744 -> 2717
+pencil/rest_depth_rest  moves_hash  "1d5a254ae2a8d82e" -> "0de6e036afe14b5d"
+pencil/rest_depth_rest  produced  { rest_grid_cells = 5929, rest_grid_hash = "a7c4bdd066a8f57f", rest_region_count = 1, rest_regions_hash = "0da8d20a13fde4c4" } -> { rest_grid_cells = 5929, rest_grid_hash = "19a9768eeb62cd0a", rest_region_count = 1, rest_regions_hash = "0da8d20a13fde4c4" }
+pencil/rest_depth_rest  rapid_count  252 -> 268
+pencil/rest_depth_rest  rapid_length_mm  1076.707 -> 1144.916
+pencil/rest_depth_rest  span_count  1001 -> 961
+pencil/rest_depth_rest  spans_hash  "859de69d3e592091" -> "34ad7711a1d863a0"
+scallop/iso_field_rest  cutting_length_mm  978.423 -> 978.535
+scallop/iso_field_rest  moves_hash  "ecbe33084f16a089" -> "53fee951fd96e971"
+scallop/iso_field_rest  rapid_length_mm  224.998 -> 224.885
+scallop/rest  cutting_length_mm  923.583 -> 923.606
+scallop/rest  moves_hash  "1105b2a8f66f73cd" -> "caeecde78eb02f55"
+scallop/rest  rapid_length_mm  231.628 -> 231.605
+steep_shallow/rest_regions  cutting_length_mm  902.687 -> 901.179
+steep_shallow/rest_regions  linear_count  774 -> 772
+steep_shallow/rest_regions  move_count  993 -> 991
+steep_shallow/rest_regions  moves_hash  "e0ed492db4494dc7" -> "de3a54b14cdadaaf"
+steep_shallow/rest_regions  rapid_length_mm  830.214 -> 829.485
+steep_shallow/rest_regions  spans_hash  "fcd839368f4c741b" -> "4d40364f3d126035"
+unified_finish/claims_rest_clip  arc_count  1497 -> 1460
+unified_finish/claims_rest_clip  cutting_length_mm  7342.281 -> 7837.61
+unified_finish/claims_rest_clip  linear_count  7664 -> 8398
+unified_finish/claims_rest_clip  move_count  9444 -> 10156
+unified_finish/claims_rest_clip  moves_hash  "27d61cefed2ac170" -> "d0a2872883a40d2d"
+unified_finish/claims_rest_clip  produced  { rest_grid_cells = 5929, rest_grid_hash = "e398f07fe053263c", rest_region_count = 1, rest_regions_hash = "0da8d20a13fde4c4" } -> { rest_grid_cells = 5929, rest_grid_hash = "b4b65c79b6a96d8d", rest_region_count = 1, rest_regions_hash = "0da8d20a13fde4c4" }
+unified_finish/claims_rest_clip  rapid_count  283 -> 298
+unified_finish/claims_rest_clip  rapid_length_mm  2208.159 -> 2272.121
+unified_finish/claims_rest_clip  spans_hash  "d5fff39febd4a6f6" -> "41f3f22b79b426a9"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_op_keeps_its_toolpath
+
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.92s
+
+error: test failed, to rerun pass `-p rs_cam_core --test every_op_keeps_its_toolpath_g_opgolden`

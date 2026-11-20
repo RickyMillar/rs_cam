@@ -1741,6 +1741,21 @@ fn adaptive_3d_segments_probed(
         &material_stock,
         &surface_hm,
         params.depth.stock_to_leave,
+        // P44: the stock that stands where the tool fits at the end of the
+        // plan (the strip read only on remaining stock, where the planner
+        // cell is the simulation cell).
+        || {
+            z_levels.last().map(|&bottom| {
+                super::standing::standing_cells(
+                    &ctx,
+                    &material_stock,
+                    &surface_hm,
+                    bottom,
+                    ctx.one_pass.on,
+                )
+            })
+        },
+        tool_radius,
     );
     Ok(Adaptive3dSegmentsResult {
         segments,

@@ -169,17 +169,64 @@ fn a_derived_rest_rough_cuts_only_the_leftovers() {
         missed.is_empty(),
         "channel points outside the regions: {missed:?}"
     );
-    // The regions are the arm's leftovers, not the generic valley set: the
-    // channel's tool-centre region (the channel inset by R, the region the
-    // planner plans) grown by one planner cell (`planner_cell_size`: R / 6
-    // at this tolerance).
+    // The regions are the arm's leftovers, not the generic valley set, and
+    // each is in tool-centre space (D48). P44 (lead ruling D-15): every left
+    // piece is recorded in that frame, the piece with no room for the
+    // geodesic field too.
+    //
+    // 1. The channel: its tool-centre region (the channel inset by R, the
+    //    region the planner plans) grown by one planner cell
+    //    (`planner_cell_size`: R / 6 at this tolerance).
     let (r, cell) = (TOOL_DIAMETER / 2.0, TOOL_DIAMETER / 12.0);
     let centre_area =
         (2.0 * (CHANNEL_HALF_LENGTH - r + cell)) * (2.0 * (CHANNEL_HALF_WIDTH - r + cell));
+    let (channel, others): (Vec<&Polygon2>, Vec<&Polygon2>) = regions
+        .iter()
+        .partition(|region| region.contains_point(&P2::new(0.0, 0.0)));
+    assert_eq!(channel.len(), 1, "one region holds the channel");
+    let channel_area = channel[0].area().abs();
     assert!(
-        area > 0.8 * centre_area && area < 1.2 * centre_area,
-        "the stated area {area:.1} mm2 is not the channel's centre region ({centre_area:.1} mm2)"
+        channel_area > 0.8 * centre_area && channel_area < 1.2 * centre_area,
+        "the stated channel {channel_area:.1} mm2 is not the channel's centre region \
+         ({centre_area:.1} mm2)"
     );
+    // 2. Each other region is a corner of the wide pocket. The plan of the
+    //    first level rounds the corners of the wide pocket, so stock stands
+    //    on a few tool centres in a corner. At the second level that stock
+    //    is a small region. Before P44 the small-region bound dropped it and
+    //    the rough did not state it. Now the rough plans it, the geodesic
+    //    field has no room in it, and the rough states it. Its shape comes
+    //    from the plan, not from the fixture constants, so the test reads
+    //    its box: inside the tool-centre region of the wide pocket (the
+    //    pocket inset by R; two planner cells of slack: the grow of the
+    //    region and the raster), at a corner of that region, and clear of
+    //    the channel.
+    let (wide_x, wide_y, slack) = (WIDE_HALF_X - r, WIDE_HALF_Y - r, 2.0 * cell);
+    assert!(
+        !others.is_empty(),
+        "the rough does not state the corner stock that it plans and cannot cut"
+    );
+    for region in &others {
+        let (mut far_x, mut far_y, mut near_y) = (0.0_f64, 0.0_f64, f64::INFINITY);
+        for p in &region.exterior {
+            far_x = far_x.max(p.x.abs());
+            far_y = far_y.max(p.y.abs());
+            near_y = near_y.min(p.y.abs());
+        }
+        assert!(
+            far_x <= wide_x + slack && far_y <= wide_y + slack,
+            "a stated region leaves the tool-centre region of the wide pocket: \
+             |x| {far_x:.2}, |y| {far_y:.2}"
+        );
+        assert!(
+            far_x >= wide_x - slack && far_y >= wide_y - slack,
+            "a stated region is not at a corner of the wide pocket: |x| {far_x:.2}, |y| {far_y:.2}"
+        );
+        assert!(
+            near_y > CHANNEL_HALF_WIDTH,
+            "a stated corner region reaches the channel: |y| {near_y:.2}"
+        );
+    }
     assert!(
         produced.rest_grid.is_some(),
         "the generic analysis did not attach its grid beside the rough's regions"

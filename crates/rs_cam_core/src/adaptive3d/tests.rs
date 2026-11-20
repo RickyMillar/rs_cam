@@ -1336,10 +1336,9 @@ fn test_contour_parallel_complete_clearing_hemisphere() {
 /// slab contributes few cells, the perimeter sweep erodes islands
 /// across many levels, and real islands fall under the threshold and
 /// never get milled — leaving visible unmilled cores. The fixes:
-///  - `clearing.rs` sub-tool region area threshold scales with
-///    `depth_per_pass / tool_radius` instead of being a fixed
-///    `(2D)²` (with an area floor so very-small DPP doesn't drop the
-///    "ignore sub-tool noise" intent entirely).
+///  - `clearing.rs` sub-tool region area threshold scaled with
+///    `depth_per_pass / tool_radius` (P44, 2026-11-21: the threshold is
+///    removed; the cut-length dial is the one drop rule of a region).
 ///  - per-level early-exit changed from `fraction < 0.005` to
 ///    absolute `cells_with_material < MIN_CELLS_TO_CLEAR`.
 ///  - Z-drop path-split threshold gets a 1mm floor so small DPP
@@ -3199,6 +3198,12 @@ fn two_cut_pieces_share_the_fed_chain_p36() {
 /// P37 fixture: a rest stock on a flat floor (Z 0) with a block of 20 x 24 mm
 /// and, when `island`, a column of 4 x 4 mm, both 6 mm tall. Cell 0.5 mm.
 fn left_stock_of(island: bool) -> Option<LeftStock> {
+    left_stock_with_dial(island, 15.0, OnePassHold::Off)
+}
+
+/// [`left_stock_of`] with `min_region_cut_length_mm` and the one-pass dial
+/// stated (the region contour of P44 is on with `RemainingStock`).
+fn left_stock_with_dial(island: bool, min_cut_mm: f64, hold: OnePassHold) -> Option<LeftStock> {
     let mesh = crate::mesh::make_test_flat(60.0);
     let si = SpatialIndex::build(&mesh, 10.0);
     let cutter = flat_cutter();
@@ -3216,6 +3221,8 @@ fn left_stock_of(island: bool) -> Option<LeftStock> {
     }
     let mut params = default_params();
     params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.linking.min_region_cut_length_mm = min_cut_mm;
+    params.linking.one_pass_hold = hold;
     params.depth.stock_top_z = 6.0;
     params.initial_stock = Some(make_stock_with_cells(
         n, n, -30.0, -30.0, cell, -10.0, &tops,
@@ -3225,17 +3232,18 @@ fn left_stock_of(island: bool) -> Option<LeftStock> {
         .left_stock
 }
 
-/// P37 (prediction P-5): a region under the small-region bound is recorded,
-/// and the op states that it still holds stock at the end of the plan: its
-/// count, its area, its height and its position. The tool is 6.35 mm and
-/// the depth per pass 3 mm, so the bound is (2 x 6.35)^2 x 3 / 3.175 =
-/// 152.4 mm2; the column is 16 mm2 and the block 480 mm2.
+/// P37 (prediction P-5), P44: a region whose cut is shorter than the
+/// operator dial `min_region_cut_length_mm` (15 mm) is recorded, and the op
+/// states that it still holds stock at the end of the plan: its count, its
+/// area, its height and its position. The column is 4 x 4 mm: its contour
+/// line (0.6 mm inside the outline of its cells) is 4 x 3.3 mm long, under
+/// the dial. P44 removed the small-region bound that dropped it before.
 #[test]
-fn a_small_region_the_plan_drops_is_stated_p37() {
+fn a_region_under_the_cut_length_dial_is_stated_p37() {
     let left = left_stock_of(true).expect("the plan dropped a region");
-    assert!(left.small_regions >= 1, "{left:?}");
-    assert_eq!((left.short_forecast, left.no_field), (0, 0), "{left:?}");
-    assert_eq!(left.standing_pieces, left.small_regions, "{left:?}");
+    assert!(left.short_forecast >= 1, "{left:?}");
+    assert_eq!(left.no_field, 0, "{left:?}");
+    assert_eq!(left.standing_pieces, left.short_forecast, "{left:?}");
     // The column: 9 x 9 cells of 0.25 mm2, less the cells on the outline.
     assert!(
         (12.0..=20.25).contains(&left.standing_area_mm2),
@@ -3250,15 +3258,315 @@ fn a_small_region_the_plan_drops_is_stated_p37() {
         "{left:?}"
     );
     assert!((z - 6.0).abs() < 1e-6, "{left:?}");
+    // P44: the column is a named place, with the reason.
+    let place = left
+        .places
+        .iter()
+        .find(|p| p.lo[0] >= -17.5 && p.hi[0] <= -12.5 && p.lo[1] >= -2.5 && p.hi[1] <= 2.5)
+        .expect("the column is a place");
+    assert_eq!(place.why, PlaceWhy::ShortForecast, "{left:?}");
+    assert!((place.tallest_mm - 5.5).abs() < 1e-3, "{left:?}");
+    assert!((12.0..=20.25).contains(&place.area_mm2), "{left:?}");
 }
 
-/// P37: with no dropped region the op states nothing that stands.
+/// P37: with no dropped region the op states no dropped piece.
 #[test]
 fn a_plan_that_drops_nothing_states_no_standing_stock_p37() {
     let left = left_stock_of(false);
     assert!(
-        left.is_none_or(|l| l.standing_pieces == 0 && l.small_regions == 0),
+        left.as_ref()
+            .is_none_or(|l| l.standing_pieces == 0 && l.short_forecast == 0),
         "{left:?}"
+    );
+}
+
+/// P44 (H1, H3): with the dial off (0) the same column is cut. No area
+/// bound drops it, and the region contour cuts a region where the geodesic
+/// field has no room. The control is the tree with no region contour: the
+/// column stands. Seen red with the bound back (H1 reverted alone: the
+/// column is 16 mm2, the bound was 152.4 mm2) and with no region contour
+/// (H3 reverted alone).
+#[test]
+fn a_small_region_is_cut_when_no_dial_drops_it_p44() {
+    // The place of the column holds the centres whose disc covers it: the
+    // column and one tool radius (3.175 mm) round it.
+    let in_column =
+        |p: &LeftPlace| p.lo[0] >= -20.5 && p.hi[0] <= -9.5 && p.lo[1] >= -5.5 && p.hi[1] <= 5.5;
+    let hold = || OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
+    let left = left_stock_with_dial(true, 0.0, hold());
+    assert!(
+        left.as_ref()
+            .is_none_or(|l| !l.places.iter().any(|p| in_column(p) && p.tallest_mm > 1.0)),
+        "the column is cut: {left:?}"
+    );
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
+    let control = left_stock_with_dial(true, 0.0, hold());
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
+    assert!(
+        control
+            .as_ref()
+            .is_some_and(|l| l.places.iter().any(|p| in_column(p) && p.tallest_mm > 5.0)),
+        "the control: with no region contour the column stands: {control:?}"
+    );
+}
+
+/// P44 fixture: a plate 60 x 60 mm, top Z 10, with a slot pocket 40 x 9 mm
+/// (X 10..50, Y 20..29) and a square pocket 8 x 8 mm (X 10..18, Y 40..48),
+/// floors at Z 0. The stock is the full block on a cell of 0.2 mm, given as
+/// remaining stock. Tool 6.35 mm, Depth/Pass 3 mm, stock to leave 0.5: the
+/// levels are 7, 4, 1 and 0.5. The tool-centre region of the slot is 2.65 mm
+/// wide at the floor: the geodesic field has no room in it.
+///
+/// Returns the deepest simulated sample, the highest stock on the centre
+/// line of the slot (Y 24.5, X 16..44) after the simulation, and the record.
+fn slot_fixture_p44(min_cut_mm: f64) -> (f64, f64, Option<LeftStock>) {
+    let mesh = make_pocket_plate(
+        60,
+        60,
+        &[(10.0, 20.0, 50.0, 29.0), (10.0, 40.0, 18.0, 48.0)],
+    );
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.2, 301usize);
+    let tops = vec![10.0f64; n * n];
+    let stock = make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &tops);
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.linking.min_region_cut_length_mm = min_cut_mm;
+    params.linking.one_pass_hold = OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
+    params.depth.stock_top_z = 10.0;
+    params.initial_stock = Some(stock.clone());
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    let mut sim_stock = stock;
+    let samples = sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &out.toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId::from_raw(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            false,
+            &|| false,
+        )
+        .expect("the simulation is not cancelled");
+    let deepest = samples
+        .iter()
+        .map(|s| s.axial_engagement_mm)
+        .fold(0.0, f64::max);
+    let row = 122; // Y 24.4
+    let highest = (80..=220) // X 16..44
+        .map(|col| stock_top_z_at(&sim_stock, row, col))
+        .fold(f64::NEG_INFINITY, f64::max);
+    (deepest, highest, out.left_stock)
+}
+
+/// P44 (H1, H3): a slot that the tool fits in is cut to its floor, one
+/// Depth/Pass at a time, on remaining stock. The geodesic plan has no field
+/// in its region, so the region contour cuts it (H3). The control (no
+/// region contour): the slot keeps the stock top. Seen red with H3 reverted
+/// alone (the slot stands at Z 10.00), and with the small-region bound back
+/// (H1 reverted alone: the slot stands at Z 1.00; the bound of 152.4 mm2
+/// drops its region at the last level).
+#[test]
+fn a_slot_narrower_than_the_field_is_cut_to_its_floor_p44() {
+    let (deepest, highest, left) = slot_fixture_p44(0.0);
+    assert!(
+        highest <= 0.5 + 0.3,
+        "the centre line of the slot stands at Z {highest:.2}; the floor of the plan is 0.5          ({left:?})"
+    );
+    assert!(
+        deepest <= 3.0 + 0.5 + 1e-6,
+        "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are 3.5 mm"
+    );
+    // P44b (lead ruling D-15 c): a region that the region contour cut is
+    // not left, so the record holds no "no field" piece.
+    assert!(
+        left.as_ref().is_none_or(|l| l.no_field == 0),
+        "the slot is cut, so it is not a left piece: {left:?}"
+    );
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
+    let (_, control, control_left) = slot_fixture_p44(0.0);
+    assert!(
+        control_left.as_ref().is_some_and(|l| l.no_field > 0),
+        "the control: with no region contour the slot is left: {control_left:?}"
+    );
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
+    assert!(
+        control >= 10.0 - 1e-6,
+        "the control: with no region contour the slot keeps the stock top: {control:.2}"
+    );
+}
+
+/// P44 (H2): the F-038 forecast reads a region in its own frame. With the
+/// dial at 15 mm the slot is cut (its contour line is about 70 mm long;
+/// the forecast before P44 moved the outline inside by the tool radius
+/// again and read 0). The square pocket is dropped by the dial (its line is
+/// under 15 mm at each level), and the record names it with that reason.
+/// Seen red with H2 reverted alone (the slot stands at Z 10.00).
+#[test]
+fn the_forecast_reads_a_slot_region_in_its_own_frame_p44() {
+    let (deepest, highest, left) = slot_fixture_p44(15.0);
+    assert!(
+        highest <= 0.5 + 0.3,
+        "the centre line of the slot stands at Z {highest:.2} ({left:?})"
+    );
+    assert!(deepest <= 3.5 + 1e-6, "{deepest:.2}");
+    let left = left.expect("the square pocket is dropped");
+    let place = left
+        .places
+        .iter()
+        .find(|p| p.lo[0] >= 9.0 && p.hi[0] <= 19.0 && p.lo[1] >= 39.0 && p.hi[1] <= 49.0)
+        .expect("the square pocket is a place");
+    assert_eq!(place.why, PlaceWhy::ShortForecast, "{left:?}");
+    assert!(place.tallest_mm > 9.0, "{left:?}");
+    let text = crate::compute::toolpath_stats::RoughLeftStockFinding {
+        left: left.clone(),
+        regions_published: false,
+    }
+    .to_string();
+    assert!(
+        text.contains("a cut there is shorter than Min Region Cut Length"),
+        "{text}"
+    );
+}
+
+/// P44 (lead ruling 2026-11-21): a place where the tool fits and stock
+/// stands with no drop record does not raise the finding alone. It is one
+/// count and one area. A place that a drop record covers is named, and it
+/// raises the finding.
+///
+/// The fixture: a flat floor at Z 0 on a cell of 0.5 mm, and two strips of
+/// stock 4 mm tall: strip A (X 2..3, Y 2..8) and strip B (X 12..13, Y 2..8).
+/// The standing read holds both. The plan recorded one dropped piece.
+#[test]
+fn stock_with_no_drop_record_does_not_raise_the_finding_p44() {
+    let (n, cell) = (40usize, 0.5);
+    let in_a = |x: f64, y: f64| (2.0..=3.0).contains(&x) && (2.0..=8.0).contains(&y);
+    let in_b = |x: f64, y: f64| (12.0..=13.0).contains(&x) && (2.0..=8.0).contains(&y);
+    let mut tops = vec![0.0f64; n * n];
+    let mut padded = vec![false; (n + 2) * (n + 2)];
+    let mut height = vec![0.0f32; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (col as f64 * cell, row as f64 * cell);
+            if in_a(x, y) || in_b(x, y) {
+                tops[row * n + col] = 4.0;
+                padded[(row + 1) * (n + 2) + (col + 1)] = true;
+                height[row * n + col] = 4.0;
+            }
+        }
+    }
+    let stock = make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &tops);
+    let surface_hm =
+        SurfaceHeightmap::from_parts(vec![0.0; n * n], vec![true; n * n], n, n, 0.0, 0.0, cell);
+    let one_pass = super::one_pass::OnePass::new(3.0, 0.5, true);
+    let standing = || {
+        Some(super::standing::Standing {
+            padded: padded.clone(),
+            padded_cols: n + 2,
+            height: height.clone(),
+        })
+    };
+    let piece = |x0: f64, x1: f64| super::left_stock::Unplanned {
+        z_level: 0.0,
+        outline: crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(x0, 1.0),
+            crate::geo::P2::new(x1, 1.0),
+            crate::geo::P2::new(x1, 9.0),
+            crate::geo::P2::new(x0, 9.0),
+        ]),
+        why: LeftWhy::ShortForecast,
+    };
+    let read = |unplanned: &[super::left_stock::Unplanned]| {
+        super::left_stock::left_stock(
+            unplanned,
+            0,
+            &one_pass,
+            &stock,
+            &surface_hm,
+            0.0,
+            standing,
+            3.0,
+        )
+    };
+    // The plan recorded nothing: no record, as before P44.
+    assert!(read(&[]).is_none());
+    // The dropped piece lies on cut stock (X 20..25): both strips stand
+    // with no drop record. The finding is not raised.
+    let none = read(&[piece(20.0, 25.0)]).expect("the plan recorded a piece");
+    assert!(none.places.is_empty(), "{none:?}");
+    assert_eq!(
+        (none.places_total, none.unrecorded_places),
+        (0, 2),
+        "{none:?}"
+    );
+    assert!(
+        (none.unrecorded_area_mm2 - 2.0 * 3.0 * 13.0 * 0.25).abs() < 1e-9,
+        "{none:?}"
+    );
+    assert_eq!(none.standing_pieces, 0, "{none:?}");
+    assert!(
+        !none.stands(),
+        "no drop record: the finding is not raised: {none:?}"
+    );
+    // The dropped piece covers strip A: strip A is a named place, and the
+    // finding is raised. Strip B stays in the sum.
+    let one = read(&[piece(1.0, 4.0)]).expect("the plan recorded a piece");
+    assert_eq!((one.places_total, one.unrecorded_places), (1, 1), "{one:?}");
+    assert_eq!(one.places[0].why, PlaceWhy::ShortForecast, "{one:?}");
+    assert!(one.stands(), "{one:?}");
+    // P44b (lead ruling D-11): a dropped cut group gives its reason to the
+    // place on its box. The box of a straight cut has no area (X 12.5, Y 2
+    // to 8); it is not a standing piece.
+    let group = super::left_stock::Unplanned {
+        z_level: 0.0,
+        outline: crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(12.5, 2.0),
+            crate::geo::P2::new(12.5, 2.0),
+            crate::geo::P2::new(12.5, 8.0),
+            crate::geo::P2::new(12.5, 8.0),
+        ]),
+        why: LeftWhy::ShortGroup,
+    };
+    let grouped = read(&[group]).expect("the plan recorded a group");
+    assert_eq!(
+        (grouped.places_total, grouped.unrecorded_places),
+        (1, 1),
+        "{grouped:?}"
+    );
+    assert_eq!(grouped.places[0].why, PlaceWhy::ShortGroup, "{grouped:?}");
+    assert!((grouped.places[0].lo[0] - 12.0).abs() < 1e-9, "{grouped:?}");
+    assert_eq!(grouped.standing_pieces, 0, "{grouped:?}");
+    assert!(grouped.stands(), "{grouped:?}");
+    let text = crate::compute::toolpath_stats::RoughLeftStockFinding {
+        left: one,
+        regions_published: false,
+    }
+    .to_string();
+    assert!(
+        text.contains("stock still stands at 1 place that the plan did not cut"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Stock also stands at 1 more place with no drop record (9.8 mm²"),
+        "{text}"
+    );
+    assert_eq!(
+        text.matches("X12.0").count(),
+        0,
+        "strip B is not listed: {text}"
     );
 }
 
@@ -3332,8 +3640,8 @@ fn the_descent_clamp_changes_only_a_tool_with_a_centre_core_k5() {
 /// stay-down clearance 0.5.
 ///
 /// The levels are 9, 6, 3 and 0.5. At 9 the rib is the only material: a
-/// region of 36 mm2, under the small-region bound (152.4 mm2), so the level
-/// drops it. So the rib is stock that an upper level leaves. At 0.5 the
+/// region with no room for a contour line (the F-038 forecast reads 0), so
+/// the level drops it. So the rib is stock that an upper level leaves. At 0.5 the
 /// block is a region that holds the rib.
 ///
 /// Returns the deepest simulated depth of a sample (`axial_engagement_mm`,
@@ -3370,9 +3678,14 @@ fn deepest_cut_on_rib_fixture_p41(
     };
     params.depth.stock_top_z = if rib { 12.0 } else { 3.0 };
     params.initial_stock = Some(stock.clone());
+    // P44: the region contour cuts the rib at its own levels. This fixture
+    // needs stock that the levels above LEFT, so it runs with the region
+    // contour off.
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
     let out =
-        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
-            .expect("not cancelled");
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None);
+    super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
+    let out = out.expect("not cancelled");
     let mut sim_stock = stock;
     let samples = sim_stock
         .simulate_toolpath_with_metrics_with_cancel(
@@ -3449,7 +3762,10 @@ fn a_plan_with_one_pass_of_stock_holds_no_centre_off_p41() {
         (2.0..=3.5).contains(&deepest),
         "the block is one pass deep: {deepest:.2}"
     );
-    assert!(left.is_none_or(|l| l.held_off_centres == 0), "{left:?}");
+    assert!(
+        left.as_ref().is_none_or(|l| l.held_off_centres == 0),
+        "{left:?}"
+    );
 }
 
 /// P41: the rule is in the ONE level grid, so it holds for Contour Parallel
@@ -3687,20 +4003,30 @@ fn the_one_pass_dial_off_keeps_the_plan_without_the_rule_p41() {
         params.linking.one_pass_hold = hold;
         params.depth.stock_top_z = 12.0;
         params.initial_stock = Some(stock.clone());
-        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
-            .expect("not cancelled")
+        // P44: the region contour cuts the rib at its own levels; this test
+        // needs the rib as stock that the levels above left (see the
+        // fixture `deepest_cut_on_rib_fixture_p41`).
+        super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(true));
+        let out =
+            adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None);
+        super::level_contour::REGION_CONTOUR_OFF_FOR_CONTROL.with(|c| c.set(false));
+        out.expect("not cancelled")
     };
     let off = run(OnePassHold::Off);
     let on = run(OnePassHold::RemainingStock {
         link_kinematics: None,
     });
     assert!(
-        off.left_stock.is_none_or(|l| l.held_off_centres == 0),
+        off.left_stock
+            .as_ref()
+            .is_none_or(|l| l.held_off_centres == 0),
         "the dial is off: {:?}",
         off.left_stock
     );
     assert!(
-        on.left_stock.is_some_and(|l| l.held_off_centres > 0),
+        on.left_stock
+            .as_ref()
+            .is_some_and(|l| l.held_off_centres > 0),
         "the dial is on: {:?}",
         on.left_stock
     );

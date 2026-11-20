@@ -1,0 +1,26 @@
+before total_runtime_s 9715.8 collisions 0 rapid 0 failed checks 0 []
+after  total_runtime_s 9847.8 collisions 0 rapid 0 failed checks 0 []
+2 Back rest 6 mm (cavity, hollow, lakes, pocke: moves 15239 -> 17294
+   ('force_budget', 'group', 'cleanup'): (6.0, 4.619841553637298, 'exceeds', 6.000986099243164) -> (5.0, 3.429466148708105, 'exceeds', 6.000986099243164)
+   ('force_budget', 'group', 'link'): (6.0, 3.412174080525536, 'exceeds', 6.0) -> (6.0, 3.412870073072552, 'exceeds', 6.0)
+40 Cavity rest pocket 6 mm: moves 756 -> 875
+
+41 Slit slot rest pocket 6 mm: moves 26 -> 44
+   ('force_budget', 'group', 'body'): (2.066999912261963, 3.0005161332908408, 'within', 2.066999912261963) -> (2.066999912261963, 3.0005161332908408, 'within', 3.5699996948242188)
+   ('force_budget', 'group', 'entry'): (2.066999912261963, 4.441183703838333, 'within', 2.066999912261963) -> (2.066999912261963, 4.470968298255083, 'within', 2.066999912261963)
+11 River channel 6 mm, pass 7 of 7: moves 46994 -> 46983
+
+28 Lake outline channel 6 mm: moves 8061 -> 6545
+   ('force_budget', 'group', 'body'): (1.5902957916259766, 2.697396078255304, 'within', 1.5913152694702148) -> (1.5913152694702148, 2.7128090733636276, 'within', 1.5913152694702148)
+   ('force_budget', 'group', 'entry'): (0.0, 3.284097720924306, 'within', None) -> (0.0, None, 'no_number', None)  STATE CHANGED
+25 Lake relief band 6 mm, 11 lakes to Z 13.5: moves 7206 -> 7206
+   ('chip_max', 'group', 'body'): (0.0744099631111505, 0.17405803818836554, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('chip_max', 'group', 'entry'): (0.11117114591245422, 0.17405803818836554, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('force_budget', 'group', 'body'): (0.7031040191650391, 18.7615902299059, 'within', 0.7206020355224609) -> (0.0, None, 'no_number', None)  STATE CHANGED
+   ('force_budget', 'group', 'entry'): (1.1769790649414062, 16.426521470994825, 'within', 1.1769790649414062) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('spindle_power', 'group', 'body'): (0.002658523957243242, 0.663125, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('spindle_power', 'group', 'entry'): (0.008459159280925058, 0.663125, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('tool_deflection', 'group', 'body'): (0.002488308480427914, 0.2, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+   ('tool_deflection', 'group', 'entry'): (0.005096388842068068, 0.2, 'within', None) -> (None, None, 'no_number', None)  STATE CHANGED
+16 Day strip slit V60: moves 19 -> 19
+   ('force_budget', 'group', 'body'): (1.8299999237060547, 5.222474645762743, 'within', 1.830000400543213) -> (1.8300000429153442, 5.222474645762743, 'within', 1.8300001621246338)

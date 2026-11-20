@@ -3,7 +3,7 @@
 //! A stock cell is too tall for a level when one tool centre of the level,
 //! at its level floor, would take more than one Depth/Pass plus the
 //! stay-down clearance from it in one stamp. Such stock stands because no
-//! level above cut it (a region under the small-region bound, the margin
+//! level above cut it (a region under the cut-length dial, the margin
 //! strip at a wall, a strip narrower than the tool radius). No centre of
 //! the level may take that much from it: each material cell that would is
 //! not a region cell. The 2D plan of the level gets the region without

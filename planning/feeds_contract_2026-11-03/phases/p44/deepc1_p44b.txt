@@ -1,0 +1,1 @@
+out_p44b.nc 'Back bulk' bar 4.666 tol 0.1: pieces with a node over the bar 2 (11 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
