@@ -26,6 +26,24 @@ commit `82cf231c7`. No product code is changed by that commit.
   id 2 676.9 to 906.2 s; "1 Back" 10 034.4 s (10 000.4 with id 41 off); "3 Front" 9 353.1 s;
   replay class 0; 0 collisions; rivmap100 the same bytes; ids 1 and 20 the same motion.
   Gates by the agent logs: no new red (op golden: the 52 known cells, not blessed).
+- LANDED `c708f25c2` (P46 clean-up; note `phases/P46_CLEAN_UP_2026-11-22.md`): a left piece
+  that the strip pass cut is not left; `PlaceWhy::LineMargin` for a rim place; tests with red
+  proofs for the three P45 hunks. No motion changed.
+- Golden `fa8b80801`: field-only bless of the 6 fields of `adaptive3d/ramp_geodesic` (P39).
+  The golden is red on exactly the 46 rows of `opgolden_known_46_rows.txt`; no change of this
+  programme owns them; NOT blessed. P41 to P46 moved no golden cell.
+- The proposal has "Lake relief band 6 mm, 11 lakes to Z 13.5" off (0.0 mm3 removed).
+  Setup "1 Back" 9 768.8 s (13 toolpaths), "3 Front" 9 353.1 s, 0 collisions on both.
+- Lead gate on `fa8b80801` (2026-11-22): core `--lib` 2 872 with the one known timing red;
+  adaptive3d 37 binaries, dressup 19, other 20, FM1, cli 17, mcp 2, viz `--lib` green;
+  full clippy clean; golden the known 46. The core full gate was NOT run (operator choice).
+  Extra rough and trace sentries: 18 binaries green, 1 known red
+  (`a_clearing_cut_holds_the_pass_load_g_adaptpassload`, red since `c6826ad05`).
+- FIRST ITEM after the push: `check_project_curve_negative_depth` reads only `depth < 0` (no
+  direction, no setup flip). It is false on id 15, and its auto-fix flips the sign: on ids
+  11 and 28 that puts the tip 8 mm lower, 4 mm into the model. Fix: the condition reads the
+  sign rule with the setup flip, or the static rule goes (P46 note, item C; three callers of
+  `validate_one_toolpath`).
 - The proposal has id 41 off since the commit after P45.
 - Open after P45 (clean-up list): three hunks with no test (`hold_shipped_chords`, the centre
   test in the strip read of `wall_read`, the pass 3 ring start); a left piece that the strip
