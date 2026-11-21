@@ -38,7 +38,14 @@ commit `82cf231c7`. No product code is changed by that commit.
   adaptive3d 37 binaries, dressup 19, other 20, FM1, cli 17, mcp 2, viz `--lib` green;
   full clippy clean; golden the known 46. The core full gate was NOT run (operator choice).
   Extra rough and trace sentries: 18 binaries green, 1 known red
-  (`a_clearing_cut_holds_the_pass_load_g_adaptpassload`, red since `c6826ad05`).
+  (`a_clearing_cut_holds_the_pass_load_g_adaptpassload`; the P44b agent dates it to
+  `c6826ad05`, the lead did not verify that origin; its failing numbers are the same in the
+  P44b log and on this commit, so P45 and P46 did not move it).
+- Front replay (`p43/deepc.py`, `P43_SHIFT="18.5,8.5"`, from a flat block, final proposal run):
+  "Front 3D rough" bar 6.032 and "Front bulk rough 18 mm" bar 4.666: 0 pieces over the bar.
+- NOT done before the push: no GUI or MCP run on a build from HEAD (the new finding text is
+  not seen on screen); `LEAD_PROPOSAL_2026-11-15.md` is stale (id 41 off, lake relief band
+  off, the new times); the wood left on the front is not measured.
 - FIRST ITEM after the push: `check_project_curve_negative_depth` reads only `depth < 0` (no
   direction, no setup flip). It is false on id 15, and its auto-fix flips the sign: on ids
   11 and 28 that puts the tip 8 mm lower, 4 mm into the model. Fix: the condition reads the
