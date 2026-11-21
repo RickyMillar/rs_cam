@@ -1559,7 +1559,7 @@ enabled = false
 [[setups.toolpaths]]
 id = 41
 name = "Slit slot rest pocket 6 mm"
-enabled = true
+enabled = false
 tool_id = 0
 model_id = 11
 boundary_inherit = true
