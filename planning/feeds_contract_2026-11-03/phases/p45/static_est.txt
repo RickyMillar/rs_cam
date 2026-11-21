@@ -1,0 +1,10 @@
+ring points 38123 standing in round 0 14386
+check: own Z == max(floor, raytop max - DPP)? points where raytop max - DPP > own + 0.01: 0
+V1 raises the round-0 Z by more than 0.05 mm at 1174 of 14386 standing points
+V1 raises the round-0 Z by more than 0.2 mm at 1041 of 14386 standing points
+V1 raises the round-0 Z by more than 1 mm at 939 of 14386 standing points
+V1 raises the round-0 Z by more than 3 mm at 893 of 14386 standing points
+V1 raises the round-0 Z by more than 5 mm at 879 of 14386 standing points
+the tallest conservative top of a part-covered centre-in cell is more than 0.2 mm over the tallest of the full-covered cells at 1189 points; of them with a V1 rise > 0.2: 963
+the tallest conservative top of a part-covered centre-in cell is more than 1 mm over the tallest of the full-covered cells at 1110 points; of them with a V1 rise > 0.2: 917
+the tallest conservative top of a part-covered centre-in cell is more than 3 mm over the tallest of the full-covered cells at 1061 points; of them with a V1 rise > 0.2: 892

@@ -1,0 +1,5 @@
+band X 45.0..350.0 Y 105.0..120.0 (out_b1.npz):
+   wood where the 6 mm tool fits after 'Back rest': 129.7 mm2; tallest 8.11 mm at (287.4, 118.2); by height: 0.3-1 mm 0.2, 1-3 mm 13.9, 3-6.5 mm 114.4, over 6.5 mm 1.2 mm2
+   all moves of the op: 5 fed runs, 1 entries, total 507 mm, longest 309 mm, median 4.3 mm, runs under 15 mm 3, runs of 100 mm or more 2; the 5 longest [309, 187, 4, 4, 2]
+   the op has 19120 motion lines; the first 17297 are the lines of the baseline (17299 lines)
+   the moves after the common prefix (the strip pass): 2 fed runs, 0 entries, total 313 mm, longest 309 mm, median 4.3 mm, runs under 15 mm 1, runs of 100 mm or more 1; the 5 longest [309, 4]

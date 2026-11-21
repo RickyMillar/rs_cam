@@ -1734,6 +1734,21 @@ fn adaptive_3d_segments_probed(
         }
     }
 
+    // P45: the strip pass of an op on remaining stock, after its last
+    // level (`level_contour::strip_pass`).
+    if let Some(&bottom) = z_levels.last()
+        && params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
+    {
+        check_cancel(cancel)?;
+        super::level_contour::strip_pass(
+            &ctx,
+            &mut material_stock,
+            &surface_hm,
+            bottom,
+            &mut segments,
+            &mut cursor,
+        );
+    }
     let left_stock = super::left_stock::left_stock(
         &ctx.unplanned.take(),
         ctx.dropped_cut_groups.get(),

@@ -1,0 +1,137 @@
+core: P45: a 3D Rough on remaining stock ends with a strip pass that reads the stock at each cell centre
+
+Operator ruling 2026-11-20: a 3D Rough cuts a place that it is told to cut, or
+names the place and the reason. After P44b the wood that stayed where the tool
+fits was mainly strips at walls: the level grid reads the stock at the
+tool-centre cell only, so a strip narrower than the tool radius makes no region.
+
+What changes
+- `level_contour::strip_pass` (Geodesic Adaptive, remaining stock only,
+  `OnePass::on`; `path.rs` calls it once after the last level): the standing
+  cells of the bottom level with the strip read, a band under Min Region Cut
+  Length recorded and not cut, each band grown on its open side
+  (`grow_open_side`), then the region contour along each band in rounds, one
+  Depth/Pass per round.
+- `level_contour::StripTops`: the strip pass reads an upper bound of the stock
+  at each cell centre, not the ray top. The stamp lowers a part-covered cell by
+  a fraction, so the ray top of a cell at the edge of earlier discs is a blend.
+  P44 build 2 failed for this reason (traced: 11 centres stood 3.2 to 7.8 mm
+  above their ray top, 0.000 to 0.162 mm outside the disc edge of the level
+  cuts; the strip pass cut them 6.61 to 8.50 mm deep at 6 mm per pass). The
+  state starts at `DexelGrid::conservative_top` and goes down under each cut
+  that the pass ships (`StripTops::scan`, along `shipped_cut_path`).
+- `TriDexelStock::disc_holds_cell_core` (`stamping::point_holds_cell_core`):
+  the disc holds a cell centre when the four inner sub-samples of the stamp are
+  inside. The state and the read of the strip pass count a centre only with
+  this test: a centre exactly on the disc edge is not cut.
+- `level_contour::hold_shipped_chords`: a run of the strip pass is raised until
+  each chord that the emitter ships holds the one-pass Z along it (the
+  simplification of a run can drop a corner point of the line).
+- `LeftWhy::NoLine`, `PlaceWhy::NoLine`: a band with no room for a contour line.
+- The P42 wall pass, the P43 fresh wall pass and the P44b region contour keep
+  their read (decision D-1 of the note).
+
+Measured (release CLI; before = HEAD 409e7d474; note
+planning/feeds_contract_2026-11-03/phases/P45_WALL_STRIP_PASS_2026-11-21.md)
+- Wanaka back, id 2 "Back rest 6 mm" (job with id 41 off): wood where the 6 mm
+  tool fits after id 2: 4 463.2 to 1 486.4 mm2. 1 380.9 mm2 of it are the rim of
+  the line margin (at most 0.4 mm from a wall); the other wood goes from
+  2 535.8 mm2 in 260 pieces to 105.5 mm2 in 46 pieces.
+- Per place (mm2): control relief 86.6 to 13.6, ESP relief 59.4 to 23.8, step
+  shelf 525.7 to 125.6, board pocket 861.0 to 364.5, cavity 2 735.8 to 771.2;
+  antenna slot 59.8 and slit slot 121.8 do not change.
+- The band at the bottom edge of the cavity (X 45..350, Y 105..120): 976.1 to
+  129.7 mm2, cut by one pass of 298 mm along the wall.
+- Id 2: 17 294 to 19 346 moves, feed time 676.9 to 906.2 s; setup "1 Back"
+  9 813.8 to 10 000.4 s (committed job: 9 847.8 to 10 034.4 s).
+- Depth rows of id 2: body 6.000 (deepest sample 6.130), cleanup 5.000 (deepest
+  6.001 to 6.113), entry 1.885 (deepest 1.894 to 1.917). Corrected replay class
+  (p43/deepc.py): 0 pieces for ids 1 and 2. Gouge nodes of id 2 in the class: 8,
+  as before. 0 collisions, 0 rapid collisions.
+- Front, id 21 "Front 3D rough": 46 432 to 57 805 moves, feed time 1 020.1 to
+  1 228.8 s, setup "3 Front" 9 053.4 to 9 353.1 s; no limit row changes.
+- The fresh roughs (ids 1 and 20) keep each motion line. rivmap100 keeps its
+  G-code byte for byte.
+
+BREAK: a 3D Rough with Geodesic Adaptive on remaining stock has more moves and
+more time (the strip pass), and later toolpaths of a job find less stock (on the
+Wanaka back "Cavity rest pocket 6 mm" goes from 875 to 167 moves). The record
+`LeftWhy` and `PlaceWhy` have a new variant `NoLine`. No file format changes.
+
+Tests: `--lib _p45` (4 tests; each seen red with its hunk reverted alone,
+p45/red_proofs.txt). Three hunks have no test of their own: `hold_shipped_chords`,
+the centre test in the strip read, the pass 3 ring of `wall_read` (note D-7).
+Gates: core --lib 2 866 pass, 1 known red (the_envelope_meets_its_time_budget);
+adaptive3d sentries 75, other core sentries 141, dressup 119, FM1 2, cli 113,
+mcp 39, viz --lib 705, all green; op golden red on the 52 known cells (not
+blessed); full clippy and the format check of the core crate clean.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+--- paths to commit
+FEATURE_CATALOG.md
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/left_stock.rs
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/standing.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/compute/toolpath_stats.rs
+crates/rs_cam_core/src/dexel_stock/mod.rs
+crates/rs_cam_core/src/dexel_stock/stamping.rs
+planning/feeds_contract_2026-11-03/phases/P45_WALL_STRIP_PASS_2026-11-21.md
+planning/feeds_contract_2026-11-03/phases/p45/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p45/band.py
+planning/feeds_contract_2026-11-03/phases/p45/band_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/band_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/band_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/band_build2.txt
+planning/feeds_contract_2026-11-03/phases/p45/band_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p45/builds/b1.patch
+planning/feeds_contract_2026-11-03/phases/p45/builds/b2.patch
+planning/feeds_contract_2026-11-03/phases/p45/d5_off.txt
+planning/feeds_contract_2026-11-03/phases/p45/d5_on.txt
+planning/feeds_contract_2026-11-03/phases/p45/d5_probe.sh
+planning/feeds_contract_2026-11-03/phases/p45/deepc1_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc1_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc1_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc2_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc2_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc2_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc2_probe1.txt
+planning/feeds_contract_2026-11-03/phases/p45/deepc_committed_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/finding_text_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/gates_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/gates_p45.sh
+planning/feeds_contract_2026-11-03/phases/p45/gouge1_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/gouge2_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/gouge2_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/gouge2_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/graze.py
+planning/feeds_contract_2026-11-03/phases/p45/graze_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/graze_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/graze_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/meas45.sh
+planning/feeds_contract_2026-11-03/phases/p45/meas_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/meas_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/meas_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/meas_probe1.txt
+planning/feeds_contract_2026-11-03/phases/p45/op_cmp.py
+planning/feeds_contract_2026-11-03/phases/p45/p45_product.patch
+planning/feeds_contract_2026-11-03/phases/p45/probe1.patch
+planning/feeds_contract_2026-11-03/phases/p45/red.sh
+planning/feeds_contract_2026-11-03/phases/p45/red_proofs.txt
+planning/feeds_contract_2026-11-03/phases/p45/revert.py
+planning/feeds_contract_2026-11-03/phases/p45/rows_back_committed_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/rows_front_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/rows_scratch_job_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/rows_scratch_job_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/static_est.py
+planning/feeds_contract_2026-11-03/phases/p45/static_est.txt
+planning/feeds_contract_2026-11-03/phases/p45/stays.py
+planning/feeds_contract_2026-11-03/phases/p45/stays_b1.txt
+planning/feeds_contract_2026-11-03/phases/p45/stays_b2.txt
+planning/feeds_contract_2026-11-03/phases/p45/stays_b3.txt
+planning/feeds_contract_2026-11-03/phases/p45/stays_p44b.txt
+planning/feeds_contract_2026-11-03/phases/p45/trace.py
+planning/feeds_contract_2026-11-03/phases/p45/trace_probe1.txt

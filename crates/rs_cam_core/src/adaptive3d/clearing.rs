@@ -2943,6 +2943,7 @@ fn leave_piece(
         super::LeftWhy::ShortForecast => "F-038 forecast",
         super::LeftWhy::NoField => "no field",
         super::LeftWhy::ShortGroup => "F-038 cut group",
+        super::LeftWhy::NoLine => "no contour line",
     };
     tracing::info!(
         z = z_level,

@@ -1,0 +1,13 @@
+before total_runtime_s 9847.8 collisions 0 rapid 0 failed checks 0 []
+after  total_runtime_s 10034.4 collisions 0 rapid 0 failed checks 0 []
+2 Back rest 6 mm (cavity, hollow, lakes, pocke: moves 17294 -> 19346
+   ('force_budget', 'group', 'cleanup'): (5.0, 3.429466148708105, 'exceeds', 6.000986099243164) -> (5.0, 3.429466148708105, 'exceeds', 6.112735748291016)
+   ('force_budget', 'group', 'entry'): (1.8846149444580078, 3.00070171464892, 'within', 1.8944754600524902) -> (1.8846149444580078, 3.00070171464892, 'within', 1.9166679382324219)
+40 Cavity rest pocket 6 mm: moves 875 -> 167
+   ('force_budget', 'group', 'entry'): (2.25, 4.441183703838333, 'within', 2.25) -> (2.25, 16.436929105184383, 'within', 2.25)
+11 River channel 6 mm, pass 7 of 7: moves 46983 -> 46958
+
+28 Lake outline channel 6 mm: moves 6545 -> 4663
+   ('force_budget', 'group', 'body'): (1.5913152694702148, 2.7128090733636276, 'within', 1.5913152694702148) -> (1.5913152694702148, 2.774461053796923, 'within', 1.5913152694702148)
+14 ANTENNA_D5.00 pocket 2 mm: moves 640 -> 640
+   ('force_budget', 'group', 'entry'): (0.5, 8.0, 'within', 0.5) -> (0.42708587646484375, 8.0, 'within', 0.42708587646484375)

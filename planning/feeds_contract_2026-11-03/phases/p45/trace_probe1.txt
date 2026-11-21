@@ -1,0 +1,182 @@
+planner grid: rows 2301 cols 1976 origin (-18.5000, -8.5000) cell 0.2; G-code frame = planner frame + (18.5, 8.5); rounds 9; ring points per round [38123, 38123, 38123, 38123, 38123, 38123, 38123, 38123, 38123]; runs [13, 4, 2, 2, 2, 2, 2, 2, 0]
+
+piece 17425: (346.6, 97.482, 8.4) -> (346.6, 98.077, 13.875); round 0 of the strip pass
+   ring points within 1 mm of the ends (ring, i, x, y, own Z, Z after the neighbour rule, standing, refused):
+      ring 4 i 1989 (346.600, 96.489) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1990 (346.600, 96.688) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1991 (346.600, 96.886) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1992 (346.600, 97.085) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1993 (346.600, 97.283) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1994 (346.600, 97.482) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 1995 (346.600, 97.680) own 8.400 final 9.315 standing 1 refused 0
+      ring 4 i 1996 (346.600, 97.879) own 9.315 final 11.630 standing 1 refused 0
+      ring 4 i 1997 (346.600, 98.077) own 11.630 final 13.875 standing 1 refused 0
+      ring 4 i 1998 (346.600, 98.276) own 13.875 final 13.875 standing 1 refused 0
+      ring 4 i 1999 (346.458, 98.378) own 13.344 final 13.875 standing 1 refused 0
+      ring 4 i 2000 (346.315, 98.481) own 13.344 final 13.344 standing 1 refused 0
+      ring 4 i 2001 (346.173, 98.583) own 11.000 final 13.344 standing 1 refused 0
+      ring 4 i 2002 (346.030, 98.685) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2003 (345.888, 98.788) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 2479 (345.712, 97.612) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2480 (345.784, 97.459) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2481 (345.856, 97.306) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2482 (345.928, 97.153) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2483 (346.000, 97.000) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2484 (346.000, 96.800) own 8.400 final 8.400 standing 0 refused 0
+   node (349.4,98.6) cell centre (349.400,98.600): replay top 16.55, cut to 8.78 (lowered 7.77); planner ray top 13.31, conservative top 16.55; inside the piece edge 0.152; ring points that hold the centre: 5, their own Z 8.40..13.88 (replay top less Depth/Pass = 10.55); class A (planner top under the replay top by 3.24)
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.162..-0.017 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.027..-0.017 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 8.55 with the node OUTSIDE the disc edge by -0.086..-0.086 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 8.40 with the node OUTSIDE the disc edge by -0.015..-0.015 mm
+
+piece 17440: (230.2, 100.6, 11.193) -> (229.8, 100.6, 17.748); round 0 of the strip pass
+   ring points within 1 mm of the ends (ring, i, x, y, own Z, Z after the neighbour rule, standing, refused):
+      ring 4 i 2583 (231.200, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2584 (231.000, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2585 (230.800, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2586 (230.600, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2587 (230.400, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 2588 (230.200, 100.600) own 11.000 final 11.194 standing 1 refused 0
+      ring 4 i 2589 (230.000, 100.600) own 11.194 final 13.802 standing 1 refused 0
+      ring 4 i 2590 (229.800, 100.600) own 13.802 final 17.748 standing 1 refused 0
+      ring 4 i 2591 (229.600, 100.600) own 17.748 final 18.333 standing 1 refused 0
+      ring 4 i 2592 (229.400, 100.600) own 18.333 final 18.333 standing 1 refused 0
+      ring 4 i 2593 (229.200, 100.600) own 18.333 final 18.333 standing 1 refused 0
+      ring 4 i 2594 (229.000, 100.600) own 18.333 final 18.529 standing 1 refused 0
+      ring 4 i 2595 (228.800, 100.600) own 18.529 final 18.529 standing 1 refused 0
+      ring 5 i 1001 (229.938, 99.600) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1002 (230.103, 99.700) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1003 (230.269, 99.800) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1004 (230.435, 99.900) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1005 (230.600, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1006 (230.800, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 1007 (231.000, 100.000) own 11.000 final 11.000 standing 0 refused 0
+   node (228.6,103.2) cell centre (228.600,103.200): replay top 19.50, cut to 12.89 (lowered 6.61); planner ray top 14.56, conservative top 19.50; inside the piece edge 0.136; ring points that hold the centre: 7, their own Z 11.19..18.53 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 4.94)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.029..-0.029 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.014..-0.014 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.017..-0.017 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 11.19 with the node OUTSIDE the disc edge by -0.053..-0.053 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 11.00 with the node OUTSIDE the disc edge by -0.162..-0.097 mm
+
+piece 17459: (50.8, 100.6, 11.0) -> (50.476, 100.8, 11.0); round 0 of the strip pass
+   ring points within 1 mm of the ends (ring, i, x, y, own Z, Z after the neighbour rule, standing, refused):
+      ring 4 i 3480 (51.800, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3481 (51.600, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3482 (51.400, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3483 (51.200, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3484 (51.000, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3485 (50.800, 100.600) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3486 (50.638, 100.700) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3487 (50.476, 100.800) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 3488 (50.307, 100.800) own 11.000 final 13.500 standing 1 refused 0
+      ring 4 i 3489 (50.138, 100.800) own 13.500 final 13.523 standing 1 refused 0
+      ring 4 i 3490 (49.969, 100.800) own 13.523 final 14.500 standing 1 refused 0
+      ring 4 i 3491 (49.800, 100.800) own 14.500 final 14.500 standing 1 refused 0
+      ring 4 i 3492 (49.792, 100.628) own 13.521 final 14.500 standing 1 refused 0
+      ring 4 i 3493 (49.785, 100.457) own 13.131 final 13.521 standing 1 refused 0
+      ring 4 i 3494 (49.777, 100.285) own 13.131 final 13.131 standing 1 refused 0
+      ring 5 i 39 (50.423, 99.715) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 40 (50.549, 99.810) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 41 (50.674, 99.905) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 42 (50.800, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 43 (51.000, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 44 (51.200, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 45 (51.400, 100.000) own 11.000 final 11.000 standing 0 refused 0
+      ring 5 i 46 (51.600, 100.000) own 11.000 final 11.000 standing 0 refused 0
+   node (49.8,103.6) cell centre (49.800,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 12.94, conservative top 19.50; inside the piece edge 0.120; ring points that hold the centre: 6, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 6.56)
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.162..-0.124 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.007..-0.007 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.007..-0.007 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 11.00 with the node OUTSIDE the disc edge by -0.162..-0.045 mm
+   node (50.0,103.6) cell centre (50.000,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 12.09, conservative top 19.50; inside the piece edge 0.160; ring points that hold the centre: 7, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 7.41)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.105..-0.087 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 15.13 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.161..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 11.00 with the node OUTSIDE the disc edge by -0.105..-0.017 mm
+   node (50.2,103.6) cell centre (50.200,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 11.86, conservative top 19.50; inside the piece edge 0.186; ring points that hold the centre: 7, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 7.64)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.063..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.007..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 15.13 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.104..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 11.00 with the node OUTSIDE the disc edge by -0.059..-0.003 mm
+   node (50.4,103.6) cell centre (50.400,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 11.78, conservative top 19.50; inside the piece edge 0.199; ring points that hold the centre: 6, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 7.72)
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 20.50 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.051..-0.027 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.027..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 15.13 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.059..-0.000 mm
+   node (50.6,103.6) cell centre (50.600,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 11.72, conservative top 19.50; inside the piece edge 0.197; ring points that hold the centre: 6, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 7.78)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 23.00 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 21.39 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 19.77 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.052..-0.007 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.16 with the node OUTSIDE the disc edge by -0.161..-0.161 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+   node (50.8,103.6) cell centre (50.800,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 12.56, conservative top 19.50; inside the piece edge 0.181; ring points that hold the centre: 6, their own Z 11.00..14.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 6.94)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 23.00 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 21.39 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.006..-0.006 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 19.77 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 3 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.067..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.006..-0.006 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.16 with the node OUTSIDE the disc edge by -0.104..-0.104 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.006..-0.006 mm
+   node (51.0,103.6) cell centre (51.000,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 13.11, conservative top 19.50; inside the piece edge 0.151; ring points that hold the centre: 5, their own Z 11.00..13.52 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 6.39)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 23.00 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 21.39 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.02 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 19.77 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.094..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.39 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.16 with the node OUTSIDE the disc edge by -0.059..-0.059 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 16.76 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+   node (51.2,103.6) cell centre (51.200,103.600): replay top 19.50, cut to 11.00 (lowered 8.50); planner ray top 13.76, conservative top 19.50; inside the piece edge 0.108; ring points that hold the centre: 4, their own Z 11.00..13.50 (replay top less Depth/Pass = 13.50); class A (planner top under the replay top by 5.74)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 23.00 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 21.39 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 20.01 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 19.77 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 19.50 with the node OUTSIDE the disc edge by -0.134..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 18.40 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 18.38 with the node OUTSIDE the disc edge by -0.000..-0.000 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 18.16 with the node OUTSIDE the disc edge by -0.026..-0.026 mm
+
+piece 17475: (48.4, 92.518, 8.4) -> (48.4, 91.923, 13.875); round 0 of the strip pass
+   ring points within 1 mm of the ends (ring, i, x, y, own Z, Z after the neighbour rule, standing, refused):
+      ring 4 i 0 (48.400, 91.724) own 13.875 final 13.875 standing 1 refused 0
+      ring 4 i 1 (48.542, 91.622) own 13.344 final 13.875 standing 1 refused 0
+      ring 4 i 2 (48.685, 91.519) own 13.344 final 13.344 standing 1 refused 0
+      ring 4 i 3 (48.827, 91.417) own 11.000 final 13.344 standing 1 refused 0
+      ring 4 i 4 (48.970, 91.315) own 11.000 final 11.000 standing 1 refused 0
+      ring 4 i 5 (49.112, 91.212) own 11.000 final 11.000 standing 0 refused 0
+      ring 4 i 3532 (48.400, 93.511) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3533 (48.400, 93.312) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3534 (48.400, 93.114) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3535 (48.400, 92.915) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3536 (48.400, 92.717) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3537 (48.400, 92.518) own 8.400 final 8.400 standing 1 refused 0
+      ring 4 i 3538 (48.400, 92.320) own 8.400 final 9.315 standing 1 refused 0
+      ring 4 i 3539 (48.400, 92.121) own 9.315 final 11.630 standing 1 refused 0
+      ring 4 i 3540 (48.400, 91.923) own 11.630 final 13.875 standing 1 refused 0
+      ring 5 i 0 (49.000, 92.800) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 1 (49.001, 92.996) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 2 (49.002, 93.192) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 6674 (49.360, 92.440) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 6675 (49.240, 92.560) own 8.400 final 8.400 standing 0 refused 0
+      ring 5 i 6676 (49.120, 92.680) own 8.400 final 8.400 standing 0 refused 0
+   node (45.6,91.4) cell centre (45.600,91.400): replay top 16.55, cut to 8.78 (lowered 7.77); planner ray top 13.31, conservative top 16.55; inside the piece edge 0.152; ring points that hold the centre: 5, their own Z 8.40..13.88 (replay top less Depth/Pass = 10.55); class A (planner top under the replay top by 3.24)
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 16.55 with the node OUTSIDE the disc edge by -0.017..-0.017 mm
+        earlier: 'Back rest 6 mm [cavity' 4 moves at Z 13.50 with the node OUTSIDE the disc edge by -0.027..-0.017 mm
+        earlier: 'Back rest 6 mm [cavity' 2 moves at Z 8.55 with the node OUTSIDE the disc edge by -0.086..-0.086 mm
+        earlier: 'Back rest 6 mm [cavity' 1 moves at Z 8.40 with the node OUTSIDE the disc edge by -0.015..-0.015 mm

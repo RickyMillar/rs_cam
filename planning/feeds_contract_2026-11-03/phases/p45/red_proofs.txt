@@ -1,0 +1,32 @@
+ 2 files changed, 668 insertions(+), 4 deletions(-)
+tree restored
+== hunk PASS reverted
+thread 'adaptive3d::tests::a_strip_beside_a_wall_with_no_region_is_cut_p45' (2775495) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4551:5:
+the strip stands at Z 6.00 between X 8.0 and 9.4; the floor is 0.5
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2879 filtered out; finished in 2.29s
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 2 files changed, 667 insertions(+), 4 deletions(-)
+tree restored
+== hunk READ reverted
+thread 'adaptive3d::tests::the_strip_pass_reads_the_stock_at_the_cell_centre_p45' (2815082) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4580:5:
+a move cuts a node 6.67 mm deep; one Depth/Pass and the clearance are 3.5 mm
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 2877 filtered out; finished in 7.47s
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 2 files changed, 667 insertions(+), 4 deletions(-)
+tree restored
+== hunk SCAN reverted
+thread 'adaptive3d::tests::the_strip_state_follows_each_round_p45' (2854870) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4594:5:
+the strip stands at Z 6.00 between X 8.0 and 9.4; the floor is 0.5
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 2878 filtered out; finished in 3.87s
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 2 files changed, 667 insertions(+), 4 deletions(-)
+tree restored
+== hunk EDGE reverted
+thread 'adaptive3d::level_contour::tests::the_strip_state_does_not_count_a_centre_on_the_disc_edge_p45' (2900986) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2244:9:
+the centre on the disc edge keeps its stock: 4
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2879 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101

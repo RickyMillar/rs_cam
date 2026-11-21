@@ -53,6 +53,10 @@ pub enum LeftWhy {
     /// piece, and it is not in `LeftStock::standing_pieces`; it gives its
     /// reason to the place on its cells.
     ShortGroup,
+    /// P45: a band of the strip pass has no room for a contour line one
+    /// planner cell plus the cut tolerance inside its outline
+    /// (`level_contour::strip_pass`). The outline is the band.
+    NoLine,
 }
 
 /// P44: why a place still holds stock at the end of the plan.
@@ -66,6 +70,9 @@ pub enum PlaceWhy {
     /// The plan of the region dropped cut groups there: each is shorter
     /// than `min_region_cut_length_mm` (the operator dial).
     ShortGroup,
+    /// P45: the place is narrower than the planner can put a contour line
+    /// in (the strip pass).
+    NoLine,
     /// The one-pass rule kept the tool off stock that stands more than one
     /// Depth/Pass above the cutter.
     OnePassHold,
@@ -361,7 +368,7 @@ fn places(
             let mut count = 0usize;
             let (mut tallest, mut tallest_at) = (0.0f32, (row0, col0));
             // The reasons on the cells of the place, by count.
-            let mut whys = [0usize; 3];
+            let mut whys = [0usize; 4];
             while let Some((row, col)) = stack.pop() {
                 count += 1;
                 r_lo = r_lo.min(row);
@@ -377,6 +384,7 @@ fn places(
                     Some(LeftWhy::ShortForecast) => whys[0] += 1,
                     Some(LeftWhy::NoField) => whys[1] += 1,
                     Some(LeftWhy::ShortGroup) => whys[2] += 1,
+                    Some(LeftWhy::NoLine) => whys[3] += 1,
                     None => {}
                 }
                 for dr in [-1isize, 0, 1] {
@@ -399,12 +407,15 @@ fn places(
             let reach = tool_radius + cell;
             let area_mm2 = count as f64 * cell * cell;
             let why = if whys.iter().any(|&n| n > 0) {
-                if whys[0] >= whys[1] && whys[0] >= whys[2] {
+                let most = whys.iter().copied().max().unwrap_or(0);
+                if whys[0] == most {
                     PlaceWhy::ShortForecast
-                } else if whys[1] >= whys[2] {
+                } else if whys[1] == most {
                     PlaceWhy::NoField
-                } else {
+                } else if whys[2] == most {
                     PlaceWhy::ShortGroup
+                } else {
+                    PlaceWhy::NoLine
                 }
             } else if held_standing.iter().any(|&(row, col)| {
                 let (x, y) = grid.cell_to_world(row, col);

@@ -1,0 +1,36 @@
+out_b1.npz: fits 1485.0 mm2 = rim (at most 0.4 mm from a wall) 1379.5 + the rest 105.6
+place                            fits      rim     rest   rest never cut by id 2
+1 antenna slot                   59.8     45.3     14.5                      0.0
+2 control relief                 13.6     13.6      0.0                      0.0
+3 slit slot                     121.8    121.8      0.0                      0.0
+4 ESP relief                     23.8     23.8      0.0                      0.0
+5 step shelf                    125.6    125.6      0.0                      0.0
+6 board pocket                  364.5    361.7      2.8                      2.2
+7 cavity                        769.9    681.6     88.3                      4.0
+other (outside the seven)         6.0      6.0      0.0                      0.0
+the rest: 48 pieces; the 25 largest:
+   X 88.6..97.8 Y 237.2..250.2: 71.2 mm2, tallest 4.99 mm at (95.4, 237.2) stock Z 12.26 reach Z 7.27; id 2 cut 71.2 mm2 of it; 7 cavity
+   X 281.2..290.4 Y 118.6..120.8: 8.6 mm2, tallest 4.13 mm at (290.4, 120.8) stock Z 16.50 reach Z 12.37; id 2 cut 8.6 mm2 of it; 7 cavity
+   X 247.0..288.0 Y 62.4..62.4: 8.2 mm2, tallest 9.00 mm at (247.0, 62.4) stock Z 13.50 reach Z 4.50; id 2 cut 8.2 mm2 of it; 1 antenna slot
+   X 350.4..350.6 Y 232.6..240.0: 2.5 mm2, tallest 3.25 mm at (350.4, 239.2) stock Z 16.50 reach Z 13.25; id 2 cut 1.0 mm2 of it; 7 cavity
+   X 223.8..225.0 Y 50.0..56.4: 2.0 mm2, tallest 2.50 mm at (223.8, 50.0) stock Z 11.00 reach Z 8.50; id 2 cut 0.0 mm2 of it; 6 board pocket
+   X 142.6..146.4 Y 167.0..169.2: 1.8 mm2, tallest 4.94 mm at (143.0, 168.0) stock Z 12.39 reach Z 7.46; id 2 cut 1.8 mm2 of it; 7 cavity
+   X 288.4..291.0 Y 54.8..59.4: 1.8 mm2, tallest 12.05 mm at (289.8, 55.2) stock Z 16.55 reach Z 4.50; id 2 cut 1.8 mm2 of it; 1 antenna slot
+   X 244.2..246.6 Y 59.8..62.2: 1.3 mm2, tallest 9.00 mm at (244.2, 60.2) stock Z 13.50 reach Z 4.50; id 2 cut 1.3 mm2 of it; 1 antenna slot
+   X 288.4..290.8 Y 59.8..62.2: 1.3 mm2, tallest 12.05 mm at (290.4, 61.2) stock Z 16.55 reach Z 4.50; id 2 cut 1.3 mm2 of it; 1 antenna slot
+   X 244.2..246.6 Y 54.8..57.0: 1.2 mm2, tallest 9.00 mm at (246.0, 54.8) stock Z 13.50 reach Z 4.50; id 2 cut 1.2 mm2 of it; 1 antenna slot
+   X 100.0..103.0 Y 234.4..236.4: 1.0 mm2, tallest 4.99 mm at (101.0, 236.0) stock Z 12.26 reach Z 7.27; id 2 cut 1.0 mm2 of it; 7 cavity
+   X 222.2..224.0 Y 100.6..101.0: 0.7 mm2, tallest 2.60 mm at (223.2, 100.6) stock Z 11.00 reach Z 8.40; id 2 cut 0.5 mm2 of it; 6 board pocket
+   X 79.6..82.0 Y 279.0..279.4: 0.6 mm2, tallest 4.27 mm at (81.8, 279.0) stock Z 16.50 reach Z 12.23; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 151.2..153.8 Y 194.6..195.6: 0.6 mm2, tallest 4.99 mm at (151.6, 195.2) stock Z 12.47 reach Z 7.47; id 2 cut 0.6 mm2 of it; 7 cavity
+   X 317.2..319.0 Y 218.6..220.0: 0.6 mm2, tallest 3.27 mm at (317.2, 218.6) stock Z 16.50 reach Z 13.23; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 247.0..247.6 Y 54.6..54.6: 0.2 mm2, tallest 9.00 mm at (247.0, 54.6) stock Z 13.50 reach Z 4.50; id 2 cut 0.2 mm2 of it; 1 antenna slot
+   X 287.4..288.0 Y 54.6..54.6: 0.2 mm2, tallest 9.00 mm at (287.8, 54.6) stock Z 13.50 reach Z 4.50; id 2 cut 0.2 mm2 of it; 1 antenna slot
+   X 244.0..244.0 Y 58.8..59.4: 0.2 mm2, tallest 9.00 mm at (244.0, 59.2) stock Z 13.50 reach Z 4.50; id 2 cut 0.2 mm2 of it; 1 antenna slot
+   X 244.0..244.0 Y 57.6..58.0: 0.1 mm2, tallest 9.00 mm at (244.0, 57.6) stock Z 13.50 reach Z 4.50; id 2 cut 0.1 mm2 of it; 1 antenna slot
+   X 161.4..161.4 Y 201.4..201.8: 0.1 mm2, tallest 4.03 mm at (161.4, 201.4) stock Z 16.50 reach Z 12.47; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 143.8..144.0 Y 253.0..253.4: 0.1 mm2, tallest 4.05 mm at (144.0, 253.0) stock Z 16.50 reach Z 12.45; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 231.0..231.4 Y 328.2..328.2: 0.1 mm2, tallest 3.26 mm at (231.0, 328.2) stock Z 16.50 reach Z 13.24; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 95.8..96.0 Y 424.8..424.8: 0.1 mm2, tallest 3.27 mm at (95.8, 424.8) stock Z 16.50 reach Z 13.23; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 95.4..95.4 Y 257.4..257.6: 0.1 mm2, tallest 4.25 mm at (95.4, 257.4) stock Z 16.50 reach Z 12.25; id 2 cut 0.0 mm2 of it; 7 cavity
+   X 87.4..87.4 Y 238.8..239.0: 0.1 mm2, tallest 4.23 mm at (87.4, 238.8) stock Z 16.50 reach Z 12.27; id 2 cut 0.0 mm2 of it; 7 cavity

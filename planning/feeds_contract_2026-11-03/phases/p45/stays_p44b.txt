@@ -1,0 +1,12 @@
+out_p44b.npz: fits 4463.2 mm2 = rim (at most 0.4 mm from a wall) 1927.4 + the rest 2535.8
+place                            fits      rim     rest   rest never cut by id 2
+1 antenna slot                   59.8     45.3     14.5                      0.0
+2 control relief                 86.6     22.7     63.9                      0.0
+3 slit slot                     121.8    121.8      0.0                      0.0
+4 ESP relief                     59.4     32.0     27.4                     26.0
+5 step shelf                    525.7    235.3    290.4                    262.4
+6 board pocket                  861.0    463.8    397.2                    357.0
+7 cavity                       2735.8    995.2   1740.7                   1562.1
+other (outside the seven)        13.2     11.4      1.8                      0.0
+the rest: 260 pieces; the 3 largest:
+   X 93.2..351.4 Y 248.6..426.4: 551.4 mm2, tallest 9.00 mm at (351.4, 248.6) stock Z 25.50 reach Z 16.50; id 2 cut 0.0 mm2 of it; 7 cavity

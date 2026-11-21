@@ -15,9 +15,9 @@
 //!   height), so that stock is wood. A coarse planner cell cannot read a
 //!   strip, so the caller sets `strips` only on remaining stock.
 //!
-//! One caller: the read of the places that stand at the end of the plan
-//! (`left_stock`). No pass cuts the strip cells (the strip pass of P44 is
-//! not landed: `planning/feeds_contract_2026-11-03/phases/P44_*.md`).
+//! Two callers: the strip pass of an op on remaining stock
+//! (`level_contour::strip_pass`, P45), which cuts the strip cells, and the
+//! read of the places that stand at the end of the plan (`left_stock`).
 
 use crate::dexel_stock::TriDexelStock;
 use crate::surface::slope::SurfaceHeightmap;
@@ -30,12 +30,15 @@ use super::stock_top_z_at;
 /// border, the layout of `build_material_bool_grid`).
 pub(super) struct Standing {
     pub padded: Vec<bool>,
+    pub padded_rows: usize,
     pub padded_cols: usize,
     /// The stock above the cutter at each standing cell (mm; not padded):
     /// the stock at a material cell above its floor, or the tallest stock
     /// that the disc of a strip cell covers in full above its floor. 0
     /// elsewhere.
     pub height: Vec<f32>,
+    /// The number of standing cells.
+    pub count: usize,
 }
 
 impl Standing {
@@ -102,8 +105,10 @@ pub(super) fn standing_cells(
     if rows == 0 || cols == 0 || cs <= 0.0 {
         return Standing {
             padded,
+            padded_rows,
             padded_cols,
             height,
+            count: 0,
         };
     }
     for row in 0..rows {
@@ -235,10 +240,13 @@ pub(super) fn standing_cells(
             }
         }
     }
+    let count = padded.iter().filter(|&&c| c).count();
     Standing {
         padded,
+        padded_rows,
         padded_cols,
         height,
+        count,
     }
 }
 

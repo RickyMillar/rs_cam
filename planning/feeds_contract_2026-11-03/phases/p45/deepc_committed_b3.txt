@@ -1,0 +1,5 @@
+outF_b3c.nc 'Front 3D rough' bar 6.332 tol 0.1: pieces with a node over the bar 0 (0 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_b3c.nc 'Back rest' bar 6.5 tol 0.1: pieces with a node over the bar 6 (38 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_b3c.nc 'Back bulk' bar 4.666 tol 0.1: pieces with a node over the bar 2 (11 nodes); of them with a node 0.1 mm or more inside the disc edge: 0 pieces, 0 nodes, deepest 0.00 mm
+out_b3c.nc 'Back rest': nodes that a fed piece passes more than 0.3 mm under the target: 278 (11.12 mm2)
+   0.1 mm or more inside the disc edge: 8, deepest 3.60 mm; nearer to the edge: 270, deepest 3.34 mm, the most inside 0.099 mm

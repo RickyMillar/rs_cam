@@ -1,0 +1,10 @@
+piece 2553: (50.324, 87.8, 16.55) -> (96.2, 87.8, 16.55): 2 nodes over the bar, lowered 7.94..7.94 mm, inside the edge 0.0000..0.0000 mm, tops before 24.49..24.49
+piece 2565: (98.476, 100.4, 16.55) -> (97.0, 100.4, 16.55): 2 nodes over the bar, lowered 8.86..8.86 mm, inside the edge 0.0000..0.0000 mm, tops before 25.41..25.41
+piece 17241: (348.6, 127.722, 18.795) -> (348.6, 129.321, 18.795): 3 nodes over the bar, lowered 6.68..6.70 mm, inside the edge 0.0000..0.0000 mm, tops before 25.47..25.50
+piece 18740: (348.6, 423.6, 16.5) -> (348.6, 247.073, 16.5): 862 nodes over the bar, lowered 8.62..9.00 mm, inside the edge 0.0000..0.0000 mm, tops before 25.12..25.50
+piece 18741: (348.6, 247.073, 16.5) -> (348.6, 246.873, 13.5): 1 nodes over the bar, lowered 10.10..10.10 mm, inside the edge 0.0000..0.0000 mm, tops before 25.50..25.50
+piece 18743: (348.6, 242.474, 13.5) -> (348.6, 242.274, 16.5): 1 nodes over the bar, lowered 10.89..10.89 mm, inside the edge 0.0000..0.0000 mm, tops before 25.50..25.50
+piece 18786: (230.2, 56.8, 12.957) -> (230.311, 57.557, 12.957): 1 nodes over the bar, lowered 7.54..7.54 mm, inside the edge 0.0027..0.0027 mm, tops before 20.50..20.50
+piece 18794: (230.311, 59.443, 13.219) -> (230.2, 61.387, 13.219): 6 nodes over the bar, lowered 7.28..11.86 mm, inside the edge 0.0041..0.0611 mm, tops before 20.50..25.07
+piece 18923: (345.0, 87.8, 11.0) -> (345.0, 89.4, 11.0): 1 nodes over the bar, lowered 8.50..8.50 mm, inside the edge 0.0000..0.0000 mm, tops before 19.50..19.50
+piece 18949: (50.0, 89.4, 11.0) -> (50.0, 87.8, 11.0): 2 nodes over the bar, lowered 8.50..8.50 mm, inside the edge 0.0000..0.0000 mm, tops before 19.50..19.50

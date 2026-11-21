@@ -1,0 +1,477 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/level_contour.rs b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+index da8de2c33..ae4426aad 100644
+--- a/crates/rs_cam_core/src/adaptive3d/level_contour.rs
++++ b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+@@ -1216,6 +1216,313 @@ thread_local! {
+         const { std::cell::Cell::new(false) };
+ }
+ 
++/// P44: the length (mm) of the contour line of `region` (each ring of its
++/// outline moved inside by [`contour_line_inset`]): the least length that
++/// the plan of the region cuts. 0: the region has no room for the line.
++pub(super) fn contour_line_length(
++    region: &crate::polygon::Polygon2,
++    cell: f64,
++    cut_tolerance: f64,
++) -> f64 {
++    crate::polygon::offset_polygon(region, contour_line_inset(cell, cut_tolerance))
++        .iter()
++        .flat_map(polygon_rings)
++        .map(|ring| {
++            ring.iter()
++                .zip(ring.iter().cycle().skip(1))
++                .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
++                .sum::<f64>()
++        })
++        .sum()
++}
++
++thread_local! {
++    /// P45 probe only.
++    static P45_STRIP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
++/// P45 probe only: the planner stock as rows, cols, origin, cell, then the
++/// ray top and the conservative top of each cell.
++fn p45_dump_stock(stock: &TriDexelStock, path: &str) {
++    let g = &stock.z_grid;
++    let mut b: Vec<u8> = Vec::new();
++    b.extend((g.rows as u64).to_le_bytes());
++    b.extend((g.cols as u64).to_le_bytes());
++    b.extend(g.origin_u.to_le_bytes());
++    b.extend(g.origin_v.to_le_bytes());
++    b.extend(g.cell_size.to_le_bytes());
++    for row in 0..g.rows {
++        for col in 0..g.cols {
++            b.extend((stock_top_z_at(stock, row, col) as f32).to_le_bytes());
++        }
++    }
++    for row in 0..g.rows {
++        for col in 0..g.cols {
++            b.extend(g.conservative_top_at(row, col).to_le_bytes());
++        }
++    }
++    let _ = std::fs::write(path, b);
++}
++
++/// P44: the strip pass of an op on remaining stock, after its last level.
++///
++/// The level grid reads the stock at the tool centre only, so a strip
++/// beside a wall that is narrower than the tool radius makes no region at
++/// any level (the corner and the wall margin that a larger tool left). The
++/// wall pass cuts such a strip only along a region that the level plans.
++/// This pass cuts the rest:
++///
++/// - The cells: [`super::standing::standing_cells`] at the bottom level
++///   with the strip read (a material cell that the plan left, or a strip
++///   cell).
++/// - The bands: the connected cells, grown on their open side so that the
++///   contour line fits ([`grow_open_side`]).
++/// - The cut: the region contour along each band ([`ContourRule::Region`]),
++///   in rounds, one Depth/Pass per round (`wall_read`), under the one-pass
++///   guard. A band whose line is shorter than `min_region_cut_length_mm`,
++///   or that has no room for the line, is not cut and is recorded.
++///
++/// On with the guard of the one-pass rule (`OnePass::on`:
++/// `OnePassHold::RemainingStock`, where the planner cell is the simulation
++/// cell): a coarse cell cannot read a strip. No dial of its own (ruling D-4
++/// of P42: the wall passes are part of the one-pass rule).
++pub(super) fn strip_pass(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &mut TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    segments: &mut Vec<Adaptive3dSegment>,
++    cursor: &mut PlannerCursor,
++) -> LevelContourStats {
++    let none = LevelContourStats {
++        min_factor: 1.0,
++        ..LevelContourStats::default()
++    };
++    if !ctx.one_pass.on {
++        return none;
++    }
++    #[cfg(test)]
++    if REGION_CONTOUR_OFF_FOR_CONTROL.with(std::cell::Cell::get) {
++        return none;
++    }
++    let cell = material_stock.z_grid.cell_size;
++    let mut standing =
++        super::standing::standing_cells(ctx, material_stock, surface_hm, z_level, true);
++    if standing.count == 0 || cell <= 0.0 {
++        return none;
++    }
++    let outlines = |standing: &super::standing::Standing, stock: &TriDexelStock| {
++        crate::polygon::detect_containment(
++            crate::geometry::contour_extract::marching_squares_bool_grid(
++                &standing.padded,
++                standing.padded_rows,
++                standing.padded_cols,
++                stock.z_grid.origin_u - cell,
++                stock.z_grid.origin_v - cell,
++                cell,
++            )
++            .into_iter()
++            .filter(|ring| ring.len() >= 3)
++            .map(crate::polygon::Polygon2::new)
++            .collect(),
++        )
++    };
++    // The operator dial, read on each band before it grows (the ONE rule of
++    // the F-038 forecast): a band whose cut is under the least cut length is
++    // not worth its entry. The cut of a band is its contour line; a band
++    // too narrow for the line (a strip of one to three cells) is cut there
++    // and back along its own length, which is its outline.
++    let mut dropped = 0usize;
++    if ctx.min_region_cut_length_mm > 0.0 {
++        let grid = &material_stock.z_grid;
++        for band in outlines(&standing, material_stock) {
++            let line = contour_line_length(&band, cell, ctx.cut_tolerance);
++            let length = if line > 0.0 {
++                line
++            } else {
++                polygon_rings(&band)
++                    .map(|ring| {
++                        ring.iter()
++                            .zip(ring.iter().cycle().skip(1))
++                            .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
++                            .sum::<f64>()
++                    })
++                    .sum()
++            };
++            if length >= ctx.min_region_cut_length_mm {
++                continue;
++            }
++            dropped += 1;
++            // The cells of the band leave the grid.
++            let (mut lo, mut hi) = (
++                P2::new(f64::INFINITY, f64::INFINITY),
++                P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
++            );
++            for p in &band.exterior {
++                lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
++                hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
++            }
++            let index = |v: f64, origin: f64, n: usize| -> usize {
++                #[expect(
++                    clippy::cast_possible_truncation,
++                    clippy::cast_sign_loss,
++                    reason = "clamped to 0..n before the cast"
++                )]
++                {
++                    ((v - origin) / cell)
++                        .round()
++                        .clamp(0.0, n.saturating_sub(1) as f64) as usize
++                }
++            };
++            for row in index(lo.y, grid.origin_v, grid.rows)..=index(hi.y, grid.origin_v, grid.rows)
++            {
++                for col in
++                    index(lo.x, grid.origin_u, grid.cols)..=index(hi.x, grid.origin_u, grid.cols)
++                {
++                    let (x, y) = grid.cell_to_world(row, col);
++                    if band.contains_point(&P2::new(x, y))
++                        && let Some(c) = standing
++                            .padded
++                            .get_mut((row + 1) * standing.padded_cols + (col + 1))
++                    {
++                        *c = false;
++                    }
++                }
++            }
++            ctx.unplanned
++                .borrow_mut()
++                .push(super::left_stock::Unplanned {
++                    z_level,
++                    outline: band,
++                    why: super::LeftWhy::ShortForecast,
++                });
++        }
++    }
++    grow_open_side(ctx, material_stock, surface_hm, z_level, &mut standing);
++    let bands = outlines(&standing, material_stock);
++    // A grown band with no room for the line is recorded (none is expected:
++    // the growth gives each band the room).
++    let mut kept: Vec<&crate::polygon::Polygon2> = Vec::new();
++    for band in &bands {
++        if contour_line_length(band, cell, ctx.cut_tolerance) > 0.0 {
++            kept.push(band);
++        } else {
++            ctx.unplanned
++                .borrow_mut()
++                .push(super::left_stock::Unplanned {
++                    z_level,
++                    outline: band.clone(),
++                    why: super::LeftWhy::NoField,
++                });
++        }
++    }
++    P45_STRIP.with(|c| c.set(true));
++    let stats = contour_rounds(
++        ctx,
++        material_stock,
++        surface_hm,
++        WallLevel {
++            z_level,
++            next_level_z: None,
++        },
++        &kept,
++        ContourRule::Region,
++        segments,
++        cursor,
++        &mut Vec::new(),
++    );
++    P45_STRIP.with(|c| c.set(false));
++    tracing::debug!(
++        z = z_level,
++        bands = bands.len(),
++        cut = kept.len(),
++        under_the_dial = dropped,
++        runs = stats.runs,
++        peak_load = stats.peak_load,
++        "P44 strip pass"
++    );
++    stats
++}
++
++/// P44: grow the cells of `standing` on their open side, so that the
++/// contour line ([`contour_line_inset`]) has room in a band that is one cell
++/// wide. A band of strip cells lies against the tool-centre limit of a
++/// wall. The line must stand one planner cell plus the cut tolerance inside
++/// that limit, so the band needs that margin twice plus one cell.
++///
++/// A neighbour joins when its level floor is at most one planner cell above
++/// the floor of the cell that it joins from: the ground beside the band,
++/// never the wall (the tool-centre floor steps up at the wall). The grown
++/// cells stay inside the boundary of the op.
++#[expect(
++    clippy::indexing_slicing,
++    reason = "each index is inside the padded grid: row < rows + 2 and col < cols + 2"
++)]
++fn grow_open_side(
++    ctx: &ClearZLevelContext<'_>,
++    stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    standing: &mut super::standing::Standing,
++) {
++    let grid = &stock.z_grid;
++    let (rows, cols, cs) = (grid.rows, grid.cols, grid.cell_size);
++    let pc = standing.padded_cols;
++    let floor = |row: usize, col: usize| {
++        super::intended_floor::level_floor_z(
++            surface_hm.z_or_bbox_floor_at(row, col),
++            ctx.stock_to_leave,
++            z_level,
++        )
++    };
++    // The cells to grow: the line margin twice plus one cell, less the one
++    // cell that the band has.
++    let steps = crate::util::steps::steps(2.0 * contour_line_inset(cs, ctx.cut_tolerance), cs)
++        .unwrap_or(1)
++        .max(1);
++    let mut frontier: Vec<(usize, usize)> = (0..rows)
++        .flat_map(|row| (0..cols).map(move |col| (row, col)))
++        .filter(|&(row, col)| standing.padded[(row + 1) * pc + (col + 1)])
++        .collect();
++    for _ in 0..steps {
++        let mut next = Vec::new();
++        for &(row, col) in &frontier {
++            let from = floor(row, col);
++            for (dr, dc) in [
++                (-1isize, -1isize),
++                (-1, 0),
++                (-1, 1),
++                (0, -1),
++                (0, 1),
++                (1, -1),
++                (1, 0),
++                (1, 1),
++            ] {
++                let (Some(r2), Some(c2)) = (
++                    row.checked_add_signed(dr).filter(|&v| v < rows),
++                    col.checked_add_signed(dc).filter(|&v| v < cols),
++                ) else {
++                    continue;
++                };
++                let i = (r2 + 1) * pc + (c2 + 1);
++                if standing.padded[i] || floor(r2, c2) > from + cs {
++                    continue;
++                }
++                let (x, y) = grid.cell_to_world(r2, c2);
++                if ctx.centre_clip.is_some_and(|clip| !clip.contains(x, y)) {
++                    continue;
++                }
++                standing.padded[i] = true;
++                next.push((r2, c2));
++            }
++        }
++        frontier = next;
++    }
++    if let Some(clip) = ctx.region_clip.as_ref() {
++        clip.restrict_regions(&mut standing.padded, standing.padded_rows, pc);
++    }
++}
++
+ /// The rounds of a contour along `regions` ([`region_wall_pass`] has the
+ /// rules of the wall pass; [`ContourRule`] says what differs for a region
+ /// contour). `shipped` gets the first point of each run that ships.
+@@ -1300,9 +1607,21 @@ fn contour_rounds(
+         }
+     }
+     let mut marked = false;
++    let probe_dir = if next_level_z.is_none() && contour == ContourRule::Region {
++        std::env::var("P45PROBE").ok().filter(|_| P45_STRIP.with(std::cell::Cell::get))
++    } else {
++        None
++    };
++    let mut probe_round = 0usize;
+     loop {
++        if let Some(dir) = probe_dir.as_ref() {
++            p45_dump_stock(material_stock, &format!("{dir}/stock_{probe_round}.bin"));
++        }
++        let mut probe_lines = String::new();
++        let mut probe_ring = 0usize;
+         let mut runs: Vec<Vec<P3>> = Vec::new();
+         for ring in &mut rings {
++            probe_ring += 1;
+             let mut points = Vec::with_capacity(ring.len());
+             let mut standing = Vec::with_capacity(ring.len());
+             let mut refused = Vec::with_capacity(ring.len());
+@@ -1392,6 +1711,7 @@ fn contour_rounds(
+             // move to a neighbour with a higher Z would pass under the
+             // stock of that neighbour at the lower Z (measured: 9.7 mm deep
+             // at the disc edge, at 6 mm per pass).
++            let probe_own: Vec<f64> = points.iter().map(|(p, _)| p.z).collect();
+             if contour == ContourRule::Region && points.len() >= 3 {
+                 let n = points.len();
+                 let own: Vec<f64> = points.iter().map(|(p, _)| p.z).collect();
+@@ -1402,6 +1722,22 @@ fn contour_rounds(
+                 }
+             }
+             let path: Vec<P3> = points.iter().map(|(p, _)| *p).collect();
++            if probe_dir.is_some() {
++                use std::fmt::Write as _;
++                for (i, (p, top)) in points.iter().enumerate() {
++                    let _ = writeln!(
++                        probe_lines,
++                        "{probe_round} {probe_ring} {i} {:.4} {:.4} {:.4} {:.4} {} {} {:.4}",
++                        p.x,
++                        p.y,
++                        probe_own.get(i).copied().unwrap_or(f64::NAN),
++                        p.z,
++                        u8::from(standing.get(i).copied().unwrap_or(false)),
++                        u8::from(refused.get(i).copied().unwrap_or(false)),
++                        top,
++                    );
++                }
++            }
+             let mut flags = merge_short_gaps(
+                 &path,
+                 &standing,
+@@ -1445,6 +1781,19 @@ fn contour_rounds(
+                 runs.push(run);
+             }
+         }
++        if let Some(dir) = probe_dir.as_ref() {
++            let _ = std::fs::write(format!("{dir}/points_{probe_round}.txt"), &probe_lines);
++            let mut t = String::new();
++            for run in &runs {
++                use std::fmt::Write as _;
++                for p in run {
++                    let _ = write!(t, "{:.4},{:.4},{:.4} ", p.x, p.y, p.z);
++                }
++                t.push('\n');
++            }
++            let _ = std::fs::write(format!("{dir}/runs_{probe_round}.txt"), &t);
++        }
++        probe_round += 1;
+         if runs.is_empty() {
+             break;
+         }
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index ebb3a7538..76d5c3d5e 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1734,6 +1734,21 @@ fn adaptive_3d_segments_probed(
+         }
+     }
+ 
++    // P45: the strip pass of an op on remaining stock, after its last
++    // level (`level_contour::strip_pass`).
++    if let Some(&bottom) = z_levels.last()
++        && params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
++    {
++        check_cancel(cancel)?;
++        super::level_contour::strip_pass(
++            &ctx,
++            &mut material_stock,
++            &surface_hm,
++            bottom,
++            &mut segments,
++            &mut cursor,
++        );
++    }
+     let left_stock = super::left_stock::left_stock(
+         &ctx.unplanned.take(),
+         ctx.dropped_cut_groups.get(),
+diff --git a/crates/rs_cam_core/src/adaptive3d/standing.rs b/crates/rs_cam_core/src/adaptive3d/standing.rs
+index c05181e6b..33621aa88 100644
+--- a/crates/rs_cam_core/src/adaptive3d/standing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/standing.rs
+@@ -30,12 +30,15 @@ use super::stock_top_z_at;
+ /// border, the layout of `build_material_bool_grid`).
+ pub(super) struct Standing {
+     pub padded: Vec<bool>,
++    pub padded_rows: usize,
+     pub padded_cols: usize,
+     /// The stock above the cutter at each standing cell (mm; not padded):
+     /// the stock at a material cell above its floor, or the tallest stock
+     /// that the disc of a strip cell covers in full above its floor. 0
+     /// elsewhere.
+     pub height: Vec<f32>,
++    /// The number of standing cells.
++    pub count: usize,
+ }
+ 
+ impl Standing {
+@@ -102,8 +105,10 @@ pub(super) fn standing_cells(
+     if rows == 0 || cols == 0 || cs <= 0.0 {
+         return Standing {
+             padded,
++            padded_rows,
+             padded_cols,
+             height,
++            count: 0,
+         };
+     }
+     for row in 0..rows {
+@@ -235,10 +240,13 @@ pub(super) fn standing_cells(
+             }
+         }
+     }
++    let count = padded.iter().filter(|&&c| c).count();
+     Standing {
+         padded,
++        padded_rows,
+         padded_cols,
+         height,
++        count,
+     }
+ }
+ 
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index dc4bab30f..c52fe3f91 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -3475,8 +3475,10 @@ fn stock_with_no_drop_record_does_not_raise_the_finding_p44() {
+     let standing = || {
+         Some(super::standing::Standing {
+             padded: padded.clone(),
++            padded_rows: n + 2,
+             padded_cols: n + 2,
+             height: height.clone(),
++            count: padded.iter().filter(|&&c| c).count(),
+         })
+     };
+     let piece = |x0: f64, x1: f64| super::left_stock::Unplanned {

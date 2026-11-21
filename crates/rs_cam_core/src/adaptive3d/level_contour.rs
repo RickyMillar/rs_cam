@@ -523,6 +523,7 @@ pub(super) fn level_contour_pass(
         segments,
         cursor,
         &mut stats,
+        None,
     );
     if let Some(band) = ctx.band_edge.borrow_mut().as_mut() {
         band.scan(segments, ctx);
@@ -589,6 +590,10 @@ fn run_feed_cap(
 /// between `FeedCapStart` and `FeedCapEnd` when it has a cap. The C4
 /// contour and the P42 wall pass both call it, so a run of either is
 /// planned, stamped and capped by one code path.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn emit_runs(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
@@ -597,6 +602,7 @@ fn emit_runs(
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     stats: &mut LevelContourStats,
+    hold: Option<StripHold<'_>>,
 ) {
     let drape = ctx.stamp_drape();
     while !left.is_empty() {
@@ -643,6 +649,11 @@ fn emit_runs(
             // shortest cut that is a cut.
             path.push(P3::new(first.x + cell, first.y, first.z));
         }
+        // P45: the strip pass holds the one-pass Z along the chords that
+        // ship, in the order and from the start point that ship.
+        if let Some(hold) = hold {
+            path = hold_shipped_chords(ctx, material_stock, hold, path, cell);
+        }
         push_segment_with_stamp(
             segments,
             material_stock,
@@ -683,6 +694,98 @@ fn emit_runs(
         }
         stats.runs += 1;
     }
+}
+
+/// P45: what [`hold_shipped_chords`] reads.
+#[derive(Clone, Copy)]
+struct StripHold<'a> {
+    state: &'a StripTops,
+    surface_hm: &'a SurfaceHeightmap,
+    z_level: f64,
+}
+
+/// P45: raise the Z of a run of the strip pass until each chord that ships
+/// holds the one-pass Z of [`wall_read`] at each point along it.
+///
+/// The Z of a run is read at the ring points. The emitter ships the
+/// simplified chords (`simplify_path_3d` at the cut tolerance, in
+/// `path::emitted_cut_path`), which leave a ring point by up to that
+/// tolerance, in XY and in Z. A chord that drops a corner point of the line
+/// holds cell centres that no ring point holds (on the Wanaka back a chord
+/// of round 1 left the corner point (230.200, 59.800) by 0.09 mm and held 6
+/// centres of the column X 233.2 up to 0.061 mm inside its edge, which the
+/// ring points have on their edge).
+///
+/// So this reads the chords that ship: the same simplification on the same
+/// points, a read at one cell along each chord, and each point of the run
+/// under a chord with a higher read is raised to that read. It repeats on
+/// the raised run, because the raise changes the chords. Each repeat that
+/// changes the run raises a point to one of the reads of the run, so the
+/// count of repeats is at most the count of points.
+fn hold_shipped_chords(
+    ctx: &ClearZLevelContext<'_>,
+    stock: &TriDexelStock,
+    hold: StripHold<'_>,
+    mut run: Vec<P3>,
+    cell: f64,
+) -> Vec<P3> {
+    if cell <= 0.0 {
+        return run;
+    }
+    for _ in 0..run.len() {
+        let keep = crate::toolpath::simplify_path_3d_keep_mask(&run, ctx.cut_tolerance);
+        let kept: Vec<usize> = keep
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &k)| k.then_some(i))
+            .collect();
+        let mut changed = false;
+        for pair in kept.windows(2) {
+            let (&[ia, ib], Some(a), Some(b)) = (
+                pair,
+                pair.first().and_then(|&i| run.get(i)).copied(),
+                pair.get(1).and_then(|&i| run.get(i)).copied(),
+            ) else {
+                continue;
+            };
+            let n = crate::util::steps::steps((b.x - a.x).hypot(b.y - a.y), cell)
+                .unwrap_or(1)
+                .max(1);
+            let mut need = f64::NEG_INFINITY;
+            for j in 0..=n {
+                let t = j as f64 / n as f64;
+                let p = P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
+                if ctx.centre_clip.is_some_and(|clip| !clip.contains(p.x, p.y)) {
+                    continue;
+                }
+                let floor = super::clearing::lift_to_level(ctx, hold.surface_hm, hold.z_level, p).z;
+                let read = wall_read(
+                    ctx,
+                    stock,
+                    hold.surface_hm,
+                    (hold.z_level, WallRule::RemainingStock),
+                    p,
+                    floor,
+                    Some(hold.state),
+                );
+                if read.z > a.z + t * (b.z - a.z) {
+                    need = need.max(read.z);
+                }
+            }
+            if need.is_finite() {
+                for p in run.get_mut(ia..=ib).unwrap_or(&mut []) {
+                    if p.z < need {
+                        p.z = need;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    run
 }
 
 /// P42: the wall pass of a level ([`region_wall_pass`]) is on. The session
@@ -823,6 +926,7 @@ fn wall_read(
     (z_level, rule): (f64, WallRule),
     p: P2,
     floor: f64,
+    strip: Option<&StripTops>,
 ) -> WallRead {
     let grid = &stock.z_grid;
     let cs = grid.cell_size;
@@ -862,11 +966,22 @@ fn wall_read(
             if d_sq > r_sq {
                 continue;
             }
+            // P45: the strip pass counts a centre that the disc holds with
+            // room to spare, the same test as the lowering of its state
+            // (`StripTops::lower_under`). A centre on the disc edge is in
+            // neither: no cut takes stock there.
+            if strip.is_some() && !TriDexelStock::disc_holds_cell_core(du, dv, r_sq, cs) {
+                continue;
+            }
             let profile = ctx
                 .lut
                 .height_at_dist_sq(d_sq.min(ctx.lut.radius_sq()))
                 .unwrap_or(0.0);
-            let over = stock_top_z_at(stock, row, col) - profile;
+            // P45: the strip pass reads the bound of the stock at the cell
+            // centre (`StripTops`), not the ray top: the ray top of a cell
+            // at the edge of earlier discs is a blend.
+            let top = strip.map_or_else(|| stock_top_z_at(stock, row, col), |s| s.at(row, col));
+            let over = top - profile;
             if over > floor {
                 over_top = over_top.max(over);
                 inside.push((row, col, du, dv, over));
@@ -934,10 +1049,18 @@ fn wall_read(
         if over <= z + cs {
             continue;
         }
-        if TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs) < 1.0 {
+        // P45: the strip pass counts each cell whose centre the disc holds:
+        // its cut lowers that centre, so the next round reads the cut
+        // (`StripTops`). The other contours read the ray top, which a part
+        // cover lowers by a fraction only; they count the cells that the
+        // disc covers in full.
+        if strip.is_none() && TriDexelStock::disc_cell_coverage(du, dv, r_sq, cs) < 1.0 {
             continue;
         }
         disc_top = disc_top.max(over);
+        if strip.is_some() {
+            continue;
+        }
         if super::clearing::cell_has_material(
             stock,
             surface_hm,
@@ -960,7 +1083,15 @@ fn wall_read(
         for col in col_lo..=col_hi {
             let du = grid.origin_u + col as f64 * cs - p.x;
             let d_sq = du * du + dv * dv;
-            if d_sq <= r_sq || d_sq > far * far {
+            // The ring starts where pass 1 stops (P45: the strip read holds
+            // a centre with room to spare, so a centre on the disc edge is
+            // in this ring).
+            let in_pass_1 = if strip.is_some() {
+                d_sq <= r_sq && TriDexelStock::disc_holds_cell_core(du, dv, r_sq, cs)
+            } else {
+                d_sq <= r_sq
+            };
+            if in_pass_1 || d_sq > far * far {
                 continue;
             }
             // The profile height at the cutter edge, as the stamp reads a
@@ -1111,6 +1242,7 @@ pub(super) fn region_wall_pass(
         segments,
         cursor,
         &mut Vec::new(),
+        None,
     )
 }
 
@@ -1198,6 +1330,7 @@ pub(super) fn region_contour_pass(
         segments,
         cursor,
         &mut shipped,
+        None,
     );
     // A region is cut when a run of its line shipped (the line stands
     // inside the outline of its region).
@@ -1214,6 +1347,465 @@ thread_local! {
     /// its claim needs it.
     pub(super) static REGION_CONTOUR_OFF_FOR_CONTROL: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
+}
+
+/// P44: the length (mm) of the contour line of `region` (each ring of its
+/// outline moved inside by [`contour_line_inset`]): the least length that
+/// the plan of the region cuts. 0: the region has no room for the line.
+pub(super) fn contour_line_length(
+    region: &crate::polygon::Polygon2,
+    cell: f64,
+    cut_tolerance: f64,
+) -> f64 {
+    crate::polygon::offset_polygon(region, contour_line_inset(cell, cut_tolerance))
+        .iter()
+        .flat_map(polygon_rings)
+        .map(|ring| {
+            ring.iter()
+                .zip(ring.iter().cycle().skip(1))
+                .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
+                .sum::<f64>()
+        })
+        .sum()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test control only: no strip pass (the tree before P45), so that a
+    /// test can show that its claim needs the pass.
+    pub(super) static STRIP_PASS_OFF_FOR_CONTROL: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// P45: the stock that the strip pass reads at each cell centre.
+///
+/// The planner stamp lowers a cell that a disc covers in part by the
+/// covered fraction of its stock (`ray_blend_above`). So the ray top of a
+/// cell at the edge of earlier discs is an average: it stands under the
+/// stock at the cell centre when no earlier disc held the centre. A contour
+/// on a new line holds such a centre inside its disc and takes that stock
+/// whole (P44 build 2, traced: 11 centres of the Wanaka back stood 3.2 to
+/// 7.8 mm above their ray top, each 0.000 to 0.162 mm outside the disc edge
+/// of the level cuts, and the strip pass cut them 6.61 to 8.50 mm deep at
+/// 6 mm per pass).
+///
+/// The state is an upper bound of the stock at the centre of each cell:
+/// - at the start, the bound that the stamp keeps for the whole cell
+///   (`DexelGrid::conservative_top`: lowered only by a stamp that covers the
+///   cell in full), where the cell holds stock;
+/// - then lowered under each cut that the strip pass ships, at each cell
+///   whose centre the swept disc holds with room to spare
+///   (`TriDexelStock::disc_holds_cell_core`), to the cutter surface over the
+///   centre ([`StripTops::scan`], along [`shipped_cut_path`], as the C4 band
+///   state is).
+///
+/// So a centre that the pass cut reads the Z of that cut in the next round,
+/// and the rounds go down one Depth/Pass at a time. The ray top alone does
+/// not: a centre that the disc edge holds stays part-covered at each round.
+pub(super) struct StripTops {
+    tops: Vec<f32>,
+    rows: usize,
+    cols: usize,
+    origin_u: f64,
+    origin_v: f64,
+    cell: f64,
+    /// Segments already lowered into the state.
+    scanned: usize,
+}
+
+impl StripTops {
+    /// The state on `stock` before the pass; `segments_now` is the count of
+    /// segments that are already in the stock.
+    fn new(stock: &TriDexelStock, segments_now: usize) -> Self {
+        let grid = &stock.z_grid;
+        let tops = (0..grid.rows * grid.cols)
+            .map(|i| {
+                let (row, col) = (i / grid.cols.max(1), i % grid.cols.max(1));
+                match crate::stock::dexel::ray_top(grid.ray(row, col)) {
+                    // The bound of the whole cell; never under the ray top.
+                    Some(top) => top.max(grid.conservative_top_at(row, col)),
+                    // No stock in the cell: the read of an empty ray.
+                    #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
+                    None => stock_top_z_at(stock, row, col) as f32,
+                }
+            })
+            .collect();
+        Self {
+            tops,
+            rows: grid.rows,
+            cols: grid.cols,
+            origin_u: grid.origin_u,
+            origin_v: grid.origin_v,
+            cell: grid.cell_size,
+            scanned: segments_now,
+        }
+    }
+
+    /// The bound at a cell (`-inf` off the grid).
+    fn at(&self, row: usize, col: usize) -> f64 {
+        if row >= self.rows || col >= self.cols {
+            return f64::NEG_INFINITY;
+        }
+        self.tops
+            .get(row * self.cols + col)
+            .map_or(f64::NEG_INFINITY, |&t| f64::from(t))
+    }
+
+    /// Lower the state under the fed chord `a` to `b`: each cell whose
+    /// centre the swept disc holds (`TriDexelStock::disc_holds_cell_core`)
+    /// reads at most the cutter surface
+    /// over it where the chord passes nearest (the tool stands there with
+    /// the centre under it, so the stock at the centre is at or under that
+    /// surface).
+    fn lower_under(&mut self, lut: &crate::stock::radial_profile::RadialProfileLUT, a: P3, b: P3) {
+        let r_sq = lut.radius_sq();
+        let r = r_sq.sqrt();
+        if self.cell <= 0.0 || self.rows == 0 || self.cols == 0 {
+            return;
+        }
+        let index = |v: f64, origin: f64, n: usize, up: bool| -> usize {
+            let i = (v - origin) / self.cell;
+            let i = if up { i.ceil() } else { i.floor() };
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "clamped to 0..n before the cast"
+            )]
+            {
+                i.clamp(0.0, n.saturating_sub(1) as f64) as usize
+            }
+        };
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len_sq = dx * dx + dy * dy;
+        for row in index(a.y.min(b.y) - r, self.origin_v, self.rows, false)
+            ..=index(a.y.max(b.y) + r, self.origin_v, self.rows, true)
+        {
+            let y = self.origin_v + row as f64 * self.cell;
+            for col in index(a.x.min(b.x) - r, self.origin_u, self.cols, false)
+                ..=index(a.x.max(b.x) + r, self.origin_u, self.cols, true)
+            {
+                let x = self.origin_u + col as f64 * self.cell;
+                let t = if len_sq > 0.0 {
+                    (((x - a.x) * dx + (y - a.y) * dy) / len_sq).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let (du, dv) = (x - (a.x + t * dx), y - (a.y + t * dy));
+                let d_sq = du * du + dv * dv;
+                // The disc holds the centre with room to spare: a centre on
+                // the disc edge is not cut (the last bit of the arithmetic
+                // and the rounding of the G-code decide it).
+                if !TriDexelStock::disc_holds_cell_core(du, dv, r_sq, self.cell) {
+                    continue;
+                }
+                let Some(profile) = lut.height_at_dist_sq(d_sq) else {
+                    continue;
+                };
+                let surface = a.z + t * (b.z - a.z) + profile;
+                if let Some(top) = self.tops.get_mut(row * self.cols + col) {
+                    #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
+                    {
+                        *top = top.min(surface as f32);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Lower the state under every cut shipped since the last scan, along
+    /// the path that the emitter ships ([`shipped_cut_path`]: the simplified
+    /// chord, not the ring points), as [`BandEdge::scan`] does. The strip
+    /// pass ships cuts and entries only; an entry stands on the first point
+    /// of its cut.
+    fn scan(&mut self, segments: &[Adaptive3dSegment], ctx: &ClearZLevelContext<'_>) {
+        let from = self.scanned.min(segments.len());
+        let drape = ctx.stamp_drape();
+        for seg in segments.get(from..).unwrap_or(&[]) {
+            match seg {
+                Adaptive3dSegment::Cut(path) => {
+                    let shipped = shipped_cut_path(
+                        path,
+                        ctx.cut_tolerance,
+                        ctx.min_cutting_radius,
+                        &drape,
+                        None,
+                        &mut crate::tool::body::FedLead::default(),
+                    );
+                    for pair in shipped.windows(2) {
+                        if let [a, b] = pair {
+                            self.lower_under(ctx.lut, *a, *b);
+                        }
+                    }
+                }
+                Adaptive3dSegment::Link(_)
+                | Adaptive3dSegment::Rapid(_)
+                | Adaptive3dSegment::RapidWithFloor { .. }
+                | Adaptive3dSegment::Marker(_) => {}
+            }
+        }
+        self.scanned = segments.len();
+    }
+}
+
+/// P45: the strip pass of an op on remaining stock, after its last level.
+///
+/// The level grid reads the stock at the tool centre only, so a strip
+/// beside a wall that is narrower than the tool radius makes no region at
+/// any level (the corner and the wall margin that a larger tool left). The
+/// wall pass cuts such a strip only along a region that the level plans.
+/// This pass cuts the rest:
+///
+/// - The cells: [`super::standing::standing_cells`] at the bottom level
+///   with the strip read (a material cell that the plan left, or a strip
+///   cell).
+/// - The bands: the connected cells, grown on their open side so that the
+///   contour line fits ([`grow_open_side`]).
+/// - The cut: the region contour along each band ([`ContourRule::Region`]),
+///   in rounds, one Depth/Pass per round (`wall_read`), under the one-pass
+///   guard. A band whose line is shorter than `min_region_cut_length_mm`,
+///   or that has no room for the line, is not cut and is recorded.
+///
+/// On with the guard of the one-pass rule (`OnePass::on`:
+/// `OnePassHold::RemainingStock`, where the planner cell is the simulation
+/// cell): a coarse cell cannot read a strip. No dial of its own (ruling D-4
+/// of P42: the wall passes are part of the one-pass rule).
+pub(super) fn strip_pass(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    cursor: &mut PlannerCursor,
+) -> LevelContourStats {
+    let none = LevelContourStats {
+        min_factor: 1.0,
+        ..LevelContourStats::default()
+    };
+    if !ctx.one_pass.on {
+        return none;
+    }
+    #[cfg(test)]
+    if REGION_CONTOUR_OFF_FOR_CONTROL.with(std::cell::Cell::get)
+        || STRIP_PASS_OFF_FOR_CONTROL.with(std::cell::Cell::get)
+    {
+        return none;
+    }
+    let cell = material_stock.z_grid.cell_size;
+    let mut standing =
+        super::standing::standing_cells(ctx, material_stock, surface_hm, z_level, true);
+    if standing.count == 0 || cell <= 0.0 {
+        return none;
+    }
+    let outlines = |standing: &super::standing::Standing, stock: &TriDexelStock| {
+        crate::polygon::detect_containment(
+            crate::geometry::contour_extract::marching_squares_bool_grid(
+                &standing.padded,
+                standing.padded_rows,
+                standing.padded_cols,
+                stock.z_grid.origin_u - cell,
+                stock.z_grid.origin_v - cell,
+                cell,
+            )
+            .into_iter()
+            .filter(|ring| ring.len() >= 3)
+            .map(crate::polygon::Polygon2::new)
+            .collect(),
+        )
+    };
+    // The operator dial, read on each band before it grows (the ONE rule of
+    // the F-038 forecast): a band whose cut is under the least cut length is
+    // not worth its entry. The cut of a band is its contour line; a band
+    // too narrow for the line (a strip of one to three cells) is cut there
+    // and back along its own length, which is its outline.
+    let mut dropped = 0usize;
+    if ctx.min_region_cut_length_mm > 0.0 {
+        let grid = &material_stock.z_grid;
+        for band in outlines(&standing, material_stock) {
+            let line = contour_line_length(&band, cell, ctx.cut_tolerance);
+            let length = if line > 0.0 {
+                line
+            } else {
+                polygon_rings(&band)
+                    .map(|ring| {
+                        ring.iter()
+                            .zip(ring.iter().cycle().skip(1))
+                            .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
+                            .sum::<f64>()
+                    })
+                    .sum()
+            };
+            if length >= ctx.min_region_cut_length_mm {
+                continue;
+            }
+            dropped += 1;
+            // The cells of the band leave the grid.
+            let (mut lo, mut hi) = (
+                P2::new(f64::INFINITY, f64::INFINITY),
+                P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
+            );
+            for p in &band.exterior {
+                lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
+                hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
+            }
+            let index = |v: f64, origin: f64, n: usize| -> usize {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "clamped to 0..n before the cast"
+                )]
+                {
+                    ((v - origin) / cell)
+                        .round()
+                        .clamp(0.0, n.saturating_sub(1) as f64) as usize
+                }
+            };
+            for row in index(lo.y, grid.origin_v, grid.rows)..=index(hi.y, grid.origin_v, grid.rows)
+            {
+                for col in
+                    index(lo.x, grid.origin_u, grid.cols)..=index(hi.x, grid.origin_u, grid.cols)
+                {
+                    let (x, y) = grid.cell_to_world(row, col);
+                    if band.contains_point(&P2::new(x, y))
+                        && let Some(c) = standing
+                            .padded
+                            .get_mut((row + 1) * standing.padded_cols + (col + 1))
+                    {
+                        *c = false;
+                    }
+                }
+            }
+            ctx.unplanned
+                .borrow_mut()
+                .push(super::left_stock::Unplanned {
+                    z_level,
+                    outline: band,
+                    why: super::LeftWhy::ShortForecast,
+                });
+        }
+    }
+    grow_open_side(ctx, material_stock, surface_hm, z_level, &mut standing);
+    let bands = outlines(&standing, material_stock);
+    // A grown band with no room for the line is recorded (none is expected:
+    // the growth gives each band the room).
+    let mut kept: Vec<&crate::polygon::Polygon2> = Vec::new();
+    for band in &bands {
+        if contour_line_length(band, cell, ctx.cut_tolerance) > 0.0 {
+            kept.push(band);
+        } else {
+            ctx.unplanned
+                .borrow_mut()
+                .push(super::left_stock::Unplanned {
+                    z_level,
+                    outline: band.clone(),
+                    why: super::LeftWhy::NoLine,
+                });
+        }
+    }
+    let mut state = StripTops::new(material_stock, segments.len());
+    let stats = contour_rounds(
+        ctx,
+        material_stock,
+        surface_hm,
+        WallLevel {
+            z_level,
+            next_level_z: None,
+        },
+        &kept,
+        ContourRule::Region,
+        segments,
+        cursor,
+        &mut Vec::new(),
+        Some(&mut state),
+    );
+    tracing::debug!(
+        z = z_level,
+        bands = bands.len(),
+        cut = kept.len(),
+        under_the_dial = dropped,
+        runs = stats.runs,
+        peak_load = stats.peak_load,
+        "P45 strip pass"
+    );
+    stats
+}
+
+/// P44: grow the cells of `standing` on their open side, so that the
+/// contour line ([`contour_line_inset`]) has room in a band that is one cell
+/// wide. A band of strip cells lies against the tool-centre limit of a
+/// wall. The line must stand one planner cell plus the cut tolerance inside
+/// that limit, so the band needs that margin twice plus one cell.
+///
+/// A neighbour joins when its level floor is at most one planner cell above
+/// the floor of the cell that it joins from: the ground beside the band,
+/// never the wall (the tool-centre floor steps up at the wall). The grown
+/// cells stay inside the boundary of the op.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "each index is inside the padded grid: row < rows + 2 and col < cols + 2"
+)]
+fn grow_open_side(
+    ctx: &ClearZLevelContext<'_>,
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    standing: &mut super::standing::Standing,
+) {
+    let grid = &stock.z_grid;
+    let (rows, cols, cs) = (grid.rows, grid.cols, grid.cell_size);
+    let pc = standing.padded_cols;
+    let floor = |row: usize, col: usize| {
+        super::intended_floor::level_floor_z(
+            surface_hm.z_or_bbox_floor_at(row, col),
+            ctx.stock_to_leave,
+            z_level,
+        )
+    };
+    // The cells to grow: the line margin twice plus one cell, less the one
+    // cell that the band has.
+    let steps = crate::util::steps::steps(2.0 * contour_line_inset(cs, ctx.cut_tolerance), cs)
+        .unwrap_or(1)
+        .max(1);
+    let mut frontier: Vec<(usize, usize)> = (0..rows)
+        .flat_map(|row| (0..cols).map(move |col| (row, col)))
+        .filter(|&(row, col)| standing.padded[(row + 1) * pc + (col + 1)])
+        .collect();
+    for _ in 0..steps {
+        let mut next = Vec::new();
+        for &(row, col) in &frontier {
+            let from = floor(row, col);
+            for (dr, dc) in [
+                (-1isize, -1isize),
+                (-1, 0),
+                (-1, 1),
+                (0, -1),
+                (0, 1),
+                (1, -1),
+                (1, 0),
+                (1, 1),
+            ] {
+                let (Some(r2), Some(c2)) = (
+                    row.checked_add_signed(dr).filter(|&v| v < rows),
+                    col.checked_add_signed(dc).filter(|&v| v < cols),
+                ) else {
+                    continue;
+                };
+                let i = (r2 + 1) * pc + (c2 + 1);
+                if standing.padded[i] || floor(r2, c2) > from + cs {
+                    continue;
+                }
+                let (x, y) = grid.cell_to_world(r2, c2);
+                if ctx.centre_clip.is_some_and(|clip| !clip.contains(x, y)) {
+                    continue;
+                }
+                standing.padded[i] = true;
+                next.push((r2, c2));
+            }
+        }
+        frontier = next;
+    }
+    if let Some(clip) = ctx.region_clip.as_ref() {
+        clip.restrict_regions(&mut standing.padded, standing.padded_rows, pc);
+    }
 }
 
 /// The rounds of a contour along `regions` ([`region_wall_pass`] has the
@@ -1233,6 +1825,7 @@ fn contour_rounds(
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     shipped: &mut Vec<P2>,
+    mut strip: Option<&mut StripTops>,
 ) -> LevelContourStats {
     let WallLevel {
         z_level,
@@ -1311,7 +1904,15 @@ fn contour_rounds(
                 let floor = super::clearing::lift_to_level(ctx, surface_hm, z_level, p).z;
                 let inside_clip = ctx.centre_clip.is_none_or(|clip| clip.contains(p.x, p.y));
                 let read = if inside_clip {
-                    wall_read(ctx, material_stock, surface_hm, (z_level, rule), p, floor)
+                    wall_read(
+                        ctx,
+                        material_stock,
+                        surface_hm,
+                        (z_level, rule),
+                        p,
+                        floor,
+                        strip.as_deref(),
+                    )
                 } else {
                     WallRead {
                         z: floor,
@@ -1471,7 +2072,16 @@ fn contour_rounds(
             segments,
             cursor,
             &mut stats,
+            strip.as_deref().map(|state| StripHold {
+                state,
+                surface_hm,
+                z_level,
+            }),
         );
+        // P45: the strip state follows the cuts of the round.
+        if let Some(state) = strip.as_deref_mut() {
+            state.scan(segments, ctx);
+        }
     }
     tracing::debug!(
         z = z_level,
@@ -1598,6 +2208,44 @@ mod tests {
         );
         let unmerged = merge_short_gaps(&points, &standing, 1000.0, 300.0, 20.0, None);
         assert_eq!(unmerged, standing, "no kinematics: no gap is fed");
+    }
+
+    /// P45: the strip state lowers a cell only when the swept disc holds its
+    /// centre with room to spare (`TriDexelStock::disc_holds_cell_core`). A
+    /// centre exactly on the disc edge is not cut: the last bit of the
+    /// arithmetic and the rounding of the G-code decide which side it is
+    /// on. On the Wanaka back the state counted such a column as cut at Z
+    /// 19.2 (line X 230.2, radius 3.0, column X 233.2); the replay did not;
+    /// the next round then took 7.3 to 11.9 mm from it at 6 mm per pass.
+    /// Stock 10 mm tall on 0.2 mm cells, a chord along Y 5.0 at Z 4, tool
+    /// radius 3.0: the row Y 8.0 is on the edge, the row Y 7.8 is inside.
+    #[test]
+    fn the_strip_state_does_not_count_a_centre_on_the_disc_edge_p45() {
+        use crate::dexel_stock::TriDexelStock;
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 14.0, 14.0, -1.0, 10.0, 0.2);
+        let cutter = crate::tool::FlatEndmill::new(6.0, 25.0);
+        let lut = crate::stock::radial_profile::RadialProfileLUT::from_cutter(
+            &cutter,
+            crate::stock::radial_profile::LUT_SAMPLES,
+        );
+        let mut state = super::StripTops::new(&stock, 0);
+        state.lower_under(&lut, P3::new(5.0, 5.0, 4.0), P3::new(9.0, 5.0, 4.0));
+        let col = 35; // X 7.0
+        let (edge_row, inside_row) = (40, 39); // Y 8.0 and Y 7.8
+        assert!(
+            (stock.z_grid.cell_to_world(edge_row, col).1 - 8.0).abs() < 1e-12,
+            "the fixture: the row is on the disc edge"
+        );
+        assert!(
+            (state.at(inside_row, col) - 4.0).abs() < 1e-6,
+            "the centre 0.2 mm inside the edge reads the cut: {}",
+            state.at(inside_row, col)
+        );
+        assert!(
+            (state.at(edge_row, col) - 10.0).abs() < 1e-6,
+            "the centre on the disc edge keeps its stock: {}",
+            state.at(edge_row, col)
+        );
     }
 
     /// C4b sentry 3: the mask rule. A 20 × 20 mm stock (top 10, 1 mm

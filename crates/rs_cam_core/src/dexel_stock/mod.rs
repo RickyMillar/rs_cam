@@ -332,6 +332,17 @@ impl TriDexelStock {
         f64::from(stamping::point_cell_coverage(du, dv, r_sq, cs))
     }
 
+    /// Whether a disc of squared radius `r_sq` holds the centre of a square
+    /// cell of side `cs` with room to spare
+    /// (`stamping::point_holds_cell_core`: the four sub-samples of the stamp
+    /// nearest the centre are inside). `(du, dv)` is the cell centre less
+    /// the disc centre. For a planner rule that follows the stock at the
+    /// cell centres (adaptive3d `level_contour::StripTops`).
+    #[must_use]
+    pub(crate) fn disc_holds_cell_core(du: f64, dv: f64, r_sq: f64, cs: f64) -> bool {
+        stamping::point_holds_cell_core(du, dv, r_sq, cs)
+    }
+
     /// Highest material top over all Z-grid cells intersecting the disc of
     /// `radius` around `(cx, cy)` (world frame). Mirrors the collision
     /// checker's view: a tool descending at this XY can touch material in

@@ -42,6 +42,26 @@ pub(super) const SUBSAMPLE_HALF_EXTENT: f64 = 3.0 / 8.0;
 /// inner loops so the arithmetic `start + i·step` doesn't run per cell.
 const SUBSAMPLE_OFFSETS_FRAC: [f64; 4] = [-3.0 / 8.0, -1.0 / 8.0, 1.0 / 8.0, 3.0 / 8.0];
 
+/// The axis offset of the four sub-samples nearest the cell centre, as a
+/// fraction of `cs` (the two middle values of [`SUBSAMPLE_OFFSETS_FRAC`]).
+const INNER_SUBSAMPLE_FRAC: f64 = 1.0 / 8.0;
+
+/// Whether a disc holds the centre of a cell with room to spare: the four
+/// sub-samples nearest the centre are all inside the disc. `(du, dv)` is
+/// the cell centre less the disc centre.
+///
+/// A centre exactly on the disc edge is inside or outside by the last bit
+/// of the arithmetic, and the G-code writer rounds each coordinate. A rule
+/// that must say "the cut lowered the stock at this centre" reads this
+/// test, so a centre at the edge is on neither side by chance: it is not
+/// held.
+#[inline]
+pub(super) fn point_holds_cell_core(du: f64, dv: f64, r_sq: f64, cs: f64) -> bool {
+    let inner = cs * INNER_SUBSAMPLE_FRAC;
+    let (far_u, far_v) = (du.abs() + inner, dv.abs() + inner);
+    far_u * far_u + far_v * far_v <= r_sq
+}
+
 /// Fractional coverage of a square cell by a disk centered at the origin
 /// (offsets pre-shifted so disk center is implicit zero).
 ///

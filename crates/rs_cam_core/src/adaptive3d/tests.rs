@@ -3475,8 +3475,10 @@ fn stock_with_no_drop_record_does_not_raise_the_finding_p44() {
     let standing = || {
         Some(super::standing::Standing {
             padded: padded.clone(),
+            padded_rows: n + 2,
             padded_cols: n + 2,
             height: height.clone(),
+            count: padded.iter().filter(|&&c| c).count(),
         })
     };
     let piece = |x0: f64, x1: f64| super::left_stock::Unplanned {
@@ -3903,9 +3905,14 @@ fn each_level_cuts_to_the_wall_that_it_can_reach_p42() {
         deepest <= limit + 1e-6,
         "a sample cuts {deepest:.2} mm deep; one Depth/Pass and the clearance are {limit} mm"
     );
+    // P45: the control has no strip pass either. With the wall pass off the
+    // strip pass cuts the strip at the end of the op (measured: 0.2 mm
+    // against 0.2 mm), so it hides what the wall pass does per level.
     super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
     let (deepest_held, strip_held_mm) = wall_strip_fixture_p42(hold());
     super::level_contour::WALL_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
     assert!(deepest_held <= limit + 1e-6, "{deepest_held}");
     assert!(
         strip_mm <= 3.0 * cell + 1e-9,
@@ -4368,5 +4375,224 @@ fn a_fresh_level_cuts_the_band_of_a_sweep_region_p43() {
     assert!(
         wood_off_mm > bound,
         "the control: with no line the band of the sweep stays: {wood_off_mm} mm"
+    );
+}
+
+/// P45 fixture: the wall of the P42 fixture (X 10, top Z 9) and a rest
+/// stock where a larger tool left a strip at the foot of the wall (X 8..10,
+/// Y -10..10). A block 3 mm tall stands away from the wall (X -20..-5), so
+/// that the plan has a level. No tool centre can stand over the strip (the
+/// tool-centre limit is X 6.825), so the strip makes no region at any level.
+///
+/// `sliver: None`: the strip is 6 mm tall.
+///
+/// `sliver: Some(_)`: the fixture of the replay failure of P44 build 2. The
+/// strip is 4 mm tall and its first column (X 8.0) stands 9 mm tall. Three
+/// earlier cuts (Z 6, 3 and 0.5) passed with the disc edge at X 7.95: the
+/// centre of that column is 0.05 mm outside each disc, so the wood at the
+/// centre keeps its 9 mm; the stamp covers a quarter of the cell and lowers
+/// its ray top by a quarter of the stock above the cutter each time (to Z
+/// 5.33).
+///
+/// Returns the deepest cut of a node by one fed move, the highest stock in
+/// the strip on the line Y 0 between X 8.0 and 9.4 after the simulation,
+/// and the ray top of the sliver column before the op. The deepest cut is a
+/// point sample, as the replay instrument reads it
+/// (`planning/feeds_contract_2026-11-03/phases/p43/deepc.py`): each cell
+/// centre is a node; a fed move lowers each node under the flat tool to the
+/// lowest Z of the move over it; a node counts when it stands the cut
+/// tolerance or more inside the disc edge of the move. It does not read the
+/// planner stock.
+fn wall_strip_fixture_p45(sliver: bool) -> (f64, f64, f64) {
+    let (wall_x, wall_top) = (10.0, 9.0);
+    let vertices = vec![
+        P3::new(-40.0, -40.0, 0.0),
+        P3::new(wall_x, -40.0, 0.0),
+        P3::new(wall_x, 40.0, 0.0),
+        P3::new(-40.0, 40.0, 0.0),
+        P3::new(wall_x, -40.0, wall_top),
+        P3::new(wall_x, 40.0, wall_top),
+        P3::new(40.0, -40.0, wall_top),
+        P3::new(40.0, 40.0, wall_top),
+    ];
+    let triangles = vec![
+        [0, 1, 2],
+        [0, 2, 3],
+        [1, 4, 5],
+        [1, 5, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+    ];
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.2, 351usize);
+    let xy = |i: usize| -35.0 + i as f64 * cell;
+    let sliver_col = (0..n)
+        .find(|&col| (xy(col) - 8.0).abs() < 1e-6)
+        .expect("a column at X 8.0");
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (xy(col), xy(row));
+            tops[row * n + col] = if x > wall_x {
+                wall_top
+            } else if x >= 8.0 - 1e-9 && (-10.0..=10.0).contains(&y) {
+                match (sliver, col == sliver_col) {
+                    (false, _) => 6.0,
+                    (true, true) => 9.0,
+                    (true, false) => 4.0,
+                }
+            } else if (-20.0..=-5.0).contains(&x) && (-12.0..=12.0).contains(&y) {
+                3.0
+            } else {
+                0.0
+            };
+        }
+    }
+    let mut stock = make_stock_with_cells(n, n, -35.0, -35.0, cell, -10.0, &tops);
+    let mut params = default_params();
+    if sliver {
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let r = params.geometry.tool_radius;
+        for z in [6.0, 3.0, 0.5] {
+            stock.stamp_linear_segment(
+                &lut,
+                r,
+                P3::new(7.95 - r, -14.0, z),
+                P3::new(7.95 - r, 14.0, z),
+                StockCutDirection::FromTop,
+            );
+        }
+    }
+    let ray_top_before = stock_top_z_at(&stock, 175, sliver_col);
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.linking.one_pass_hold = OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
+    params.depth.stock_top_z = 9.0;
+    params.initial_stock = Some(stock.clone());
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    // The point-sample replay on the nodes.
+    let (r, tol) = (params.geometry.tool_radius, params.geometry.tolerance);
+    let mut nodes = tops;
+    let mut deepest = 0.0f64;
+    let mut pos: Option<P3> = None;
+    let index = |v: f64, up: bool| -> usize {
+        let i = (v + 35.0) / cell;
+        let i = if up { i.ceil() } else { i.floor() };
+        i.clamp(0.0, (n - 1) as f64) as usize
+    };
+    for m in &out.toolpath.moves {
+        let (a, b) = (pos.unwrap_or(m.target), m.target);
+        pos = Some(b);
+        if matches!(m.move_type, crate::toolpath::MoveType::Rapid) {
+            continue;
+        }
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len_sq = dx * dx + dy * dy;
+        for row in index(a.y.min(b.y) - r, false)..=index(a.y.max(b.y) + r, true) {
+            for col in index(a.x.min(b.x) - r, false)..=index(a.x.max(b.x) + r, true) {
+                let (x, y) = (xy(col), xy(row));
+                // The part of the move with the node under the disc.
+                let (t_lo, t_hi, inside) = if len_sq > 1e-18 {
+                    let t = ((x - a.x) * dx + (y - a.y) * dy) / len_sq;
+                    let perp_sq = ((x - a.x) * dy - (y - a.y) * dx).powi(2) / len_sq;
+                    if perp_sq > r * r {
+                        continue;
+                    }
+                    let half = ((r * r - perp_sq) / len_sq).sqrt();
+                    if t + half < 0.0 || t - half > 1.0 {
+                        continue;
+                    }
+                    let tc = t.clamp(0.0, 1.0);
+                    let d = (x - (a.x + tc * dx)).hypot(y - (a.y + tc * dy));
+                    (
+                        (t - half).clamp(0.0, 1.0),
+                        (t + half).clamp(0.0, 1.0),
+                        r - d,
+                    )
+                } else {
+                    let d = (x - a.x).hypot(y - a.y);
+                    if d > r {
+                        continue;
+                    }
+                    (0.0, 1.0, r - d)
+                };
+                let z = (a.z + t_lo * (b.z - a.z)).min(a.z + t_hi * (b.z - a.z));
+                let node = &mut nodes[row * n + col];
+                if z < *node {
+                    if inside >= tol {
+                        deepest = deepest.max(*node - z);
+                    }
+                    *node = z;
+                }
+            }
+        }
+    }
+    let row = 175; // Y 0
+    let highest = (0..n)
+        .filter(|&col| (8.0 - 1e-9..=9.4).contains(&xy(col)))
+        .map(|col| nodes[row * n + col])
+        .fold(f64::NEG_INFINITY, f64::max);
+    (deepest, highest, ray_top_before)
+}
+
+/// P45: a rough on remaining stock cuts the strip that stands beside a wall
+/// where no region of a level holds it (`level_contour::strip_pass`), one
+/// Depth/Pass per round. The contour runs one planner cell plus the cut
+/// tolerance inside the tool-centre limit, so the tool reaches X 9.7; the
+/// read is to X 9.4. The control (no strip pass): the strip keeps its 6 mm.
+#[test]
+fn a_strip_beside_a_wall_with_no_region_is_cut_p45() {
+    let (deepest, highest, _) = wall_strip_fixture_p45(false);
+    assert!(
+        highest <= 0.5 + 0.3,
+        "the strip stands at Z {highest:.2} between X 8.0 and 9.4; the floor is 0.5"
+    );
+    assert!(
+        deepest <= 3.0 + 0.5 + 1e-6,
+        "a move cuts a node {deepest:.2} mm deep; one Depth/Pass and the clearance are 3.5 mm"
+    );
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
+    let (_, control, _) = wall_strip_fixture_p45(false);
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
+    assert!(
+        control >= 6.0 - 1e-6,
+        "the control: with no strip pass the strip keeps its height: {control:.2}"
+    );
+}
+
+/// P45, the fixture of the replay failure of P44 build 2: the strip pass
+/// reads the stock at each cell centre in its disc (`StripTops`), not the
+/// ray top. The ray top of the sliver column is a blend (Z 5.33; the wood
+/// at its centre stands at Z 9). With the ray top the first round runs at Z
+/// 2.33 and takes 6.67 mm from that centre at 3 mm per pass.
+#[test]
+fn the_strip_pass_reads_the_stock_at_the_cell_centre_p45() {
+    let (deepest, _, ray_top) = wall_strip_fixture_p45(true);
+    assert!(
+        (5.0..6.0).contains(&ray_top),
+        "the fixture: the ray top of the sliver column is a blend under its 9 mm: {ray_top:.2}"
+    );
+    assert!(
+        deepest <= 3.0 + 0.5 + 1e-6,
+        "a move cuts a node {deepest:.2} mm deep; one Depth/Pass and the clearance are 3.5 mm"
+    );
+}
+
+/// P45: the strip state follows the cuts of each round
+/// (`StripTops::scan`), so the sliver column goes down one Depth/Pass per
+/// round to the floor. With no scan the state keeps the 9 mm of the column
+/// after the first round, the Z of the second round is the Z of the first,
+/// and the pass stops with the column at Z 6.
+#[test]
+fn the_strip_state_follows_each_round_p45() {
+    let (_, highest, _) = wall_strip_fixture_p45(true);
+    assert!(
+        highest <= 0.5 + 0.3,
+        "the strip stands at Z {highest:.2} between X 8.0 and 9.4; the floor is 0.5"
     );
 }

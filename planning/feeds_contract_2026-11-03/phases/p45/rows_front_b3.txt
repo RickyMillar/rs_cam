@@ -1,0 +1,6 @@
+before total_runtime_s 9053.4 collisions 0 rapid 0 failed checks 0 []
+after  total_runtime_s 9353.1 collisions 0 rapid 0 failed checks 0 []
+21 Front 3D rough: moves 46432 -> 57805
+
+23 Front scallop finish: moves 463770 -> 463770
+   ('force_budget', 'group', 'body'): (4.714405059814453, None, 'no_number', 4.714405059814453) -> (4.632085800170898, None, 'no_number', 4.632085800170898)
