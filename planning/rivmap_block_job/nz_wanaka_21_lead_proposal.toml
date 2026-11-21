@@ -2560,7 +2560,7 @@ basis = 13
 [[setups.toolpaths]]
 id = 25
 name = "Lake relief band 6 mm, 11 lakes to Z 13.5"
-enabled = true
+enabled = false
 tool_id = 0
 model_id = 15
 boundary_inherit = true
