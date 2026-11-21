@@ -17,6 +17,25 @@ commit `82cf231c7`. No product code is changed by that commit.
   4 463.2 mm2; id 2 579.7 to 676.9 s; "1 Back" 9 715.8 to 9 847.8 s; "3 Front" 8 762.4 to
   9 053.4 s; replay class 0; 0 collisions; rivmap100 the same bytes. Gates by the agent logs:
   no new red (op golden: the 52 known cells, not blessed).
+- LANDED `4221e321d` (P45, the strip pass on remaining stock; note
+  `phases/P45_WALL_STRIP_PASS_2026-11-21.md`). The cause of the 4 replay pieces of P44 build 2
+  is traced: the planner ray top of a cell at the edge of earlier discs is a blend, 3.2 to
+  7.8 mm under the wood. The strip pass reads an upper bound per cell centre (`StripTops`).
+  Wood after id 2 where the tool fits 4 463.2 to 1 486.4 mm2 (1 380.9 of it is the D19 rim);
+  the band at the bottom wall of the cavity 976.1 to 129.7 mm2, cut by one run of 309 mm;
+  id 2 676.9 to 906.2 s; "1 Back" 10 034.4 s (10 000.4 with id 41 off); "3 Front" 9 353.1 s;
+  replay class 0; 0 collisions; rivmap100 the same bytes; ids 1 and 20 the same motion.
+  Gates by the agent logs: no new red (op golden: the 52 known cells, not blessed).
+- The proposal has id 41 off since the commit after P45.
+- Open after P45 (clean-up list): three hunks with no test (`hold_shipped_chords`, the centre
+  test in the strip read of `wall_read`, the pass 3 ring start); a left piece that the strip
+  pass cut stays in `left_pieces` (P45 D-10; the P44b ruling D-15 (c) applies); the new read
+  acts in the strip pass only, the wall pass and the region contour keep the ray top (P45
+  D-1); the cut-length dial drops a short later-round run inside a long first-round run
+  (P45 D-9); a rim place has no reason text of its own (P45 D-4); D-5 parity gap: the planner
+  stock is the taller one, cause not found, not the `emit_runs` door; "Lake relief band 6 mm,
+  11 lakes" has no load rows (it cuts air); "Cavity rest pocket 6 mm" falls to 167 moves.
+- SUPERSEDED by the lines above:
 - Open after P44b: the wall strips (3 430.8 mm2 class; control relief 63.9, ESP relief, step
   shelf, board pocket, cavity) wait for the strip pass phase P45, which first needs the trace
   of the planner-stock read at a cell that the disc covers in part (the 4 replay pieces of
