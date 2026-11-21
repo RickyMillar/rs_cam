@@ -1,0 +1,80 @@
+green rc 0
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 2855 filtered out; finished in 42.42s
+
+ 5 files changed, 913 insertions(+), 37 deletions(-)
+tree restored
+== hunk HOLD reverted
+thread 'adaptive3d::level_contour::tests::a_shipped_chord_holds_the_one_pass_z_p46' (3901834) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2502:9:
+the run ships at Z 0.00; one Depth/Pass under the 9 mm that the chord holds is Z 6
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 4.94s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 912 insertions(+), 39 deletions(-)
+tree restored
+== hunk CENTRE reverted
+thread 'adaptive3d::level_contour::tests::the_strip_read_does_not_count_a_centre_at_the_disc_edge_p46' (3929291) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2383:9:
+a centre 0.01 mm inside the disc edge does not set the Z: 6
+thread 'adaptive3d::level_contour::tests::the_held_stock_ring_starts_where_the_strip_read_stops_p46' (3929289) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2413:9:
+the fixture: the cell at the disc edge does not set the Z: 6
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 6.32s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 913 insertions(+), 37 deletions(-)
+tree restored
+== hunk RING reverted
+thread 'adaptive3d::level_contour::tests::the_held_stock_ring_starts_where_the_strip_read_stops_p46' (3976921) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2421:9:
+the cell at the disc edge is held stock beside the disc: the point is not cut
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 6.16s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 915 insertions(+), 36 deletions(-)
+tree restored
+== hunk UNLEAVE reverted
+thread 'adaptive3d::tests::a_left_piece_that_the_strip_pass_cut_is_not_published_p46' (4009825) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4803:5:
+the strip pass cut the near bump: it is not a rest region: [Polygon2 { exterior: [[-32.62916666865349, 24.0], [-32.62916666865349, 20.0], [-32.61113575696945, 19.863041579723358], [-32.55827177166939, 19.735416680574417], [-32.47417733669281, 19.62582266330719], [-32.374177342653276, 19.525822669267654], [-32.26458332538605, 19.441728234291077], [-32.13695842623711, 19.388864248991013], [-32.000000005960466, 19.37083
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 5.64s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 912 insertions(+), 36 deletions(-)
+tree restored
+== hunk REACH reverted
+thread 'adaptive3d::level_contour::tests::the_strip_pass_removes_only_a_piece_that_it_cut_to_the_floor_p46' (4042201) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2586:9:
+assertion `left == right` failed: the pass reached pieces 1 and 2 and removed piece 1
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 6.21s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 912 insertions(+), 36 deletions(-)
+tree restored
+== hunk STANDS reverted
+thread 'adaptive3d::level_contour::tests::the_strip_pass_removes_only_a_piece_that_it_cut_to_the_floor_p46' (4075789) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2586:9:
+assertion `left == right` failed: the pass reached pieces 1 and 2 and removed piece 1
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 5.23s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 912 insertions(+), 36 deletions(-)
+tree restored
+== hunk RECORD reverted
+thread 'adaptive3d::level_contour::tests::the_strip_pass_removes_only_a_piece_that_it_cut_to_the_floor_p46' (4114935) panicked at crates/rs_cam_core/src/adaptive3d/level_contour.rs:2604:9:
+assertion `left == right` failed: the record of piece 1 is gone; a record with no left piece stays
+thread 'adaptive3d::tests::a_left_piece_that_the_strip_pass_cut_is_not_published_p46' (4114938) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4810:5:
+assertion `left == right` failed: LeftStock { places: [LeftPlace { lo: [-35.0, 17.0], hi: [-26.799999999999997, 27.0], area_mm2: 77.2, tallest_mm: 2.5, at: [-32.6, 17.0], why: ShortForecast }, LeftPlace { lo: [-23.0, -15.0], hi: [-15.2, -7.199999999999999], area_mm2: 50.440000000000005, tallest_mm: 2.5, at: [-20.6, -15.0], why: ShortGroup }, LeftPlace { lo: [6.800000000000004, -10.599999999999998], hi: [6.80000000000
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 6.63s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+ 5 files changed, 909 insertions(+), 35 deletions(-)
+tree restored
+== hunk RIM reverted
+thread 'adaptive3d::tests::a_rim_place_has_the_reason_of_the_line_margin_p46' (4161013) panicked at crates/rs_cam_core/src/adaptive3d/tests.rs:4903:5:
+assertion `left == right` failed: LeftStock { places: [LeftPlace { lo: [9.0, 14.0], hi: [9.5, 20.0], area_mm2: 6.5, tallest_mm: 4.0, at: [9.0, 14.0], why: ShortForecast }, LeftPlace { lo: [3.0, 2.0], hi: [3.0, 8.0], area_mm2: 3.25, tallest_mm: 4.0, at: [3.0, 2.0], why: ShortForecast }, LeftPlace { lo: [9.5, 2.0], hi: [9.5, 8.0], area_mm2: 3.25, tallest_mm: 4.0, at: [9.5, 2.0], why: ShortForecast }], places_total: 3, 
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 2876 filtered out; finished in 5.89s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+rc 101
+all done

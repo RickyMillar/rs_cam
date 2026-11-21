@@ -1,0 +1,4 @@
+lines 10537 and 10537; motion lines 10526 and 10526; comment lines 11 and 11
+MOTION SAME: each motion line is the same, in the same order
+BYTES SAME
+comment lines only before: 0; only after: 0

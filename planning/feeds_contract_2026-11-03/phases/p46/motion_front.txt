@@ -1,0 +1,11 @@
+lines 546737 and 546736; motion lines 546689 and 546689; comment lines 48 and 47
+MOTION SAME: each motion line is the same, in the same order
+the files differ
+comment lines only before: 4; only after: 3
+  - (WARNING Part export.op_left_out Slit slot rest pocket 6 mm: Left out of the export: no current result)
+  - (feeds: capped from simulation run 9, no feed raised)
+  - (feeds: capped from simulation run 9, no feed raised)
+  - (feeds: capped from simulation run 9, no feed raised)
+  + (feeds: capped from simulation run 7, no feed raised)
+  + (feeds: capped from simulation run 7, no feed raised)
+  + (feeds: capped from simulation run 7, no feed raised)

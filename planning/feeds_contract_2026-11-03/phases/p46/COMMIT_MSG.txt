@@ -1,0 +1,71 @@
+core: P46: a left piece that the strip pass cut is not left; a rim place has its own reason; tests for three P45 hunks
+
+Clean-up after P45 (decisions D-10, D-7 and D-4 of
+planning/feeds_contract_2026-11-03/phases/P45_WALL_STRIP_PASS_2026-11-21.md).
+
+What changes
+- `level_contour::unleave_cut_pieces` (P45 D-10): after its rounds the strip
+  pass removes a left piece of any level when a shipped cut of the pass lowered
+  one of its cells (`StripTops::cut_at`) and none of its cells holds material
+  above its level floor (`left_stock::piece_stands`). `clearing::unleave_pieces`
+  is the inverse of `leave_piece`: the piece leaves `left_pieces` and its record
+  leaves `unplanned`. A piece that the pass cut in part stays published. The
+  P44b removal for the region contour is not changed.
+- `left_stock`: the standing rule of a recorded piece is one function
+  (`material_above_floor`).
+- `PlaceWhy::LineMargin` (P45 D-4): a place of the finding
+  `geom.rough_left_stock` that has a drop record and whose cells are all rim
+  cells (`left_stock::rim_cell`: a strip cell nearer to a wall step than
+  `contour_line_inset`) says "it is nearer to a wall than a contour line of the
+  planner can run", not the reason of the record. A record only: no tool moves,
+  and this rule changes no count.
+- Tests (P45 D-7), each seen red with its hunk reverted alone
+  (`p46/red.sh`, `p46/red_proofs.txt`): `hold_shipped_chords`, the centre test
+  of the strip read of `wall_read`, the start of the ring of pass 3; the two
+  rules of the piece removal; the rim reason. `tests::ContextFixture` builds a
+  `ClearZLevelContext` for a test of a private planner function. No product
+  code changed for testability.
+
+Measured (release CLI; note
+planning/feeds_contract_2026-11-03/phases/P46_CLEAN_UP_2026-11-22.md)
+- Motion: rivmap100 keeps its bytes. The committed Wanaka job keeps each motion
+  line of setup "1 Back" (the same bytes as the P45 build with id 41 off) and
+  of setup "3 Front". 0 collisions.
+- Id 2 "Back rest 6 mm": the pass reached 33 left pieces, 27 are removed; on 6
+  the planner stock still reads material (a ray-top read) and they stay. Id 21 "Front 3D rough": 129, 25, 104.
+- Finding of id 2: 349 to 323 named places (26 places lose their only record
+  and join the sum with no record: 145 to 171); 6 of the 12 named places have
+  the rim reason.
+
+Not in this commit: the finding `project_curve_negative_depth` (the note,
+section 3: its condition is false for "from below" on a setup that is not
+flipped, and its auto-fix can cut the model; a decision for the lead).
+
+BREAK: a 3D Rough with Geodesic Adaptive on remaining stock does not publish a
+rest region for a piece that its strip pass cut to the floor, and the finding
+`geom.rough_left_stock` does not count that piece. `PlaceWhy` has a new variant
+`LineMargin`. No file format changes. No motion changes.
+
+--- paths to commit
+FEATURE_CATALOG.md
+crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+crates/rs_cam_core/src/adaptive3d/clearing.rs
+crates/rs_cam_core/src/adaptive3d/left_stock.rs
+crates/rs_cam_core/src/adaptive3d/level_contour.rs
+crates/rs_cam_core/src/adaptive3d/path.rs
+crates/rs_cam_core/src/adaptive3d/tests.rs
+crates/rs_cam_core/src/compute/toolpath_stats.rs
+planning/feeds_contract_2026-11-03/phases/P46_CLEAN_UP_2026-11-22.md
+planning/feeds_contract_2026-11-03/phases/p46/COMMIT_MSG.txt
+planning/feeds_contract_2026-11-03/phases/p46/finding_text.txt
+planning/feeds_contract_2026-11-03/phases/p46/gates.txt
+planning/feeds_contract_2026-11-03/phases/p46/golden_cells.txt
+planning/feeds_contract_2026-11-03/phases/p46/motion_back.txt
+planning/feeds_contract_2026-11-03/phases/p46/motion_back_no41.txt
+planning/feeds_contract_2026-11-03/phases/p46/motion_cmp.py
+planning/feeds_contract_2026-11-03/phases/p46/motion_front.txt
+planning/feeds_contract_2026-11-03/phases/p46/motion_riv.txt
+planning/feeds_contract_2026-11-03/phases/p46/red.sh
+planning/feeds_contract_2026-11-03/phases/p46/red_proofs.txt
+planning/feeds_contract_2026-11-03/phases/p46/revert.py
+planning/feeds_contract_2026-11-03/phases/p46/strip_pieces.txt

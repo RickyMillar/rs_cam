@@ -823,6 +823,9 @@ impl std::fmt::Display for RoughLeftStockFinding {
                         "the plan dropped cut groups shorter than Min Region Cut Length"
                     }
                     PlaceWhy::NoLine => "it is narrower than a contour line of the planner",
+                    PlaceWhy::LineMargin => {
+                        "it is nearer to a wall than a contour line of the planner can run"
+                    }
                     PlaceWhy::OnePassHold => {
                         "the tool stays off stock that stands more than one Depth/Pass above \
                          the cutter"

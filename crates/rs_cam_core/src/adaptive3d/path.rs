@@ -1760,15 +1760,22 @@ fn adaptive_3d_segments_probed(
         // plan (the strip read only on remaining stock, where the planner
         // cell is the simulation cell).
         || {
-            z_levels.last().map(|&bottom| {
-                super::standing::standing_cells(
-                    &ctx,
-                    &material_stock,
-                    &surface_hm,
-                    bottom,
-                    ctx.one_pass.on,
-                )
-            })
+            z_levels
+                .last()
+                .map(|&bottom| super::left_stock::StandingRead {
+                    standing: super::standing::standing_cells(
+                        &ctx,
+                        &material_stock,
+                        &surface_hm,
+                        bottom,
+                        ctx.one_pass.on,
+                    ),
+                    z_level: bottom,
+                    line_inset_mm: super::level_contour::contour_line_inset(
+                        material_stock.z_grid.cell_size,
+                        ctx.cut_tolerance,
+                    ),
+                })
         },
         tool_radius,
     );

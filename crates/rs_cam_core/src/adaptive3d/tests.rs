@@ -37,7 +37,7 @@ fn make_stock(
 
 /// Helper: create a TriDexelStock with custom per-cell Z-top values.
 /// `cell_top_z` is row-major; each cell gets a single segment [z_min, cell_z].
-fn make_stock_with_cells(
+pub(super) fn make_stock_with_cells(
     rows: usize,
     cols: usize,
     origin_x: f64,
@@ -3473,12 +3473,16 @@ fn stock_with_no_drop_record_does_not_raise_the_finding_p44() {
         SurfaceHeightmap::from_parts(vec![0.0; n * n], vec![true; n * n], n, n, 0.0, 0.0, cell);
     let one_pass = super::one_pass::OnePass::new(3.0, 0.5, true);
     let standing = || {
-        Some(super::standing::Standing {
-            padded: padded.clone(),
-            padded_rows: n + 2,
-            padded_cols: n + 2,
-            height: height.clone(),
-            count: padded.iter().filter(|&&c| c).count(),
+        Some(super::left_stock::StandingRead {
+            standing: super::standing::Standing {
+                padded: padded.clone(),
+                padded_rows: n + 2,
+                padded_cols: n + 2,
+                height: height.clone(),
+                count: padded.iter().filter(|&&c| c).count(),
+            },
+            z_level: 0.0,
+            line_inset_mm: super::level_contour::contour_line_inset(cell, 0.1),
         })
     };
     let piece = |x0: f64, x1: f64| super::left_stock::Unplanned {
@@ -4594,5 +4598,323 @@ fn the_strip_state_follows_each_round_p45() {
     assert!(
         highest <= 0.5 + 0.3,
         "the strip stands at Z {highest:.2} between X 8.0 and 9.4; the floor is 0.5"
+    );
+}
+
+/// P46 test fixture: the owner of a `ClearZLevelContext` for a test that
+/// calls a private planner function of this folder (`level_contour`:
+/// `wall_read`, `emit_runs`). The op is a Geodesic Adaptive rough on
+/// remaining stock (the one-pass rule on) with a flat tool of 6 mm on a
+/// flat model at Z 0, no stock to leave, 3 mm per pass and 0.5 mm of
+/// stay-down clearance. Every other field is the neutral value: no boundary
+/// clip, no entry rule, no stay-down link, no band.
+pub(super) struct ContextFixture {
+    mesh: crate::mesh::TriangleMesh,
+    index: SpatialIndex,
+    cutter: FlatEndmill,
+    luts: super::path::PlannerLuts,
+    params: Adaptive3dParams,
+}
+
+impl ContextFixture {
+    pub(super) fn new() -> Self {
+        let mesh = crate::mesh::make_test_flat(120.0);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let cutter = FlatEndmill::new(6.0, 25.0);
+        let luts = super::path::PlannerLuts::of(&cutter);
+        let mut params = default_params();
+        params.geometry.tool_radius = 3.0;
+        params.geometry.envelope_radius = 3.0;
+        params.depth.stock_to_leave = 0.0;
+        params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+        params.linking.one_pass_hold = OnePassHold::RemainingStock {
+            link_kinematics: None,
+        };
+        Self {
+            mesh,
+            index,
+            cutter,
+            luts,
+            params,
+        }
+    }
+
+    pub(super) fn ctx(&self) -> super::clearing::ClearZLevelContext<'_> {
+        let p = &self.params;
+        super::clearing::ClearZLevelContext {
+            mesh: &self.mesh,
+            index: &self.index,
+            cutter: &self.cutter,
+            probe: None,
+            lut: &self.luts.cut,
+            entry_lut: self.luts.entry(),
+            debug: None,
+            tool_radius: p.geometry.tool_radius,
+            stepover: p.geometry.stepover,
+            stock_to_leave: p.depth.stock_to_leave,
+            depth_per_pass: p.depth.depth_per_pass,
+            tolerance: p.geometry.tolerance,
+            cut_tolerance: p.emission_chord_tolerance(),
+            feed_rate: p.feed_rate,
+            plunge_rate: p.plunge_rate,
+            step_len: 0.3,
+            max_link_dist: 0.0,
+            safe_z: p.safe_z,
+            clearing_strategy: p.clearing_strategy,
+            trochoid_cap_mult: p.trochoid_cap_mult,
+            engagement_measure: p.engagement_measure,
+            min_cutting_radius: p.geometry.min_cutting_radius,
+            min_region_cut_length_mm: p.linking.min_region_cut_length_mm,
+            entry_floor_radius: p.geometry.tool_radius,
+            entry_bore: None,
+            entry_ramp: None,
+            stay_down_mm: 0.0,
+            centre_clip: None,
+            stay_down_clearance_mm: p.linking.stay_down_clearance_mm,
+            step_split: super::effective_step_split(p),
+            keep_down_route: super::effective_keep_down_route(p),
+            region_clip: None,
+            left_pieces: std::cell::RefCell::new(Vec::new()),
+            unplanned: std::cell::RefCell::new(Vec::new()),
+            dropped_cut_groups: std::cell::Cell::new(0),
+            region_openings: std::cell::RefCell::new(Vec::new()),
+            level_probe: None,
+            band_edge: std::cell::RefCell::new(None),
+            rest_region_filter: None,
+            one_pass: super::one_pass::OnePass::new(
+                p.depth.depth_per_pass,
+                p.linking.stay_down_clearance_mm,
+                true,
+            ),
+            wall_pass: Some(super::level_contour::WallPass {
+                link_kinematics: None,
+                rule: super::level_contour::WallRule::RemainingStock,
+            }),
+        }
+    }
+}
+
+/// P46 fixture: the wall of the P45 fixture (X 10, top Z 9; the limit of
+/// the tool centre is X 6.825) and a rest stock 3 mm tall (under one
+/// Depth/Pass above the floor Z 0.5) with:
+/// - a strip at the foot of the wall (X 8..10, Y -10..10) that makes no
+///   region;
+/// - a "near" bump beside it (X 4.6..8, Y -2..2). Its region is 2.2 x 4 mm
+///   of tool centres: the contour line is under the dial of 15 mm, so the
+///   plan leaves it (a left piece);
+/// - a "far" bump with the same region, away from every wall
+///   (X -32..-29.8, Y 20..24): a left piece too;
+/// - a block (X -20..-5, Y -12..12), so that the plan has a level.
+///
+/// The strip pass joins the near bump and the strip cells in one band and
+/// cuts it. The band of the far bump is under the dial: no cut.
+///
+/// Returns the published rest regions and the left-stock record.
+fn left_piece_fixture_p46() -> (Vec<crate::polygon::Polygon2>, Option<LeftStock>) {
+    let (wall_x, wall_top) = (10.0, 9.0);
+    let vertices = vec![
+        P3::new(-40.0, -40.0, 0.0),
+        P3::new(wall_x, -40.0, 0.0),
+        P3::new(wall_x, 40.0, 0.0),
+        P3::new(-40.0, 40.0, 0.0),
+        P3::new(wall_x, -40.0, wall_top),
+        P3::new(wall_x, 40.0, wall_top),
+        P3::new(40.0, -40.0, wall_top),
+        P3::new(40.0, 40.0, wall_top),
+    ];
+    let triangles = vec![
+        [0, 1, 2],
+        [0, 2, 3],
+        [1, 4, 5],
+        [1, 5, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+    ];
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let (cell, n) = (0.2, 351usize);
+    let xy = |i: usize| -35.0 + i as f64 * cell;
+    let mut tops = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (xy(col), xy(row));
+            let e = 1e-9;
+            let strip = x >= 8.0 - e && (-10.0 - e..=10.0 + e).contains(&y);
+            let near = (4.6 - e..8.0).contains(&x) && (-2.0 - e..=2.0 + e).contains(&y);
+            let far = (-32.0 - e..=-29.8 + e).contains(&x) && (20.0 - e..=24.0 + e).contains(&y);
+            let block = (-20.0..=-5.0).contains(&x) && (-12.0..=12.0).contains(&y);
+            tops[row * n + col] = if x > wall_x {
+                wall_top
+            } else if strip || near || far || block {
+                3.0
+            } else {
+                0.0
+            };
+        }
+    }
+    let mut params = default_params();
+    params.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
+    params.linking.one_pass_hold = OnePassHold::RemainingStock {
+        link_kinematics: None,
+    };
+    params.linking.min_region_cut_length_mm = 15.0;
+    params.depth.stock_top_z = 9.0;
+    params.initial_stock = Some(make_stock_with_cells(
+        n, n, -35.0, -35.0, cell, -10.0, &tops,
+    ));
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .expect("not cancelled");
+    (
+        out.produced
+            .rest_regions
+            .map(|r| r.as_ref().clone())
+            .unwrap_or_default(),
+        out.left_stock,
+    )
+}
+
+/// P46 (P45 decision D-10): a left piece that the strip pass cut is not a
+/// left piece (`level_contour::unleave_cut_pieces`). The plan leaves the
+/// near bump and the far bump (each under the dial). The strip pass cuts
+/// the near bump to its floor with the strip beside it, so the near bump is
+/// not published as a rest region. The far bump is not cut (its band is
+/// under the dial too): it stays a left piece and is published. The control
+/// (no strip pass): both are published.
+#[test]
+fn a_left_piece_that_the_strip_pass_cut_is_not_published_p46() {
+    let (near, far) = (
+        crate::geo::P2::new(5.7, 0.0),
+        crate::geo::P2::new(-31.0, 22.0),
+    );
+    let holds = |regions: &[crate::polygon::Polygon2], p: &crate::geo::P2| {
+        regions.iter().any(|r| r.contains_point(p))
+    };
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(true));
+    let (control, _) = left_piece_fixture_p46();
+    super::level_contour::STRIP_PASS_OFF_FOR_CONTROL.with(|c| c.set(false));
+    assert!(
+        holds(&control, &near) && holds(&control, &far),
+        "the control: with no strip pass the plan leaves both bumps: {control:?}"
+    );
+    let (regions, left) = left_piece_fixture_p46();
+    assert!(
+        holds(&regions, &far),
+        "the far bump is not cut: it stays a published rest region: {regions:?}"
+    );
+    assert!(
+        !holds(&regions, &near),
+        "the strip pass cut the near bump: it is not a rest region: {regions:?}"
+    );
+    // The drop record: the far bump (the plan) and its band (the strip
+    // pass). The record of the near bump is gone.
+    let left = left.expect("the plan dropped a region");
+    assert_eq!(left.short_forecast, 2, "{left:?}");
+}
+
+/// P46 (P45 decision D-4): a place whose cells are all rim cells (strip
+/// cells nearer to a wall than a contour line stands) takes the reason
+/// `PlaceWhy::LineMargin`, not the reason of the drop record on its cells.
+/// Cells of 0.5 mm, cut tolerance 0.1 mm: the line stands 0.6 mm inside the
+/// limit of the tool centre, so only the first column beside a wall is rim.
+/// The wall: the tool-centre floor steps from 0 to 9 at X 10.
+/// - Place A: the column X 9.5 (0.25 mm from the limit). Rim.
+/// - Place B: the column X 3.0, no wall near. It keeps the record reason.
+/// - Place C: the columns X 9.0 and 9.5 beside a second wall stretch. The
+///   column X 9.0 is 0.75 mm from the limit, where a line can run: the
+///   place keeps the record reason.
+///
+/// The count of the places is the same with and without the rule.
+#[test]
+fn a_rim_place_has_the_reason_of_the_line_margin_p46() {
+    let (n, cell) = (60usize, 0.5);
+    let x_of = |col: usize| col as f64 * cell;
+    let in_a = |x: f64, y: f64| (x - 9.5).abs() < 1e-9 && (2.0..=8.0).contains(&y);
+    let in_b = |x: f64, y: f64| (x - 3.0).abs() < 1e-9 && (2.0..=8.0).contains(&y);
+    let in_c =
+        |x: f64, y: f64| (9.0 - 1e-9..=9.5 + 1e-9).contains(&x) && (14.0..=20.0).contains(&y);
+    let mut padded = vec![false; (n + 2) * (n + 2)];
+    let mut height = vec![0.0f32; n * n];
+    let mut floors = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..n {
+            let (x, y) = (x_of(col), row as f64 * cell);
+            if x >= 10.0 - 1e-9 {
+                floors[row * n + col] = 9.0;
+            }
+            if in_a(x, y) || in_b(x, y) || in_c(x, y) {
+                padded[(row + 1) * (n + 2) + (col + 1)] = true;
+                height[row * n + col] = 4.0;
+            }
+        }
+    }
+    // No material at a tool centre: each standing cell is a strip cell (the
+    // stock stands in its disc).
+    let no_material = vec![0.0f64; n * n];
+    let stock = make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &no_material);
+    let surface_hm = SurfaceHeightmap::from_parts(floors, vec![true; n * n], n, n, 0.0, 0.0, cell);
+    let one_pass = super::one_pass::OnePass::new(3.0, 0.5, true);
+    let standing = || {
+        Some(super::left_stock::StandingRead {
+            standing: super::standing::Standing {
+                padded: padded.clone(),
+                padded_rows: n + 2,
+                padded_cols: n + 2,
+                height: height.clone(),
+                count: padded.iter().filter(|&&c| c).count(),
+            },
+            z_level: 0.0,
+            line_inset_mm: super::level_contour::contour_line_inset(cell, 0.1),
+        })
+    };
+    let record = |x0: f64, x1: f64, y0: f64, y1: f64| super::left_stock::Unplanned {
+        z_level: 0.0,
+        outline: crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(x0, y0),
+            crate::geo::P2::new(x1, y0),
+            crate::geo::P2::new(x1, y1),
+            crate::geo::P2::new(x0, y1),
+        ]),
+        why: LeftWhy::ShortForecast,
+    };
+    let left = super::left_stock::left_stock(
+        &[
+            record(9.25, 9.75, 1.0, 9.0),
+            record(2.75, 3.25, 1.0, 9.0),
+            record(8.75, 9.75, 13.0, 21.0),
+        ],
+        0,
+        &one_pass,
+        &stock,
+        &surface_hm,
+        0.0,
+        standing,
+        3.0,
+    )
+    .expect("the plan recorded three runs");
+    assert_eq!(
+        (left.places_total, left.unrecorded_places),
+        (3, 0),
+        "{left:?}"
+    );
+    let why_at = |x: f64, y: f64| {
+        left.places
+            .iter()
+            .find(|p| p.lo[0] <= x && x <= p.hi[0] && p.lo[1] <= y && y <= p.hi[1])
+            .map(|p| p.why)
+    };
+    assert_eq!(why_at(9.5, 5.0), Some(PlaceWhy::LineMargin), "{left:?}");
+    assert_eq!(why_at(3.0, 5.0), Some(PlaceWhy::ShortForecast), "{left:?}");
+    assert_eq!(why_at(9.0, 17.0), Some(PlaceWhy::ShortForecast), "{left:?}");
+    assert!(left.stands(), "{left:?}");
+    let text = crate::compute::toolpath_stats::RoughLeftStockFinding {
+        left,
+        regions_published: false,
+    }
+    .to_string();
+    assert!(
+        text.contains("it is nearer to a wall than a contour line of the planner can run"),
+        "{text}"
     );
 }

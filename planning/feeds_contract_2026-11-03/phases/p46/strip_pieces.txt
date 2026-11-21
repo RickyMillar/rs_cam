@@ -1,0 +1,2 @@
+run_back.log: 254.303398071s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::level_contour: P46 strip pass: left pieces that a shipped cut reached reached=33 removed=27 still_standing=6
+run_front.log: 466.184808968s  INFO generate_toolpath{index=20}: rs_cam_core::adaptive3d::level_contour: P46 strip pass: left pieces that a shipped cut reached reached=129 removed=25 still_standing=104

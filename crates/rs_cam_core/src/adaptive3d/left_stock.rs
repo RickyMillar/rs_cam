@@ -76,6 +76,14 @@ pub enum PlaceWhy {
     /// The one-pass rule kept the tool off stock that stands more than one
     /// Depth/Pass above the cutter.
     OnePassHold,
+    /// P46 (P45 decision D-4): the rim at a wall. Each cell of the place is
+    /// a strip cell (no material at the tool centre) that is nearer to a
+    /// wall than a contour line stands (`level_contour::contour_line_inset`,
+    /// D19), so no contour of the op reaches the stock. The place has a
+    /// drop record on its cells (a run or a band under the dial); this
+    /// reason replaces the reason of that record, which is not why the rim
+    /// stands. A record only: it moves no tool.
+    LineMargin,
 }
 
 /// P44: one place where the tool fits and stock stands at the end of the
@@ -99,6 +107,17 @@ pub struct LeftPlace {
 /// `LeftStock::places_total` and `places_area_mm2` count all the places
 /// with a drop record, and the text gives that sum.
 pub const PLACES_LISTED: usize = 12;
+
+/// The read of the stock that stands where the tool fits at the end of the
+/// plan, and what [`left_stock`] needs to name the rim places in it.
+pub(super) struct StandingRead {
+    pub standing: super::standing::Standing,
+    /// The level of the read (the bottom level of the plan).
+    pub z_level: f64,
+    /// The distance of a contour line inside the raw outline of its region
+    /// (`level_contour::contour_line_inset`).
+    pub line_inset_mm: f64,
+}
 
 /// One region or piece that the plan held as material and did not plan, at
 /// its level.
@@ -176,8 +195,8 @@ impl LeftStock {
 /// Read the recorded outlines on the planner stock at the end of the plan.
 /// `None`: the plan recorded nothing, dropped no cut group and held no
 /// centre off. `standing` makes the read of the stock that stands where the
-/// tool fits (`standing::standing_cells`); it is called only when the plan
-/// has a record.
+/// tool fits (`standing::standing_cells`, [`StandingRead`]); it is called
+/// only when the plan has a record.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input of the read"
@@ -189,15 +208,15 @@ pub(super) fn left_stock(
     stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
-    standing: impl FnOnce() -> Option<super::standing::Standing>,
+    standing: impl FnOnce() -> Option<StandingRead>,
     tool_radius: f64,
 ) -> Option<LeftStock> {
     let held = one_pass.held.borrow();
     if unplanned.is_empty() && dropped_cut_groups == 0 && held.centres == 0 {
         return None;
     }
-    let standing = standing();
-    let standing = standing.as_ref();
+    let standing_read = standing();
+    let standing = standing_read.as_ref().map(|read| &read.standing);
     let count = |why: LeftWhy| unplanned.iter().filter(|u| u.why == why).count();
     let grid = &stock.z_grid;
     let cell = grid.cell_size;
@@ -261,16 +280,16 @@ pub(super) fn left_stock(
                 {
                     *why = Some(piece.why);
                 }
-                let floor = level_floor_z(
-                    surface_hm.z_or_bbox_floor_at(row, col),
+                let Some((top, above)) = material_above_floor(
+                    stock,
+                    surface_hm,
                     stock_to_leave,
                     piece.z_level,
-                );
-                let top = stock_top_z_at(stock, row, col);
-                let above = top - floor;
-                if above <= super::level_contour::MATERIAL_MARGIN_MM {
+                    row,
+                    col,
+                ) else {
                     continue;
-                }
+                };
                 stands = true;
                 if let Some(cell_seen) = seen.get_mut(row * grid.cols + col)
                     && !*cell_seen
@@ -311,18 +330,139 @@ pub(super) fn left_stock(
         }
     }
     out.held_off_area_mm2 = held_cells as f64 * cell * cell;
-    if let Some(standing) = standing {
+    if let Some(read) = standing_read.as_ref() {
         places(
             &mut out,
-            standing,
+            read,
             &cell_why,
             &held,
             one_pass.limit_mm,
             stock,
             tool_radius,
+            (surface_hm, stock_to_leave),
         );
     }
     Some(out)
+}
+
+/// P46: whether the standing cell `(row, col)` is a rim cell: a strip cell
+/// (the tool centre holds no material at `z_level`; the stock is in its
+/// disc) that is nearer to a wall than a contour line stands.
+///
+/// The wall: a cell whose level floor is more than one planner cell above
+/// the floor of this cell (the test of `level_contour::grow_open_side`:
+/// the tool-centre floor steps up at a wall). The limit of the tool centre
+/// is the edge between the two cells, half a cell from the centre of the
+/// wall cell. A contour line stands `line_inset_mm` inside that limit and
+/// cuts the stock in the disc of a centre on it. So the cell is in the
+/// margin when the centre of a wall cell is less than `line_inset_mm` plus
+/// half a cell from its own centre.
+fn rim_cell(
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    read: &StandingRead,
+    row: usize,
+    col: usize,
+) -> bool {
+    let grid = &stock.z_grid;
+    let cell = grid.cell_size;
+    if cell <= 0.0
+        || super::clearing::cell_has_material(
+            stock,
+            surface_hm,
+            row,
+            col,
+            read.z_level,
+            stock_to_leave,
+        )
+    {
+        return false;
+    }
+    let floor = |row: usize, col: usize| {
+        level_floor_z(
+            surface_hm.z_or_bbox_floor_at(row, col),
+            stock_to_leave,
+            read.z_level,
+        )
+    };
+    let own = floor(row, col);
+    let reach_mm = read.line_inset_mm + cell / 2.0;
+    let Some(reach) =
+        crate::util::steps::whole_steps(reach_mm, cell).and_then(|n| isize::try_from(n).ok())
+    else {
+        return false;
+    };
+    for dr in -reach..=reach {
+        for dc in -reach..=reach {
+            let (Some(r2), Some(c2)) = (
+                row.checked_add_signed(dr).filter(|&v| v < grid.rows),
+                col.checked_add_signed(dc).filter(|&v| v < grid.cols),
+            ) else {
+                continue;
+            };
+            let to_limit = (dr as f64).hypot(dc as f64) * cell - cell / 2.0;
+            if to_limit < read.line_inset_mm && floor(r2, c2) > own + cell {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// THE standing rule of a recorded piece at one cell: the stock top and its
+/// height above the floor of the cell at the level of the piece, when the
+/// cell holds material above that floor. [`left_stock`] and
+/// [`piece_stands`] both read it.
+fn material_above_floor(
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    z_level: f64,
+    row: usize,
+    col: usize,
+) -> Option<(f64, f64)> {
+    let floor = level_floor_z(
+        surface_hm.z_or_bbox_floor_at(row, col),
+        stock_to_leave,
+        z_level,
+    );
+    let top = stock_top_z_at(stock, row, col);
+    let above = top - floor;
+    (above > super::level_contour::MATERIAL_MARGIN_MM).then_some((top, above))
+}
+
+/// The cells of the stock grid whose centre is inside `outline`.
+pub(super) fn cells_inside(outline: &Polygon2, stock: &TriDexelStock) -> Vec<(usize, usize)> {
+    let grid = &stock.z_grid;
+    let Some((rows, cols)) = cell_box(outline, grid.origin_u, grid.origin_v, grid.cell_size) else {
+        return Vec::new();
+    };
+    let mut cells = Vec::new();
+    for row in rows.0..=rows.1.min(grid.rows.saturating_sub(1)) {
+        for col in cols.0..=cols.1.min(grid.cols.saturating_sub(1)) {
+            let (x, y) = grid.cell_to_world(row, col);
+            if outline.contains_point(&P2::new(x, y)) {
+                cells.push((row, col));
+            }
+        }
+    }
+    cells
+}
+
+/// P46: whether one of `cells` (the cells of a piece that the plan left at
+/// `z_level`) still holds material above its floor at that level: the
+/// standing rule of [`left_stock`].
+pub(super) fn piece_stands(
+    cells: &[(usize, usize)],
+    z_level: f64,
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+) -> bool {
+    cells.iter().any(|&(row, col)| {
+        material_above_floor(stock, surface_hm, stock_to_leave, z_level, row, col).is_some()
+    })
 }
 
 /// P44: the connected places of the standing cells (8-connected), each with
@@ -331,19 +471,30 @@ pub(super) fn left_stock(
 /// a centre off still stands over the limit within one tool radius of the
 /// box of the place; else the place has no record and joins
 /// `LeftStock::unrecorded_places`.
+///
+/// P46: a place with a drop record whose cells are all rim cells
+/// ([`rim_cell`]) takes `PlaceWhy::LineMargin` in place of the reason of
+/// the record. The count of the places does not change, so
+/// `LeftStock::stands` does not change.
 #[expect(
     clippy::indexing_slicing,
     reason = "each index is row * cols + col with row < rows and col < cols"
 )]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input of the read"
+)]
 fn places(
     out: &mut LeftStock,
-    standing: &super::standing::Standing,
+    read: &StandingRead,
     cell_why: &[Option<LeftWhy>],
     held: &super::one_pass::HeldOff,
     limit_mm: f64,
     stock: &TriDexelStock,
     tool_radius: f64,
+    (surface_hm, stock_to_leave): (&SurfaceHeightmap, f64),
 ) {
+    let standing = &read.standing;
     let grid = &stock.z_grid;
     let (rows, cols, cell) = (grid.rows, grid.cols, grid.cell_size);
     let held_standing: Vec<(usize, usize)> = held
@@ -369,8 +520,10 @@ fn places(
             let (mut tallest, mut tallest_at) = (0.0f32, (row0, col0));
             // The reasons on the cells of the place, by count.
             let mut whys = [0usize; 4];
+            let mut all_rim = true;
             while let Some((row, col)) = stack.pop() {
                 count += 1;
+                all_rim = all_rim && rim_cell(stock, surface_hm, stock_to_leave, read, row, col);
                 r_lo = r_lo.min(row);
                 r_hi = r_hi.max(row);
                 c_lo = c_lo.min(col);
@@ -408,7 +561,9 @@ fn places(
             let area_mm2 = count as f64 * cell * cell;
             let why = if whys.iter().any(|&n| n > 0) {
                 let most = whys.iter().copied().max().unwrap_or(0);
-                if whys[0] == most {
+                if all_rim {
+                    PlaceWhy::LineMargin
+                } else if whys[0] == most {
                     PlaceWhy::ShortForecast
                 } else if whys[1] == most {
                     PlaceWhy::NoField

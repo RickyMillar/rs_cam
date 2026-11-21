@@ -1411,6 +1411,8 @@ pub(super) struct StripTops {
     cell: f64,
     /// Segments already lowered into the state.
     scanned: usize,
+    /// P46: the cells that a shipped cut of the pass lowered.
+    cut: Vec<bool>,
 }
 
 impl StripTops {
@@ -1438,7 +1440,20 @@ impl StripTops {
             origin_v: grid.origin_v,
             cell: grid.cell_size,
             scanned: segments_now,
+            cut: vec![false; grid.rows * grid.cols],
         }
+    }
+
+    /// P46: a shipped cut of the pass lowered the bound at this cell (the
+    /// swept disc held its centre with room to spare, under the bound).
+    fn cut_at(&self, row: usize, col: usize) -> bool {
+        row < self.rows
+            && col < self.cols
+            && self
+                .cut
+                .get(row * self.cols + col)
+                .copied()
+                .unwrap_or(false)
     }
 
     /// The bound at a cell (`-inf` off the grid).
@@ -1504,8 +1519,12 @@ impl StripTops {
                 let surface = a.z + t * (b.z - a.z) + profile;
                 if let Some(top) = self.tops.get_mut(row * self.cols + col) {
                     #[expect(clippy::cast_possible_truncation, reason = "a stock height in mm")]
-                    {
-                        *top = top.min(surface as f32);
+                    let surface = surface as f32;
+                    if surface < *top {
+                        *top = surface;
+                        if let Some(cut) = self.cut.get_mut(row * self.cols + col) {
+                            *cut = true;
+                        }
                     }
                 }
             }
@@ -1717,6 +1736,7 @@ pub(super) fn strip_pass(
         &mut Vec::new(),
         Some(&mut state),
     );
+    let pieces = unleave_cut_pieces(ctx, material_stock, surface_hm, &state);
     tracing::debug!(
         z = z_level,
         bands = bands.len(),
@@ -1726,7 +1746,63 @@ pub(super) fn strip_pass(
         peak_load = stats.peak_load,
         "P45 strip pass"
     );
+    if pieces.reached > 0 {
+        tracing::info!(
+            reached = pieces.reached,
+            removed = pieces.removed,
+            still_standing = pieces.reached - pieces.removed,
+            "P46 strip pass: left pieces that a shipped cut reached"
+        );
+    }
     stats
+}
+
+/// P46: what [`unleave_cut_pieces`] did.
+struct CutPieces {
+    /// The left pieces with a cell that a shipped cut of the strip pass
+    /// lowered.
+    reached: usize,
+    /// Those of them that hold no material above their level floor after
+    /// the pass: removed.
+    removed: usize,
+}
+
+/// P46 (P45 decision D-10): a left piece that the strip pass cut is not a
+/// left piece. The region contour of a level removes the records of a
+/// region when a run of its own line shipped (`clear_z_level_slice`, P44b
+/// ruling D-15 c). A left piece has no line of its own in the strip pass:
+/// the line is the line of a band, and it can run beside a piece that is
+/// one cell wide. So the join is the cut itself: the state of the pass
+/// knows each cell centre that a shipped cut lowered ([`StripTops::cut_at`]).
+///
+/// A piece (of any level) is removed (`clearing::unleave_pieces`) when
+/// 1. a shipped cut of the pass lowered one of its cells, and
+/// 2. none of its cells holds material above its floor at the level of the
+///    piece (`left_stock::piece_stands`, the standing rule of the finding).
+///
+/// Rule 2 keeps a piece that the pass cut in part: a run of a later round
+/// under the cut-length dial is not cut, so the pass can stop above the
+/// floor of a piece. Such a piece stays a left piece and is published.
+///
+/// The pass is the last cut of the op, so no waterline skip of this op
+/// reads the removal. It changes the published rest regions and the drop
+/// record of the finding.
+fn unleave_cut_pieces(
+    ctx: &ClearZLevelContext<'_>,
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    state: &StripTops,
+) -> CutPieces {
+    let mut reached = 0usize;
+    let removed = super::clearing::unleave_pieces(ctx, |z_level, piece| {
+        let cells = super::left_stock::cells_inside(piece, stock);
+        if !cells.iter().any(|&(row, col)| state.cut_at(row, col)) {
+            return false;
+        }
+        reached += 1;
+        !super::left_stock::piece_stands(&cells, z_level, stock, surface_hm, ctx.stock_to_leave)
+    });
+    CutPieces { reached, removed }
 }
 
 /// P44: grow the cells of `standing` on their open side, so that the
@@ -2245,6 +2321,296 @@ mod tests {
             (state.at(edge_row, col) - 10.0).abs() < 1e-6,
             "the centre on the disc edge keeps its stock: {}",
             state.at(edge_row, col)
+        );
+    }
+
+    /// P46 fixture: a stock of 20 x 20 mm on 0.2 mm cells with no material
+    /// above the floor (Z 0), but one cell that stands 9 mm tall at
+    /// `tall`, and the flat tool-centre surface at Z 0.
+    fn one_tall_cell_p46(
+        tall: (f64, f64),
+    ) -> (
+        crate::dexel_stock::TriDexelStock,
+        crate::surface::slope::SurfaceHeightmap,
+    ) {
+        let (n, cell) = (101usize, 0.2);
+        let mut tops = vec![0.0f64; n * n];
+        let at = |v: f64| (v / cell).round() as usize;
+        tops[at(tall.1) * n + at(tall.0)] = 9.0;
+        let stock = super::super::tests::make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &tops);
+        let surface = crate::surface::slope::SurfaceHeightmap::from_parts(
+            vec![0.0; n * n],
+            vec![true; n * n],
+            n,
+            n,
+            0.0,
+            0.0,
+            cell,
+        );
+        (stock, surface)
+    }
+
+    /// P46 (P45 decision D-7): the strip read of `wall_read` counts a cell
+    /// centre only when the disc holds it with room to spare
+    /// (`TriDexelStock::disc_holds_cell_core`), the same centres as the
+    /// lowering of the strip state. A cell 9 mm tall whose centre is
+    /// 0.01 mm inside the disc edge does not set the Z: the state does not
+    /// lower such a centre, so a read that counts it holds the Z one
+    /// Depth/Pass under it at each round. The control: a centre 0.2 mm
+    /// inside the edge sets the Z to one Depth/Pass (3 mm) under its 9 mm.
+    #[test]
+    fn the_strip_read_does_not_count_a_centre_at_the_disc_edge_p46() {
+        let fixture = super::super::tests::ContextFixture::new();
+        let ctx = fixture.ctx();
+        let (stock, surface) = one_tall_cell_p46((12.0, 10.0));
+        let state = super::StripTops::new(&stock, 0);
+        let read = |x: f64| {
+            super::wall_read(
+                &ctx,
+                &stock,
+                &surface,
+                (0.0, super::WallRule::RemainingStock),
+                crate::geo::P2::new(x, 10.0),
+                0.0,
+                Some(&state),
+            )
+        };
+        let inside = read(12.0 - 2.8);
+        assert!(
+            (inside.z - 6.0).abs() < 1e-9,
+            "the control: a centre 0.2 mm inside the disc edge sets the Z: {}",
+            inside.z
+        );
+        let edge = read(12.0 - 2.99);
+        assert!(
+            edge.z.abs() < 1e-9,
+            "a centre 0.01 mm inside the disc edge does not set the Z: {}",
+            edge.z
+        );
+    }
+
+    /// P46 (P45 decision D-7): the ring of pass 3 of `wall_read` (held stock
+    /// beside the disc) starts where pass 1 of the strip read stops. The
+    /// cell 9 mm tall whose centre is 0.01 mm inside the disc edge is not in
+    /// pass 1, so it is in the ring: it is a material cell more than the
+    /// one-pass limit (3.5 mm) above the cutter, and the point is not cut
+    /// (`WallRead::beside_held_stock`). With the ring from the disc edge no
+    /// pass reads that cell, and the point ships at the floor with 9 mm of
+    /// stock at its edge.
+    #[test]
+    fn the_held_stock_ring_starts_where_the_strip_read_stops_p46() {
+        let fixture = super::super::tests::ContextFixture::new();
+        let ctx = fixture.ctx();
+        let (stock, surface) = one_tall_cell_p46((12.0, 10.0));
+        let state = super::StripTops::new(&stock, 0);
+        let read = super::wall_read(
+            &ctx,
+            &stock,
+            &surface,
+            (0.0, super::WallRule::RemainingStock),
+            crate::geo::P2::new(12.0 - 2.99, 10.0),
+            0.0,
+            Some(&state),
+        );
+        assert!(
+            read.z.abs() < 1e-9,
+            "the fixture: the cell at the disc edge does not set the Z: {}",
+            read.z
+        );
+        assert!(
+            read.beside_held_stock,
+            "the cell at the disc edge is held stock beside the disc: the point is not cut"
+        );
+    }
+
+    /// P46 (P45 decision D-7): `emit_runs` holds the one-pass Z along the
+    /// chords that ship (`hold_shipped_chords`). The run is a line with a
+    /// shallow corner: its points stand one cell apart and the corner is
+    /// 0.9 cut tolerances off the straight chord, so the emitter ships the
+    /// chord and drops the corner (the Wanaka back: a corner 0.09 mm off).
+    /// A cell 9 mm tall stands with its centre outside the disc of each
+    /// point of the run and 0.05 mm inside the swept disc of the chord,
+    /// with room to spare. Each point read the floor (Z 0). The run must
+    /// ship at Z 6: one Depth/Pass (3 mm) under the 9 mm. With no hold it
+    /// ships at Z 0 and the chord takes 9 mm from that centre.
+    #[test]
+    fn a_shipped_chord_holds_the_one_pass_z_p46() {
+        let fixture = super::super::tests::ContextFixture::new();
+        let ctx = fixture.ctx();
+        let (tall, r) = ((10.0, 4.0), ctx.tool_radius);
+        let (mut stock, surface) = one_tall_cell_p46(tall);
+        let state = super::StripTops::new(&stock, 0);
+        let corner = 0.9 * ctx.cut_tolerance;
+        let chord_y = tall.1 + r - 0.05;
+        let run: Vec<P3> = (0..=20)
+            .map(|i| {
+                let x = 8.0 + 0.2 * f64::from(i);
+                P3::new(x, chord_y + corner * (1.0 - (x - 10.0).abs() / 2.0), 0.0)
+            })
+            .collect();
+        // The fixture: no point of the run holds the tall centre, the
+        // shipped chord does, and the simplification drops the corner.
+        let nearest = run
+            .iter()
+            .map(|p| (p.x - tall.0).hypot(p.y - tall.1))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            nearest > r,
+            "a point of the run holds the centre: {nearest}"
+        );
+        let kept = crate::toolpath::simplify_path_3d_keep_mask(&run, ctx.cut_tolerance)
+            .iter()
+            .filter(|&&k| k)
+            .count();
+        assert_eq!(kept, 2, "the emitter ships one chord");
+        assert!(
+            crate::dexel_stock::TriDexelStock::disc_holds_cell_core(
+                0.0,
+                tall.1 - chord_y,
+                r * r,
+                0.2
+            ),
+            "the chord disc holds the centre with room to spare"
+        );
+        let mut segments = Vec::new();
+        let mut cursor = super::PlannerCursor::default();
+        let mut stats = super::LevelContourStats::default();
+        super::emit_runs(
+            &ctx,
+            &mut stock,
+            vec![(run, None)],
+            0.2,
+            &mut segments,
+            &mut cursor,
+            &mut stats,
+            Some(super::StripHold {
+                state: &state,
+                surface_hm: &surface,
+                z_level: 0.0,
+            }),
+        );
+        let lowest = segments
+            .iter()
+            .filter_map(|seg| match seg {
+                super::Adaptive3dSegment::Cut(path) => Some(path),
+                super::Adaptive3dSegment::Link(_)
+                | super::Adaptive3dSegment::Rapid(_)
+                | super::Adaptive3dSegment::RapidWithFloor { .. }
+                | super::Adaptive3dSegment::Marker(_) => None,
+            })
+            .flatten()
+            .map(|p| p.z)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            (lowest - 6.0).abs() < 1e-9,
+            "the run ships at Z {lowest:.2}; one Depth/Pass under the 9 mm that the chord holds is Z 6"
+        );
+    }
+
+    /// P46 (P45 decision D-10): the two rules of `unleave_cut_pieces`. Three
+    /// left pieces of 1 x 1 mm at level 0, each with its drop record; the
+    /// stock is 3 mm tall on each before the pass.
+    /// - Piece 1: a shipped cut of the pass lowered its cells and the
+    ///   planner stock holds no material there after the pass. Removed,
+    ///   with its record.
+    /// - Piece 2: a shipped cut lowered its cells, but the planner stock
+    ///   still holds material above its floor (the pass stopped above the
+    ///   floor). It stays.
+    /// - Piece 3: no cut of the pass reached it (another cut took its
+    ///   stock). It stays: the rule is for the pieces that the strip pass
+    ///   cut.
+    ///
+    /// A record with no left piece (a band with no room for a line, on the
+    /// outline of piece 1) stays.
+    #[test]
+    fn the_strip_pass_removes_only_a_piece_that_it_cut_to_the_floor_p46() {
+        use crate::geo::P2;
+        let fixture = super::super::tests::ContextFixture::new();
+        let ctx = fixture.ctx();
+        let (n, cell) = (101usize, 0.2);
+        let square = |x0: f64| {
+            crate::polygon::Polygon2::new(vec![
+                P2::new(x0 - 0.1, 1.9),
+                P2::new(x0 + 1.1, 1.9),
+                P2::new(x0 + 1.1, 3.1),
+                P2::new(x0 - 0.1, 3.1),
+            ])
+        };
+        let pieces = [square(2.0), square(6.0), square(14.0)];
+        let mut tops = vec![0.0f64; n * n];
+        for row in 0..n {
+            for col in 0..n {
+                let p = P2::new(col as f64 * cell, row as f64 * cell);
+                if pieces.iter().any(|piece| piece.contains_point(&p)) {
+                    tops[row * n + col] = 3.0;
+                }
+            }
+        }
+        let mut stock =
+            super::super::tests::make_stock_with_cells(n, n, 0.0, 0.0, cell, -10.0, &tops);
+        let surface = crate::surface::slope::SurfaceHeightmap::from_parts(
+            vec![0.0; n * n],
+            vec![true; n * n],
+            n,
+            n,
+            0.0,
+            0.0,
+            cell,
+        );
+        // The pass: one shipped cut at the floor over pieces 1 and 2.
+        let mut state = super::StripTops::new(&stock, 0);
+        state.lower_under(ctx.lut, P3::new(0.0, 2.5, 0.0), P3::new(8.0, 2.5, 0.0));
+        // The planner stock after the pass: pieces 1 and 3 are cut to the
+        // floor; piece 2 keeps its stock.
+        for piece in [&pieces[0], &pieces[2]] {
+            for (row, col) in super::super::left_stock::cells_inside(piece, &stock) {
+                crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 0.0);
+            }
+        }
+        for piece in &pieces {
+            ctx.left_pieces.borrow_mut().push((0.0, piece.clone()));
+            ctx.unplanned
+                .borrow_mut()
+                .push(super::super::left_stock::Unplanned {
+                    z_level: 0.0,
+                    outline: piece.clone(),
+                    why: super::super::LeftWhy::ShortForecast,
+                });
+        }
+        ctx.unplanned
+            .borrow_mut()
+            .push(super::super::left_stock::Unplanned {
+                z_level: 0.0,
+                outline: pieces[0].clone(),
+                why: super::super::LeftWhy::NoLine,
+            });
+        let cut = super::unleave_cut_pieces(&ctx, &stock, &surface, &state);
+        assert_eq!(
+            (cut.reached, cut.removed),
+            (2, 1),
+            "the pass reached pieces 1 and 2 and removed piece 1"
+        );
+        let left: Vec<f64> = ctx
+            .left_pieces
+            .borrow()
+            .iter()
+            .map(|(_, piece)| piece.exterior[0].x + 0.1)
+            .collect();
+        assert_eq!(left, vec![6.0, 14.0], "pieces 2 and 3 stay left pieces");
+        let records: Vec<(f64, super::super::LeftWhy)> = ctx
+            .unplanned
+            .borrow()
+            .iter()
+            .map(|u| (u.outline.exterior[0].x + 0.1, u.why))
+            .collect();
+        assert_eq!(
+            records,
+            vec![
+                (6.0, super::super::LeftWhy::ShortForecast),
+                (14.0, super::super::LeftWhy::ShortForecast),
+                (2.0, super::super::LeftWhy::NoLine),
+            ],
+            "the record of piece 1 is gone; a record with no left piece stays"
         );
     }
 

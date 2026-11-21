@@ -2956,6 +2956,42 @@ fn leave_piece(
     ctx.left_pieces.borrow_mut().push((z_level, piece.clone()));
 }
 
+/// P46 (P45 decision D-10): the inverse of [`leave_piece`]. Each left piece
+/// for which `cut` is true (its level, its outline) leaves `left_pieces`,
+/// and the record that `leave_piece` pushed with it leaves `unplanned`: the
+/// piece is not left, it is not published as a rest region, and the finding
+/// does not count it. Returns the number of pieces removed.
+///
+/// Only a record of a left piece goes (the same level, the same outline,
+/// the reason of a `leave_piece` call). The box of a run under the dial, a
+/// band of the strip pass and the box of a dropped cut group are records
+/// with no left piece; they stay.
+pub(super) fn unleave_pieces(
+    ctx: &ClearZLevelContext<'_>,
+    mut cut: impl FnMut(f64, &crate::polygon::Polygon2) -> bool,
+) -> usize {
+    let mut unplanned = ctx.unplanned.borrow_mut();
+    let mut removed = 0usize;
+    ctx.left_pieces.borrow_mut().retain(|(z_level, piece)| {
+        if !cut(*z_level, piece) {
+            return true;
+        }
+        if let Some(record) = unplanned.iter().position(|u| {
+            matches!(
+                u.why,
+                super::LeftWhy::ShortForecast | super::LeftWhy::NoField
+            ) && (u.z_level - z_level).abs() < 1e-9
+                && u.outline.exterior == piece.exterior
+                && u.outline.holes == piece.holes
+        }) {
+            unplanned.remove(record);
+        }
+        removed += 1;
+        false
+    });
+    removed
+}
+
 /// The 2D plan of one outline and the feed cap of each segment (`None`: no
 /// cap), with the rule that capped it.
 type OutlinePlan = (

@@ -1,0 +1,10 @@
+lines 168774 and 168726; motion lines 168697 and 168652; comment lines 77 and 74
+MOTION DIFFERS: first at motion line 55927: ['G0 Z36.000'] | ['M3 S18000']
+the files differ
+comment lines only before: 5; only after: 1
+  - (Slit slot rest pocket 6 mm)
+  - (feeds: capped from simulation run 4, no feed raised)
+  - (feeds run 915 to 2741 mm/min, 0 of 24 cutting moves above the stated 3165 mm/min)
+  - (feeds: capped from simulation run 8, no feed raised)
+  - (feeds: capped from simulation run 8, no feed raised)
+  + (feeds: capped from simulation run 5, no feed raised)
