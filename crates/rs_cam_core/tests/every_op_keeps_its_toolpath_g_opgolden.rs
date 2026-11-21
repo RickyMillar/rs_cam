@@ -106,6 +106,12 @@
 //!   section 15.2). The fold walk holds at least the run its gate asks for,
 //!   so a ring start on a fine polyline at the 20 degree rule folds along
 //!   the cut instead of the straight plunge. No known row moved.
+//! - P39 (blessed 2026-11-22, operator go-ahead of that day): field-only
+//!   bless of `cutting_length_mm`, `gcode_hash`, `linear_count`,
+//!   `move_count`, `moves_hash` and `spans_hash` of
+//!   `adaptive3d/ramp_geodesic` (6 fields). The cells moved with the rest
+//!   rough work of P39 and stood red through P41 to P46, which moved no
+//!   other cell. The 46 known rows did not move and are not blessed.
 //!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`
